@@ -1,0 +1,431 @@
+*{
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
+}
+
+:root{
+  --bg:#030303;
+  --panel:#0a0a0a;
+  --panel2:#101010;
+  --line:#202020;
+  --text:#f5f5f5;
+  --muted:#777;
+  --gold:#d8b35a;
+  --gold2:#8d6b25;
+  --green:#43e58b;
+  --red:#ff5c68;
+}
+
+html,body{
+  margin:0;
+  padding:0;
+  min-height:100%;
+  background:var(--bg);
+  color:var(--text);
+  font-family:Inter,Roboto,Arial,sans-serif;
+}
+
+body{
+  min-height:100vh;
+  background:
+    radial-gradient(circle at 50% -10%,rgba(216,179,90,.10),transparent 35%),
+    #030303;
+}
+
+.app-shell{
+  width:100%;
+  max-width:620px;
+  margin:auto;
+  min-height:100vh;
+  padding:18px 15px 24px;
+}
+
+.topbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:5px 2px 22px;
+}
+
+.brand{
+  font-size:23px;
+  font-weight:900;
+  letter-spacing:2.5px;
+}
+
+.brand span{
+  color:var(--gold);
+}
+
+.subtitle{
+  color:#666;
+  font-size:8px;
+  letter-spacing:2px;
+  margin-top:5px;
+}
+
+.status-pill{
+  border:1px solid #252525;
+  border-radius:30px;
+  padding:7px 10px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:#777;
+  font-size:8px;
+  letter-spacing:1px;
+}
+
+.status-pill i{
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:#666;
+}
+
+.hero-card,
+.prediction-card,
+.connection-card,
+.paper-card,
+.warning-card{
+  background:linear-gradient(145deg,#0d0d0d,#070707);
+  border:1px solid var(--line);
+  border-radius:20px;
+  box-shadow:0 15px 40px rgba(0,0,0,.35);
+}
+
+.hero-card{
+  padding:20px;
+  margin-bottom:24px;
+}
+
+.hero-top{
+  display:flex;
+  justify-content:space-between;
+  gap:15px;
+}
+
+.label,
+.prediction-label{
+  color:#666;
+  font-size:9px;
+  letter-spacing:2px;
+}
+
+.symbol{
+  font-size:29px;
+  font-weight:900;
+  letter-spacing:1px;
+  margin-top:5px;
+}
+
+.timeframe{
+  margin-top:3px;
+  color:var(--gold);
+  font-size:9px;
+  letter-spacing:1.5px;
+}
+
+.live-badge{
+  align-self:flex-start;
+  border:1px solid #242424;
+  border-radius:8px;
+  padding:7px 8px;
+  color:#777;
+  font-size:7px;
+  letter-spacing:1px;
+  white-space:nowrap;
+}
+
+.price-area{
+  padding:34px 0 27px;
+  text-align:center;
+}
+
+.price{
+  font-size:48px;
+  line-height:1;
+  font-weight:900;
+  letter-spacing:-1px;
+}
+
+.price-label{
+  color:#555;
+  font-size:8px;
+  letter-spacing:2px;
+  margin-top:9px;
+}
+
+.market-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  border-top:1px solid #1d1d1d;
+  padding-top:15px;
+  gap:15px;
+}
+
+.market-grid span,
+.metric span,
+.account-info span{
+  display:block;
+  color:#555;
+  font-size:8px;
+  letter-spacing:1.5px;
+}
+
+.market-grid strong,
+.metric strong{
+  display:block;
+  margin-top:6px;
+  font-size:14px;
+}
+
+.section-title{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:0 4px 10px;
+  color:#888;
+  font-size:9px;
+  letter-spacing:1.8px;
+}
+
+.section-title small{
+  color:#444;
+  font-size:8px;
+}
+
+.prediction-card{
+  padding:20px;
+  margin-bottom:24px;
+}
+
+.prediction-main{
+  text-align:center;
+}
+
+.prediction{
+  margin-top:7px;
+  font-size:37px;
+  font-weight:900;
+  letter-spacing:3px;
+}
+
+.confidence{
+  color:#555;
+  font-size:9px;
+  letter-spacing:1px;
+  margin-top:7px;
+}
+
+.confidence strong{
+  color:#aaa;
+}
+
+.signal-meter{
+  margin-top:25px;
+}
+
+.meter-track{
+  height:5px;
+  background:#191919;
+  border-radius:10px;
+  overflow:hidden;
+}
+
+.meter-fill{
+  height:100%;
+  width:50%;
+  background:var(--gold);
+  transition:width .4s ease;
+}
+
+.meter-labels{
+  display:flex;
+  justify-content:space-between;
+  margin-top:7px;
+  color:#444;
+  font-size:7px;
+  letter-spacing:1px;
+}
+
+.metrics-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-bottom:24px;
+}
+
+.metric{
+  padding:16px;
+  min-height:70px;
+  background:#090909;
+  border:1px solid #191919;
+  border-radius:15px;
+}
+
+.connection-card{
+  padding:18px;
+  margin-bottom:12px;
+}
+
+.connection-row{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.connection-icon{
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border:1px solid #302719;
+  border-radius:12px;
+  color:var(--gold);
+  font-weight:900;
+}
+
+.connection-info{
+  flex:1;
+}
+
+.connection-info strong{
+  display:block;
+  font-size:13px;
+}
+
+.connection-info span{
+  display:block;
+  color:#555;
+  font-size:9px;
+  margin-top:4px;
+}
+
+.connection-dot{
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:#555;
+}
+
+.connect-btn{
+  width:100%;
+  border:1px solid #5f4820;
+  background:#15110a;
+  color:var(--gold);
+  border-radius:12px;
+  padding:13px;
+  margin-top:16px;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:1.5px;
+}
+
+.connect-btn:active{
+  transform:scale(.98);
+}
+
+.account-info{
+  border-top:1px solid #191919;
+  margin-top:15px;
+  padding-top:13px;
+}
+
+.account-info strong{
+  display:block;
+  margin-top:5px;
+  font-size:10px;
+  color:#777;
+  word-break:break-all;
+}
+
+.paper-card{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:16px;
+  margin-bottom:12px;
+}
+
+.paper-card strong{
+  display:block;
+  font-size:11px;
+  letter-spacing:1px;
+}
+
+.paper-card span{
+  display:block;
+  color:#555;
+  font-size:8px;
+  margin-top:4px;
+}
+
+.toggle{
+  width:40px;
+  height:22px;
+  border-radius:20px;
+  padding:3px;
+  background:#222;
+}
+
+.toggle.on{
+  background:#51431f;
+}
+
+.toggle div{
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  background:#777;
+}
+
+.toggle.on div{
+  margin-left:18px;
+  background:var(--gold);
+}
+
+.warning-card{
+  display:flex;
+  gap:12px;
+  padding:15px;
+  border-color:#241e13;
+}
+
+.warning-icon{
+  min-width:25px;
+  height:25px;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:#241d0e;
+  color:var(--gold);
+  font-weight:900;
+}
+
+.warning-card strong{
+  font-size:9px;
+  letter-spacing:1px;
+}
+
+.warning-card p{
+  margin:5px 0 0;
+  color:#555;
+  font-size:8px;
+}
+
+footer{
+  display:flex;
+  justify-content:center;
+  gap:8px;
+  padding:24px 0 4px;
+  color:#333;
+  font-size:7px;
+  letter-spacing:1.5px;
+}
+
+@media(max-width:380px){
+  .app-shell{padding-left:11px;padding-right:11px}
+  .price{font-size:41px}
+  .symbol{font-size:25px}
+}

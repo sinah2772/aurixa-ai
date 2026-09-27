@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>AURIXA AI — XAUUSD Intelligence</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-shell">
+
+    <header class="topbar">
+      <div>
+        <div class="brand">AURIXA <span>AI</span></div>
+        <div class="subtitle">XAUUSD MARKET INTELLIGENCE</div>
+      </div>
+      <div class="status-pill">
+        <i></i>
+        <span id="systemStatus">READY</span>
+      </div>
+    </header>
+
+    <main>
+
+      <section class="hero-card">
+        <div class="hero-top">
+          <div>
+            <div class="label">INSTRUMENT</div>
+            <div class="symbol">XAUUSD</div>
+            <div class="timeframe">5 MINUTE ANALYSIS</div>
+          </div>
+          <div class="live-badge" id="liveBadge">WAITING FOR DATA</div>
+        </div>
+
+        <div class="price-area">
+          <div class="price" id="price">—</div>
+          <div class="price-label">LIVE MARKET PRICE</div>
+        </div>
+
+        <div class="market-grid">
+          <div>
+            <span>24H CHANGE</span>
+            <strong id="change">—</strong>
+          </div>
+          <div>
+            <span>DATA STATUS</span>
+            <strong id="dataStatus">NO FEED</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-title">
+        <span>PREDICTION ENGINE</span>
+        <small>AI / TECHNICAL</small>
+      </section>
+
+      <section class="prediction-card">
+        <div class="prediction-main">
+          <div class="prediction-label">CURRENT SIGNAL</div>
+          <div class="prediction" id="prediction">WAIT</div>
+          <div class="confidence">
+            CONFIDENCE <strong id="confidence">—</strong>
+          </div>
+        </div>
+
+        <div class="signal-meter">
+          <div class="meter-track">
+            <div class="meter-fill" id="meterFill"></div>
+          </div>
+          <div class="meter-labels">
+            <span>SELL</span>
+            <span>NEUTRAL</span>
+            <span>BUY</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-title">
+        <span>MARKET ENGINE</span>
+        <small>5M</small>
+      </section>
+
+      <section class="metrics-grid">
+        <div class="metric">
+          <span>EMA 9</span>
+          <strong id="ema9">—</strong>
+        </div>
+        <div class="metric">
+          <span>EMA 21</span>
+          <strong id="ema21">—</strong>
+        </div>
+        <div class="metric">
+          <span>RSI</span>
+          <strong id="rsi">—</strong>
+        </div>
+        <div class="metric">
+          <span>ATR</span>
+          <strong id="atr">—</strong>
+        </div>
+      </section>
+
+      <section class="section-title">
+        <span>CTRADER</span>
+        <small>FXPRO</small>
+      </section>
+
+      <section class="connection-card">
+        <div class="connection-row">
+          <div class="connection-icon">C</div>
+          <div class="connection-info">
+            <strong>cTrader Open API</strong>
+            <span id="ctraderStatus">Authorization required</span>
+          </div>
+          <div class="connection-dot" id="ctraderDot"></div>
+        </div>
+
+        <button class="connect-btn" id="connectBtn">
+          CONNECT CTRADER
+        </button>
+
+        <div class="account-info">
+          <span>ACCOUNT</span>
+          <strong id="accountId">NOT CONNECTED</strong>
+        </div>
+      </section>
+
+      <section class="paper-card">
+        <div>
+          <strong>PAPER TRADING</strong>
+          <span>Simulation only • no live orders</span>
+        </div>
+        <div class="toggle on">
+          <div></div>
+        </div>
+      </section>
+
+      <section class="warning-card">
+        <div class="warning-icon">!</div>
+        <div>
+          <strong>AUTO TRADING DISABLED</strong>
+          <p>AURIXA AI will not place real trades.</p>
+        </div>
+      </section>
+
+    </main>
+
+    <footer>
+      <span>AURIXA AI</span>
+      <span>•</span>
+      <span>XAUUSD 5M</span>
+      <span>•</span>
+      <span id="clock">--:--:--</span>
+    </footer>
+
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

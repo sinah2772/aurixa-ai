@@ -1,0 +1,11 @@
+{
+  "name":"xauusd-ai-5m",
+  "version":"1.0.0",
+  "private":true,
+  "scripts":{"start":"node server/server.js"},
+  "dependencies":{
+    "express":"latest",
+    "cors":"latest",
+    "dotenv":"latest"
+  }
+}
