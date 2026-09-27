@@ -52,8 +52,8 @@ async function loadMarket(){
     }
 
     if(d.change !== undefined) setText("change",d.change);
-    const prediction=d.prediction||{}; const signal=String(prediction.signal||"WAIT").toUpperCase(); setText("prediction",signal);
-    if(prediction.confidence !== undefined && prediction.confidence !== null) setText("confidence",Number(prediction.confidence).toFixed(0)+"%"); else setText("confidence","—");
+    if(d.prediction) setText("prediction",d.prediction);
+    if(d.confidence !== undefined) setText("confidence",d.confidence);
 
     if(d.ema9 !== undefined) setText("ema9",d.ema9);
     if(d.ema21 !== undefined) setText("ema21",d.ema21);
