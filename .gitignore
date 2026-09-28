@@ -3,3 +3,14 @@ node_modules/
 *.log
 
 backup-*/
+
+.ctrader-tokens.json
+
+# Local backup files
+*.backup
+*.backup-*
+server/*.backup*
+web/*.backup*
+
+# Local helper scripts
+add-token-helper.js

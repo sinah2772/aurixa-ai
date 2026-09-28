@@ -232,11 +232,24 @@ function connectOpenApi() {
         const msg = JSON.parse(raw);
         const payload = msg.payload || {};
 
-        const safePayload = JSON.stringify(payload)
-          .replace(/("accessToken"\\s*:\\s*")[^"]*"/gi, '$1[redacted]"')
-          .replace(/("refreshToken"\\s*:\\s*")[^"]*"/gi, '$1[redacted]"')
-          .replace(/("clientSecret"\\s*:\\s*")[^"]*"/gi, '$1[redacted]"')
-          .replace(/("clientId"\\s*:\\s*")[^"]*"/gi, '$1[redacted]"');
+        const safePayloadObject = JSON.parse(
+          JSON.stringify(payload)
+        );
+
+        for (const key of [
+          "accessToken",
+          "refreshToken",
+          "clientSecret",
+          "clientId"
+        ]) {
+          if (safePayloadObject[key]) {
+            safePayloadObject[key] = "[redacted]";
+          }
+        }
+
+        const safePayload = JSON.stringify(
+          safePayloadObject
+        );
 
         console.log(
           "cTrader RX:",
@@ -289,7 +302,7 @@ function connectOpenApi() {
                 ...accounts.filter(a => !a.isLive)
               ];
 
-          state.accountCandidates = ordered;
+                    state.accountCandidates = ordered;
           state.accountCandidateIndex = 0;
 
           const preferred = ordered[0];
@@ -298,6 +311,30 @@ function connectOpenApi() {
           state.accountId = String(
             preferred.ctidTraderAccountId
           );
+
+          // Account environment must match WebSocket environment.
+          const preferredIsLive = preferred.isLive === true;
+
+          const currentHostIsLive =
+            String(
+              ws.url ||
+              state.ws?.url ||
+              ""
+            ).includes("live.ctraderapi.com");
+
+          if (preferredIsLive !== currentHostIsLive) {
+            console.log(
+              "cTrader: switching endpoint for selected account",
+              state.accountId,
+              preferredIsLive ? "LIVE" : "DEMO"
+            );
+
+            try {
+              ws.close();
+            } catch {}
+
+            return;
+          }
 
           // ProtoOAAccountAuthReq
           send(ws, 2102, {

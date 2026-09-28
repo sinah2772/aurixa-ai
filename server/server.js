@@ -4,7 +4,7 @@ const path = require("path");
 require("dotenv").config();
 
 const app = express();
-const { registerCTrader } = require("./ctrader");
+const { registerCTrader, getCTraderStatus } = require("./ctrader");
 registerCTrader(app);
 const PORT = Number(process.env.PORT || 8787);
 
@@ -153,37 +153,135 @@ app.get("/api/health",(req,res)=>{
   });
 });
 
-app.get("/api/market",(req,res)=>{
-  res.json({
-    symbol:"XAUUSD",
-    price:lastPrice,
-    candles:candles.slice(-100),
-    prediction:prediction(),
-    liveConnected,
-    lastUpdate
+
+let simState = {
+  enabled: false,
+  price: 2650,
+  candles: [],
+  signal: "WAIT",
+  confidence: 0,
+  reason: "Simulation not started",
+  entry: null,
+  pnl: 0
+};
+
+function simCandle() {
+  const last = simState.price;
+  const move = (Math.random() - 0.48) * 3.5;
+  const close = Math.max(100, last + move);
+  const high = Math.max(last, close) + Math.random() * 1.5;
+  const low = Math.min(last, close) - Math.random() * 1.5;
+
+  simState.price = close;
+  simState.candles.push({
+    time: Date.now(),
+    open: last,
+    high,
+    low,
+    close
   });
-});
 
-/*
-  REAL cTrader DATA CONNECTOR
+  if (simState.candles.length > 100)
+    simState.candles.shift();
 
-  This function is intentionally not replaced with fake prices.
-  Add the cTrader/Open API websocket implementation here after
-  CTRADER_ACCESS_TOKEN and CTRADER_ACCOUNT_ID are configured.
-*/
-async function connectCtrader(){
-  if(
-    !process.env.CTRADER_ACCESS_TOKEN ||
-    !process.env.CTRADER_ACCOUNT_ID
-  ){
-    liveConnected=false;
-    console.log("cTrader: credentials not configured");
+  const closes = simState.candles.map(x => x.close);
+
+  if (closes.length < 21) {
+    simState.signal = "WAIT";
+    simState.confidence = 0;
+    simState.reason = "Building simulated 5-minute history";
     return;
   }
 
-  console.log("cTrader credentials detected.");
-  console.log("Live XAUUSD connector awaiting Open API session setup.");
+  const ema = (period) => {
+    const k = 2 / (period + 1);
+    let value = closes[0];
+    for (const price of closes.slice(1))
+      value = price * k + value * (1 - k);
+    return value;
+  };
+
+  const ema9 = ema(9);
+  const ema21 = ema(21);
+
+  let gains = 0;
+  let losses = 0;
+  for (let i = Math.max(1, closes.length - 14); i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gains += d;
+    else losses -= d;
+  }
+
+  const avgGain = gains / 14;
+  const avgLoss = losses / 14;
+  const rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+
+  if (ema9 > ema21 && rsi < 70) {
+    simState.signal = "BUY";
+    simState.confidence = Math.min(95, Math.round(55 + Math.abs(ema9 - ema21) * 8));
+    simState.reason = "Simulated bullish EMA alignment with RSI confirmation";
+  } else if (ema9 < ema21 && rsi > 30) {
+    simState.signal = "SELL";
+    simState.confidence = Math.min(95, Math.round(55 + Math.abs(ema9 - ema21) * 8));
+    simState.reason = "Simulated bearish EMA alignment with RSI confirmation";
+  } else {
+    simState.signal = "WAIT";
+    simState.confidence = Math.round(40 + Math.random() * 15);
+    simState.reason = "Simulated indicators disagree";
+  }
+
+  if (simState.entry !== null) {
+    simState.pnl =
+      simState.signal === "BUY"
+        ? simState.price - simState.entry
+        : simState.entry - simState.price;
+  }
 }
+
+app.get("/api/simulation", (req, res) => {
+  if (req.query.start === "1") simState.enabled = true;
+  if (req.query.stop === "1") simState.enabled = false;
+
+  if (simState.enabled) simCandle();
+
+  res.json({
+    mode: "SIMULATION",
+    realMarketData: false,
+    liveTrading: false,
+    paperTrading: true,
+    enabled: simState.enabled,
+    symbol: "XAUUSD",
+    timeframe: "5m",
+    price: Number(simState.price.toFixed(2)),
+    signal: simState.signal,
+    confidence: simState.confidence,
+    reason: simState.reason,
+    candles: simState.candles.slice(-30),
+    entry: simState.entry,
+    pnl: Number(simState.pnl.toFixed(2))
+  });
+});
+
+app.get("/api/market",(req,res)=>{
+  const ct = getCTraderStatus();
+  res.json({
+    symbol: ct.symbol || "XAUUSD",
+    price: ct.mid,
+    bid: ct.bid,
+    ask: ct.ask,
+    candles: [],
+    prediction: null,
+    liveConnected: ct.connected && ct.authorized,
+    authorized: ct.authorized,
+    accountId: ct.accountId,
+    symbolId: ct.symbolId,
+    lastUpdate: ct.lastUpdate,
+    error: ct.error,
+    autoTrading: ct.autoTrading,
+    paperTrading: ct.paperTrading
+  });
+});
+
 
 app.use((req,res)=>{
   res.sendFile(path.join(__dirname,"..","web","index.html"));
@@ -199,5 +297,4 @@ app.listen(PORT,"0.0.0.0",async()=>{
   console.log("Auto trading: DISABLED");
   console.log("Paper trading: ENABLED");
   console.log("======================================");
-  await connectCtrader();
 });

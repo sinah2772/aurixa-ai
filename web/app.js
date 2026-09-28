@@ -82,3 +82,27 @@ loadMarket();
 setInterval(updateClock,1000);
 setInterval(checkHealth,10000);
 setInterval(loadMarket,5000);
+
+
+async function startSimulation() {
+  try {
+    const r = await fetch("/api/simulation?start=1");
+    const d = await r.json();
+
+    const el = id => document.getElementById(id);
+    if (el("prediction")) el("prediction").textContent = d.signal;
+    if (el("confidence")) el("confidence").textContent = `${d.confidence}%`;
+
+    if (el("price") && d.price)
+      el("price").textContent = Number(d.price).toFixed(2);
+
+    if (el("data-status"))
+      el("data-status").textContent = "SIMULATION MODE";
+
+    console.log("AURIXA simulation:", d);
+  } catch (e) {
+    console.error("Simulation error:", e);
+  }
+}
+
+window.startAURIXASimulation = startSimulation;
