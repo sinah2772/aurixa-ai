@@ -16,7 +16,9 @@ const state = {
   authorized: false,
   lastUpdate: null,
   error: null,
-  ws: null
+  ws: null,
+  accountCandidates: [],
+  accountCandidateIndex: 0
 };
 
 const CLIENT_ID = process.env.CTRADER_CLIENT_ID;
@@ -155,8 +157,7 @@ function connectOpenApi() {
     }
 
     const isLive =
-      state.account?.isLive === true ||
-      String(state.accountId) === "18333577";
+      state.account?.isLive === true;
 
     const host = isLive
       ? "live.ctraderapi.com"
@@ -231,15 +232,23 @@ function connectOpenApi() {
         const msg = JSON.parse(raw);
         const payload = msg.payload || {};
 
+        const safePayload = JSON.stringify(payload)
+          .replace(/("accessToken"\\s*:\\s*")[^"]*"/gi, '$1[redacted]"')
+          .replace(/("refreshToken"\\s*:\\s*")[^"]*"/gi, '$1[redacted]"')
+          .replace(/("clientSecret"\\s*:\\s*")[^"]*"/gi, '$1[redacted]"')
+          .replace(/("clientId"\\s*:\\s*")[^"]*"/gi, '$1[redacted]"');
+
         console.log(
           "cTrader RX:",
           msg.payloadType,
-          JSON.stringify(payload).slice(0, 1200)
+          safePayload.slice(0, 1200)
         );
 
         // ProtoOAApplicationAuthRes
         if (msg.payloadType === 2101) {
-          state.authorized = true;
+          // Application authorization succeeded.
+          // Account authorization happens separately.
+          state.error = null;
 
           // ProtoOAGetAccountListByAccessTokenReq
           send(ws, 2149, {
@@ -256,12 +265,39 @@ function connectOpenApi() {
             throw new Error("No cTrader accounts were granted to AURIXA AI");
           }
 
-          const preferred =
-            accounts.find(a => a.isLive === true) ||
-            accounts[0];
+          const liveAccounts = accounts.filter(a => a.isLive === true);
+          const configuredId = String(
+            process.env.CTRADER_ACCOUNT_ID || ""
+          ).trim();
+
+          const ordered = configuredId
+            ? [
+                ...accounts.filter(
+                  a => String(a.ctidTraderAccountId) === configuredId
+                ),
+                ...liveAccounts.filter(
+                  a => String(a.ctidTraderAccountId) !== configuredId
+                ),
+                ...accounts.filter(
+                  a =>
+                    String(a.ctidTraderAccountId) !== configuredId &&
+                    !a.isLive
+                )
+              ]
+            : [
+                ...liveAccounts,
+                ...accounts.filter(a => !a.isLive)
+              ];
+
+          state.accountCandidates = ordered;
+          state.accountCandidateIndex = 0;
+
+          const preferred = ordered[0];
 
           state.account = preferred;
-          state.accountId = String(preferred.ctidTraderAccountId);
+          state.accountId = String(
+            preferred.ctidTraderAccountId
+          );
 
           // ProtoOAAccountAuthReq
           send(ws, 2102, {
@@ -271,8 +307,86 @@ function connectOpenApi() {
           return;
         }
 
+        // ProtoOAErrorRes
+        if (msg.payloadType === 2142) {
+          const code =
+            payload.errorCode || "UNKNOWN_ERROR";
+
+          const description =
+            payload.description ||
+            "cTrader account request failed";
+
+          console.error(
+            "cTrader ERROR:",
+            code,
+            description
+          );
+
+          if (code === "RET_ACCOUNT_DISABLED") {
+            const nextIndex =
+              state.accountCandidateIndex + 1;
+
+            if (
+              nextIndex <
+              state.accountCandidates.length
+            ) {
+              state.accountCandidateIndex =
+                nextIndex;
+
+              const next =
+                state.accountCandidates[nextIndex];
+
+              state.account = next;
+              state.accountId =
+                String(next.ctidTraderAccountId);
+
+              state.symbolId = null;
+              state.symbolName = null;
+              state.bid = null;
+              state.ask = null;
+              state.lastUpdate = null;
+
+              state.error =
+                "Account " +
+                state.accountId +
+                " disabled; trying another authorized FxPro account";
+
+              console.log(
+                "cTrader: trying next account",
+                state.accountId
+              );
+
+              send(ws, 2102, {
+                ctidTraderAccountId:
+                  Number(state.accountId),
+                accessToken:
+                  state.accessToken
+              });
+
+              return;
+            }
+          }
+
+          state.authorized = false;
+          state.error =
+            "cTrader " +
+            code +
+            ": " +
+            description;
+
+          if (!settled) {
+            settled = true;
+            reject(
+              new Error(state.error)
+            );
+          }
+
+          return;
+        }
+
         // ProtoOAAccountAuthRes
         if (msg.payloadType === 2103) {
+          state.authorized = true;
           state.accountId = String(payload.ctidTraderAccountId);
 
           console.log(
@@ -515,7 +629,7 @@ function registerCTrader(app) {
       lastUpdate: state.lastUpdate,
       error: state.error,
       autoTrading: process.env.AUTO_TRADING === "true",
-      paperTrading: process.env.PAPER_TRADING !== "false"
+      paperTrading: process.env.PAPER_TRADING === "true"
     });
   });
 }
@@ -535,7 +649,7 @@ function getCTraderStatus() {
     lastUpdate: state.lastUpdate,
     error: state.error,
     autoTrading: process.env.AUTO_TRADING === "true",
-    paperTrading: process.env.PAPER_TRADING !== "false"
+    paperTrading: process.env.PAPER_TRADING === "true"
   };
 }
 
