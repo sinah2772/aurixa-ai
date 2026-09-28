@@ -231,6 +231,12 @@ function connectOpenApi() {
         const msg = JSON.parse(raw);
         const payload = msg.payload || {};
 
+        console.log(
+          "cTrader RX:",
+          msg.payloadType,
+          JSON.stringify(payload).slice(0, 1200)
+        );
+
         // ProtoOAApplicationAuthRes
         if (msg.payloadType === 2101) {
           state.authorized = true;
@@ -269,6 +275,11 @@ function connectOpenApi() {
         if (msg.payloadType === 2103) {
           state.accountId = String(payload.ctidTraderAccountId);
 
+          console.log(
+            "cTrader: account authorized, requesting symbol list for",
+            state.accountId
+          );
+
           // ProtoOASymbolsListReq
           send(ws, 2114, {
             ctidTraderAccountId: Number(state.accountId),
@@ -280,7 +291,25 @@ function connectOpenApi() {
         // ProtoOASymbolsListRes
         if (msg.payloadType === 2115) {
           console.log("cTrader SYMBOLS RESPONSE:", JSON.stringify(payload));
-          const symbols = payload.symbol || [];
+          const symbols = Array.isArray(payload.symbol)
+            ? payload.symbol
+            : [];
+
+          console.log(
+            "cTrader: received",
+            symbols.length,
+            "symbols"
+          );
+
+          console.log(
+            "cTrader: first symbols:",
+            symbols
+              .slice(0, 20)
+              .map(s => ({
+                id: s.symbolId,
+                name: s.symbolName
+              }))
+          );
 
           const exact = symbols.find(
             s => String(s.symbolName || "").toUpperCase() === "XAUUSD"
@@ -293,7 +322,15 @@ function connectOpenApi() {
           const symbol = exact || fallback;
 
           if (!symbol) {
-            throw new Error("XAUUSD was not found on the authorized cTrader account");
+            const available = symbols
+              .map(s => String(s.symbolName || ""))
+              .filter(Boolean)
+              .slice(0, 100);
+
+            throw new Error(
+              "XAUUSD was not found. Available symbols: " +
+              available.join(", ")
+            );
           }
 
           state.symbolId = Number(symbol.symbolId);
