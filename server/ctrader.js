@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
 const state = {
   accessToken: null,
@@ -39,6 +41,73 @@ function send(ws, payloadType, payload = {}) {
   }));
 }
 
+
+const TOKEN_FILE = path.join(__dirname, "..", ".ctrader-tokens.json");
+
+function saveTokens() {
+  if (!state.refreshToken) return;
+
+  fs.writeFileSync(
+    TOKEN_FILE,
+    JSON.stringify({
+      accessToken: state.accessToken,
+      refreshToken: state.refreshToken,
+      expiresAt: state.expiresAt
+    }),
+    { mode: 0o600 }
+  );
+}
+
+function loadTokens() {
+  try {
+    const data = JSON.parse(fs.readFileSync(TOKEN_FILE, "utf8"));
+
+    if (data.refreshToken) {
+      state.accessToken = data.accessToken || null;
+      state.refreshToken = data.refreshToken;
+      state.expiresAt = Number(data.expiresAt || 0);
+      return true;
+    }
+  } catch {}
+
+  return false;
+}
+
+async function refreshAccessToken() {
+  if (!state.refreshToken) return false;
+
+  const url = new URL("https://openapi.ctrader.com/apps/token");
+
+  url.searchParams.set("grant_type", "refresh_token");
+  url.searchParams.set("refresh_token", state.refreshToken);
+  url.searchParams.set("client_id", CLIENT_ID);
+  url.searchParams.set("client_secret", CLIENT_SECRET);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { Accept: "application/json" }
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || data.errorCode || !data.accessToken) {
+    throw new Error(
+      data.description ||
+      data.errorCode ||
+      "Token refresh failed"
+    );
+  }
+
+  state.accessToken = data.accessToken;
+  state.refreshToken = data.refreshToken || state.refreshToken;
+  state.expiresAt =
+    Date.now() + Number(data.expiresIn || 0) * 1000;
+
+  saveTokens();
+
+  return true;
+}
+
 async function exchangeCode(code) {
   const url = new URL("https://openapi.ctrader.com/apps/token");
 
@@ -68,6 +137,7 @@ async function exchangeCode(code) {
   state.accessToken = data.accessToken;
   state.refreshToken = data.refreshToken || null;
   state.expiresAt = Date.now() + Number(data.expiresIn || 0) * 1000;
+  saveTokens();
 
   return data;
 }
@@ -84,7 +154,19 @@ function connectOpenApi() {
       );
     }
 
-    const ws = new WebSocket("wss://live.ctraderapi.com:5036");
+    const isLive =
+      state.account?.isLive === true ||
+      String(state.accountId) === "18333577";
+
+    const host = isLive
+      ? "live.ctraderapi.com"
+      : "demo.ctraderapi.com";
+
+    console.log(
+      `cTrader: connecting to ${host} for account ${state.accountId || "unknown"}`
+    );
+
+    const ws = new WebSocket(`wss://${host}:5036`);
     state.ws = ws;
 
     let settled = false;
@@ -123,6 +205,20 @@ function connectOpenApi() {
       state.connected = false;
       state.authorized = false;
       state.ws = null;
+
+      console.log(
+        "cTrader WebSocket closed; reconnecting in 5 seconds..."
+      );
+
+      setTimeout(() => {
+        restoreCTraderSession().catch(err => {
+          state.error = safeError(err);
+          console.error(
+            "cTrader reconnect failed:",
+            err.message
+          );
+        });
+      }, 5000);
     });
 
     ws.addEventListener("message", async event => {
@@ -183,6 +279,7 @@ function connectOpenApi() {
 
         // ProtoOASymbolsListRes
         if (msg.payloadType === 2115) {
+          console.log("cTrader SYMBOLS RESPONSE:", JSON.stringify(payload));
           const symbols = payload.symbol || [];
 
           const exact = symbols.find(
@@ -251,7 +348,36 @@ function connectOpenApi() {
   });
 }
 
+
+async function restoreCTraderSession() {
+  loadTokens();
+
+  if (!state.accessToken) {
+    console.log("cTrader: no saved OAuth token; authorization required");
+    return;
+  }
+
+  try {
+    if (!state.expiresAt || Date.now() >= state.expiresAt - 60000) {
+      if (!state.refreshToken) {
+        console.log("cTrader: saved access token expired and no refresh token");
+        return;
+      }
+      console.log("cTrader: refreshing saved OAuth token...");
+      await refreshAccessToken();
+    }
+
+    console.log("cTrader: restoring saved session...");
+    connectOpenApi();
+  } catch (err) {
+    state.error = err.message;
+    console.error("cTrader session restore failed:", err.message);
+  }
+}
+
 function registerCTrader(app) {
+  setTimeout(() => restoreCTraderSession(), 500);
+
   app.get("/auth/login", (req, res) => {
     if (!CLIENT_ID || !CLIENT_SECRET) {
       return res.status(500).send("cTrader credentials are not configured.");
@@ -357,6 +483,26 @@ function registerCTrader(app) {
   });
 }
 
+function getCTraderStatus() {
+  return {
+    configured: Boolean(CLIENT_ID && CLIENT_SECRET),
+    connected: state.connected,
+    authorized: state.authorized,
+    accountId: state.accountId,
+    account: state.account ? { ctidTraderAccountId: state.account.ctidTraderAccountId, traderLogin: state.account.traderLogin, brokerTitleShort: state.account.brokerTitleShort, isLive: state.account.isLive } : null,
+    symbol: state.symbolName,
+    symbolId: state.symbolId,
+    bid: state.bid,
+    ask: state.ask,
+    mid: state.bid !== null && state.ask !== null ? (state.bid + state.ask) / 2 : null,
+    lastUpdate: state.lastUpdate,
+    error: state.error,
+    autoTrading: process.env.AUTO_TRADING === "true",
+    paperTrading: process.env.PAPER_TRADING !== "false"
+  };
+}
+
 module.exports = {
-  registerCTrader
+  registerCTrader,
+  getCTraderStatus
 };
