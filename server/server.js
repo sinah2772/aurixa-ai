@@ -17,6 +17,61 @@ let lastPrice = null;
 let liveConnected = false;
 let lastUpdate = null;
 
+// AURIXA live 5-minute candle engine.
+// Candles are built from the authenticated cTrader mid-price stream.
+// This does not place trades and does not modify cTrader authentication.
+const AURIXA_TIMEFRAME_MS = 5 * 60 * 1000;
+let liveCandle = null;
+let lastCandleBucket = null;
+
+function updateLiveCandle(price, timestamp = Date.now()) {
+  if (!Number.isFinite(price) || price <= 0) return;
+
+  const bucket = Math.floor(timestamp / AURIXA_TIMEFRAME_MS) * AURIXA_TIMEFRAME_MS;
+
+  if (!liveCandle || lastCandleBucket !== bucket) {
+    if (liveCandle) {
+      candles.push(liveCandle);
+      if (candles.length > 500) candles.shift();
+    }
+
+    liveCandle = {
+      time: bucket,
+      open: price,
+      high: price,
+      low: price,
+      close: price
+    };
+
+    lastCandleBucket = bucket;
+  } else {
+    liveCandle.high = Math.max(liveCandle.high, price);
+    liveCandle.low = Math.min(liveCandle.low, price);
+    liveCandle.close = price;
+  }
+
+  lastPrice = price;
+  lastUpdate = new Date(timestamp).toISOString();
+}
+
+function syncLiveMarket() {
+  const ct = getCTraderStatus();
+
+  if (
+    ct.mid !== null &&
+    ct.mid !== undefined &&
+    Number.isFinite(Number(ct.mid))
+  ) {
+    const timestamp = ct.lastUpdate
+      ? Date.parse(ct.lastUpdate)
+      : Date.now();
+
+    updateLiveCandle(Number(ct.mid), Number.isFinite(timestamp) ? timestamp : Date.now());
+  }
+
+  liveConnected = Boolean(ct.connected && ct.authorized);
+}
+
 function ema(values, period) {
   if (values.length < period) return null;
 
@@ -264,13 +319,24 @@ app.get("/api/simulation", (req, res) => {
 
 app.get("/api/market",(req,res)=>{
   const ct = getCTraderStatus();
+
+  // Update the live 5-minute candle from the current authenticated price.
+  syncLiveMarket();
+
+  const p = prediction();
+
+  const outputCandles = liveCandle
+    ? [...candles, liveCandle].slice(-100)
+    : candles.slice(-100);
+
   res.json({
     symbol: ct.symbol || "XAUUSD",
+    timeframe: "5m",
     price: ct.mid,
     bid: ct.bid,
     ask: ct.ask,
-    candles: [],
-    prediction: null,
+    candles: outputCandles,
+    prediction: p,
     liveConnected: ct.connected && ct.authorized,
     authorized: ct.authorized,
     accountId: ct.accountId,
@@ -278,7 +344,13 @@ app.get("/api/market",(req,res)=>{
     lastUpdate: ct.lastUpdate,
     error: ct.error,
     autoTrading: ct.autoTrading,
-    paperTrading: ct.paperTrading
+    paperTrading: ct.paperTrading,
+    aurixa: {
+      engine: "AURIXA",
+      mode: "LIVE_MARKET_ANALYSIS",
+      tradingEnabled: false,
+      candleCount: outputCandles.length
+    }
   });
 });
 

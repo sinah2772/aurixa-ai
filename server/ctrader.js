@@ -2,6 +2,31 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
+let marketEngine = null;
+
+function setMarketEngine(engine) {
+  marketEngine = engine;
+}
+
+function notifyMarket(method, value, extra) {
+  try {
+    if (
+      marketEngine &&
+      typeof marketEngine[method] === "function"
+    ) {
+      marketEngine[method](
+        value,
+        extra
+      );
+    }
+  } catch (err) {
+    console.error(
+      "M5 market engine error:",
+      err.message
+    );
+  }
+}
+
 const state = {
   accessToken: null,
   refreshToken: null,
@@ -494,10 +519,27 @@ function connectOpenApi() {
             subscribeToSpotTimestamp: true
           });
 
+          // ProtoOAGetTrendbarsReq
+          // Request historical XAUUSD M5 candles.
+          const now = Date.now();
+          const from = now - (7 * 24 * 60 * 60 * 1000);
+
+          send(ws, 2137, {
+            ctidTraderAccountId: Number(state.accountId),
+            symbolId: Number(state.symbolId),
+            period: 5,
+            count: 300,
+            fromTimestamp: from,
+            toTimestamp: now
+          });
+
+          // Resolve connection once the symbol and
+          // live spot stream are established.
           if (!settled) {
             settled = true;
             resolve();
           }
+
           return;
         }
 
