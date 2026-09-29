@@ -655,15 +655,21 @@ function connectOpenApi() {
 
         // ProtoOAGetTrendbarsRes
         // Historical XAUUSD M5 candles.
-        if (msg.payloadType === 2138) {
+        if (Number(msg.payloadType) === 2138) {
           const bars = Array.isArray(payload.trendbar)
             ? payload.trendbar
             : [];
 
           console.log(
-            "cTrader: historical M5 response received:",
-            bars.length,
-            "bars"
+            "AURIXA_HISTORICAL_M5:",
+            JSON.stringify({
+              payloadType: Number(msg.payloadType),
+              payloadKeys: Object.keys(payload),
+              barCount: bars.length,
+              firstBarKeys: bars.length
+                ? Object.keys(bars[0])
+                : []
+            })
           );
 
           if (bars.length) {
