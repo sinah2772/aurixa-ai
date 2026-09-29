@@ -666,6 +666,18 @@ function connectOpenApi() {
             "bars"
           );
 
+          if (bars.length) {
+            console.log(
+              "cTrader: historical payload fields:",
+              Object.keys(payload)
+            );
+
+            console.log(
+              "cTrader: historical trendbar fields:",
+              Object.keys(bars[0])
+            );
+          }
+
           feedHistoricalTrendbars(bars);
           return;
         }
