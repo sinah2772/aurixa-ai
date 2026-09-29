@@ -4,7 +4,9 @@ const path = require("path");
 require("dotenv").config();
 
 const app = express();
-const { registerCTrader, getCTraderStatus } = require("./ctrader");
+const { registerCTrader, getCTraderStatus, setMarketEngine } = require("./ctrader");
+const marketEngine = require("./market-engine");
+setMarketEngine(marketEngine);
 registerCTrader(app);
 const PORT = Number(process.env.PORT || 8787);
 
@@ -319,40 +321,50 @@ app.get("/api/simulation", (req, res) => {
 
 app.get("/api/market",(req,res)=>{
   const ct = getCTraderStatus();
-
-  // Update the live 5-minute candle from the current authenticated price.
-  syncLiveMarket();
-
-  const p = prediction();
-
-  const outputCandles = liveCandle
-    ? [...candles, liveCandle].slice(-100)
-    : candles.slice(-100);
+  const state = marketEngine.getState();
+  const prediction = state.prediction || {};
 
   res.json({
     symbol: ct.symbol || "XAUUSD",
     timeframe: "5m",
-    price: ct.mid,
-    bid: ct.bid,
-    ask: ct.ask,
-    candles: outputCandles,
-    prediction: p,
-    liveConnected: ct.connected && ct.authorized,
-    authorized: ct.authorized,
-    accountId: ct.accountId,
-    symbolId: ct.symbolId,
-    lastUpdate: ct.lastUpdate,
-    error: ct.error,
-    autoTrading: ct.autoTrading,
-    paperTrading: ct.paperTrading,
+
+    price: ct.mid ?? state.spotPrice ?? null,
+    bid: ct.bid ?? null,
+    ask: ct.ask ?? null,
+
+    candles: state.candles || [],
+
+    prediction: {
+      signal: prediction.signal || "WAIT",
+      confidence: prediction.confidence ?? 0,
+      reason: prediction.reason || "Waiting for enough M5 data",
+      dataReady: prediction.dataReady ?? false,
+      ema9: prediction.ema9 ?? null,
+      ema21: prediction.ema21 ?? null,
+      ema50: prediction.ema50 ?? null,
+      rsi: prediction.rsi ?? null,
+      atr: prediction.atr ?? null,
+      score: prediction.score ?? 0
+    },
+
+    liveConnected: !!(ct.connected && ct.authorized),
+    authorized: !!ct.authorized,
+    accountId: ct.accountId ?? null,
+    symbolId: ct.symbolId ?? null,
+    lastUpdate: ct.lastUpdate ?? null,
+    error: ct.error ?? null,
+
+    autoTrading: false,
+    paperTrading: true,
+
     aurixa: {
       engine: "AURIXA",
       mode: "LIVE_MARKET_ANALYSIS",
       tradingEnabled: false,
-      candleCount: outputCandles.length
+      candleCount: state.candleCount || 0
     }
   });
-});
+});;
 
 
 app.use((req,res)=>{
