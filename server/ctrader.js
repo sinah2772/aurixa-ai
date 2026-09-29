@@ -359,30 +359,8 @@ function connectOpenApi() {
         const msg = JSON.parse(raw);
         const payload = msg.payload || {};
 
-        const safePayloadObject = JSON.parse(
-          JSON.stringify(payload)
-        );
-
-        for (const key of [
-          "accessToken",
-          "refreshToken",
-          "clientSecret",
-          "clientId"
-        ]) {
-          if (safePayloadObject[key]) {
-            safePayloadObject[key] = "[redacted]";
-          }
-        }
-
-        const safePayload = JSON.stringify(
-          safePayloadObject
-        );
-
-        console.log(
-          "cTrader RX:",
-          msg.payloadType,
-          safePayload.slice(0, 1200)
-        );
+        // Never dump complete cTrader payloads in production logs.
+        const payloadType = Number(msg.payloadType);
 
         // ProtoOAApplicationAuthRes
         if (msg.payloadType === 2101) {
@@ -635,11 +613,17 @@ function connectOpenApi() {
           // wide historical time range.
           const now = Date.now();
 
+          // Use a bounded historical window.
+          // Two days provides more than 300 M5 candles.
+          const fromTimestamp =
+            now - (2 * 24 * 60 * 60 * 1000);
+
           const historicalRequest = {
             ctidTraderAccountId: Number(state.accountId),
             symbolId: Number(state.symbolId),
             period: 5,
             count: 300,
+            fromTimestamp,
             toTimestamp: now
           };
 
@@ -669,7 +653,7 @@ function connectOpenApi() {
 
         // ProtoOAGetTrendbarsRes
         // Historical XAUUSD M5 candles.
-        if (Number(msg.payloadType) === 2138) {
+        if (payloadType === 2138) {
           const bars = Array.isArray(payload.trendbar)
             ? payload.trendbar
             : [];
