@@ -556,7 +556,7 @@ async function restoreCTraderSession() {
     }
 
     console.log("cTrader: restoring saved session...");
-    connectOpenApi();
+    await connectOpenApi();
   } catch (err) {
     state.error = err.message;
     console.error("cTrader session restore failed:", err.message);
