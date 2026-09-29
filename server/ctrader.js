@@ -568,7 +568,7 @@ function connectOpenApi() {
 
         // ProtoOASymbolsListRes
         if (msg.payloadType === 2115) {
-          console.log("cTrader SYMBOLS RESPONSE:", JSON.stringify(payload));
+          // Production: do not log full symbol response.
           const symbols = Array.isArray(payload.symbol)
             ? payload.symbol
             : [];
