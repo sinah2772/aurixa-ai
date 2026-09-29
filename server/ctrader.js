@@ -621,6 +621,14 @@ function connectOpenApi() {
             subscribeToSpotTimestamp: true
           });
 
+          // ProtoOASubscribeLiveTrendbarReq
+          // Subscribe to live XAUUSD M5 candles.
+          send(ws, 2135, {
+            ctidTraderAccountId: Number(state.accountId),
+            symbolId: Number(state.symbolId),
+            period: 5
+          });
+
           // ProtoOAGetTrendbarsReq
           // Request historical XAUUSD M5 candles.
           const now = Date.now();
@@ -642,6 +650,23 @@ function connectOpenApi() {
             resolve();
           }
 
+          return;
+        }
+
+        // ProtoOAGetTrendbarsRes
+        // Historical XAUUSD M5 candles.
+        if (msg.payloadType === 2138) {
+          const bars = Array.isArray(payload.trendbar)
+            ? payload.trendbar
+            : [];
+
+          console.log(
+            "cTrader: historical M5 response received:",
+            bars.length,
+            "bars"
+          );
+
+          feedHistoricalTrendbars(bars);
           return;
         }
 
