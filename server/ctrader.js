@@ -630,16 +630,16 @@ function connectOpenApi() {
           });
 
           // ProtoOAGetTrendbarsReq
-          // Request historical XAUUSD M5 candles.
+          // Request the latest 300 XAUUSD M5 candles.
+          // Using toTimestamp + count avoids an unnecessarily
+          // wide historical time range.
           const now = Date.now();
-          const from = now - (7 * 24 * 60 * 60 * 1000);
 
           send(ws, 2137, {
             ctidTraderAccountId: Number(state.accountId),
             symbolId: Number(state.symbolId),
             period: 5,
             count: 300,
-            fromTimestamp: from,
             toTimestamp: now
           });
 
