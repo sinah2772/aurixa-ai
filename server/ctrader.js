@@ -635,13 +635,27 @@ function connectOpenApi() {
           // wide historical time range.
           const now = Date.now();
 
-          send(ws, 2137, {
+          const historicalRequest = {
             ctidTraderAccountId: Number(state.accountId),
             symbolId: Number(state.symbolId),
             period: 5,
             count: 300,
             toTimestamp: now
-          });
+          };
+
+          console.log(
+            "AURIXA_HISTORICAL_REQUEST:",
+            JSON.stringify({
+              payloadType: 2137,
+              accountId: historicalRequest.ctidTraderAccountId,
+              symbolId: historicalRequest.symbolId,
+              period: historicalRequest.period,
+              count: historicalRequest.count,
+              toTimestamp: historicalRequest.toTimestamp
+            })
+          );
+
+          send(ws, 2137, historicalRequest);
 
           // Resolve connection once the symbol and
           // live spot stream are established.
