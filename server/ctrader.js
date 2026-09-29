@@ -205,25 +205,58 @@ function trendbarToCandle(bar) {
 }
 
 function feedHistoricalTrendbars(bars) {
-  if (!marketEngine || !Array.isArray(bars)) return;
+  if (!marketEngine || !Array.isArray(bars)) {
+    console.warn("cTrader: historical M5 bars unavailable");
+    return;
+  }
+
+  console.log(
+    "cTrader: received historical M5 bars:",
+    bars.length
+  );
 
   const candles = bars
     .map(trendbarToCandle)
     .filter(Boolean)
     .sort((a, b) => Number(a.time) - Number(b.time));
 
+  console.log(
+    "cTrader: converted historical M5 candles:",
+    candles.length
+  );
+
   if (!candles.length) {
-    console.warn("cTrader: historical M5 response contained no valid candles");
+    console.warn(
+      "cTrader: historical M5 response contained no valid candles"
+    );
     return;
   }
 
+  const unique = [];
+  const seen = new Set();
+
+  for (const candle of candles) {
+    const key = String(candle.time);
+
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    unique.push(candle);
+  }
+
   console.log(
-    "cTrader: feeding",
-    candles.length,
-    "historical M5 candles into market engine"
+    "cTrader: feeding unique historical M5 candles:",
+    unique.length
   );
 
-  marketEngine.setHistoricalCandles(candles);
+  marketEngine.setHistoricalCandles(unique);
+
+  const state = marketEngine.getState();
+
+  console.log(
+    "cTrader: market engine candle count after historical load:",
+    state.candleCount
+  );
 }
 
 function feedLiveTrendbars(bars) {
