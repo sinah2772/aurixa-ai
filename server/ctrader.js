@@ -169,6 +169,75 @@ async function exchangeCode(code) {
   return data;
 }
 
+
+function trendbarToCandle(bar) {
+  if (!bar) return null;
+
+  const lowRaw = Number(bar.low);
+  const deltaOpen = Number(bar.deltaOpen || 0);
+  const deltaClose = Number(bar.deltaClose || 0);
+  const deltaHigh = Number(bar.deltaHigh || 0);
+
+  if (!Number.isFinite(lowRaw)) return null;
+
+  const scale = 100000;
+
+  const low = lowRaw / scale;
+  const open = (lowRaw + deltaOpen) / scale;
+  const close = (lowRaw + deltaClose) / scale;
+  const high = (lowRaw + deltaHigh) / scale;
+
+  const minute = Number(bar.utcTimestampInMinutes);
+
+  if (!Number.isFinite(minute)) return null;
+
+  return {
+    time: minute,
+    open,
+    high,
+    low,
+    close,
+    volume:
+      bar.volume == null
+        ? null
+        : Number(bar.volume)
+  };
+}
+
+function feedHistoricalTrendbars(bars) {
+  if (!marketEngine || !Array.isArray(bars)) return;
+
+  const candles = bars
+    .map(trendbarToCandle)
+    .filter(Boolean)
+    .sort((a, b) => Number(a.time) - Number(b.time));
+
+  if (!candles.length) {
+    console.warn("cTrader: historical M5 response contained no valid candles");
+    return;
+  }
+
+  console.log(
+    "cTrader: feeding",
+    candles.length,
+    "historical M5 candles into market engine"
+  );
+
+  marketEngine.setHistoricalCandles(candles);
+}
+
+function feedLiveTrendbars(bars) {
+  if (!marketEngine || !Array.isArray(bars)) return;
+
+  for (const bar of bars) {
+    const candle = trendbarToCandle(bar);
+
+    if (!candle) continue;
+
+    marketEngine.updateLiveCandle(candle);
+  }
+}
+
 function connectOpenApi() {
   return new Promise((resolve, reject) => {
     if (state.ws && state.ws.readyState === 1) {
@@ -707,8 +776,8 @@ function registerCTrader(app) {
           : null,
       lastUpdate: state.lastUpdate,
       error: state.error,
-      autoTrading: process.env.AUTO_TRADING === "true",
-      paperTrading: process.env.PAPER_TRADING === "true"
+      autoTrading: false,
+      paperTrading: true
     });
   });
 }
@@ -727,12 +796,13 @@ function getCTraderStatus() {
     mid: state.bid !== null && state.ask !== null ? (state.bid + state.ask) / 2 : null,
     lastUpdate: state.lastUpdate,
     error: state.error,
-    autoTrading: process.env.AUTO_TRADING === "true",
-    paperTrading: process.env.PAPER_TRADING === "true"
+    autoTrading: false,
+    paperTrading: true
   };
 }
 
 module.exports = {
   registerCTrader,
-  getCTraderStatus
+  getCTraderStatus,
+  setMarketEngine
 };
