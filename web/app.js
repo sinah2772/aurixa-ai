@@ -2,6 +2,7 @@
   "use strict";
 
   const API_MARKET = "/api/market";
+  const API_HEALTH = "/api/system/health";
   const POLL_MS = 3000;
   const MAX_CANDLES = 100;
 
@@ -316,6 +317,112 @@
       "tradingSafety",
       "AURIXA AI will not place real trades."
     );
+  }
+
+
+  function updateDatabaseHealth(data) {
+    const db = (data && data.database) || {};
+
+    const connected =
+      db.connected === true &&
+      db.status === "HEALTHY";
+
+    setText(
+      "databaseStatus",
+      connected ? "CONNECTED" : (db.status || "ERROR")
+    );
+
+    setText(
+      "databaseDetail",
+      db.detail || "Live health check"
+    );
+
+    setText(
+      "databaseProvider",
+      String(db.provider || "postgresql").toUpperCase()
+    );
+
+    setText(
+      "databaseSchema",
+      db.schema || "aurixa"
+    );
+
+    setText(
+      "databaseTable",
+      db.table || "ctrader_tokens"
+    );
+
+    setText(
+      "databaseToken",
+      db.tokenStored === true
+        ? "STORED"
+        : "NOT STORED"
+    );
+
+    setText(
+      "databaseLatency",
+      Number.isFinite(Number(db.latencyMs))
+        ? String(Number(db.latencyMs)) + " ms"
+        : "—"
+    );
+
+    if (db.checkedAt) {
+      const date = new Date(db.checkedAt);
+
+      setText(
+        "databaseChecked",
+        Number.isNaN(date.getTime())
+          ? "—"
+          : date.toLocaleTimeString()
+      );
+    }
+
+    const dot = $("databaseDot");
+
+    if (dot) {
+      dot.classList.toggle(
+        "connected",
+        connected
+      );
+
+      dot.classList.toggle(
+        "disconnected",
+        !connected
+      );
+    }
+  }
+
+  async function fetchDatabaseHealth() {
+    try {
+      const response = await fetch(
+        API_HEALTH + "?_=" + Date.now(),
+        {
+          cache: "no-store",
+          headers: {
+            Accept: "application/json"
+          }
+        }
+      );
+
+      const data = await response.json();
+
+      updateDatabaseHealth(data);
+
+    } catch (error) {
+
+      console.error(
+        "AURIXA database health check failed:",
+        error
+      );
+
+      updateDatabaseHealth({
+        database: {
+          status: "ERROR",
+          connected: false,
+          detail: error.message
+        }
+      });
+    }
   }
 
   function formatTime(value) {
@@ -669,10 +776,16 @@
     bindEvents();
 
     fetchMarket();
+    fetchDatabaseHealth();
 
     setInterval(
       fetchMarket,
       POLL_MS
+    );
+
+    setInterval(
+      fetchDatabaseHealth,
+      10000
     );
   }
 

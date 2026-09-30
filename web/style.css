@@ -858,3 +858,106 @@ footer {
   }
 }
 
+
+
+/* ================================
+   DATABASE HEALTH
+   ================================ */
+
+.database-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.database-logo {
+  width: 35px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(84,168,255,.1);
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.database-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  margin-top: 18px;
+}
+
+.database-status strong {
+  font-size: 12px;
+}
+
+.database-status span {
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+}
+
+.database-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.database-grid > div {
+  padding: 13px;
+  background: rgba(255,255,255,.025);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.database-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+
+.database-grid strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.database-security {
+  margin: 13px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+@media (min-width: 800px) {
+  .database-card {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .database-card {
+    padding: 17px;
+    border-radius: 17px;
+  }
+
+  .database-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .database-status {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .database-status span {
+    text-align: left;
+  }
+}

@@ -4,7 +4,12 @@ const path = require("path");
 require("dotenv").config();
 
 const app = express();
-const { registerCTrader, getCTraderStatus, setMarketEngine } = require("./ctrader");
+const {
+  registerCTrader,
+  getCTraderStatus,
+  setMarketEngine,
+  getDatabaseHealth
+} = require("./ctrader");
 const marketEngine = require("./market-engine");
 const { backtest } = require("./validation");
 setMarketEngine(marketEngine);
@@ -198,6 +203,40 @@ function prediction() {
     timestamp:new Date().toISOString()
   };
 }
+
+
+app.get("/api/system/health", async (req, res) => {
+  const started = Date.now();
+
+  try {
+    const database = await getDatabaseHealth();
+    const ct = getCTraderStatus();
+
+    res.status(database.connected ? 200 : 503).json({
+      ok: database.connected,
+      service: "AURIXA AI",
+      environment: process.env.NODE_ENV || "production",
+      database,
+      ctrader: {
+        connected: ct.connected,
+        authorized: ct.authorized
+      },
+      latencyMs: Date.now() - started,
+      checkedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      service: "AURIXA AI",
+      database: {
+        status: "ERROR",
+        connected: false,
+        detail: String(err.message || err)
+      },
+      checkedAt: new Date().toISOString()
+    });
+  }
+});
 
 app.get("/api/health",(req,res)=>{
   res.json({

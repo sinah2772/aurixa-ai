@@ -848,6 +848,64 @@ async function restoreCTraderSession() {
   }
 }
 
+
+async function getDatabaseHealth() {
+  const checkedAt = new Date().toISOString();
+
+  if (!dbPool) {
+    return {
+      status: "NOT_CONFIGURED",
+      connected: false,
+      provider: "postgresql",
+      schema: "aurixa",
+      table: "ctrader_tokens",
+      tokenStored: false,
+      latencyMs: null,
+      checkedAt,
+      detail: "Database URL is not configured"
+    };
+  }
+
+  const started = Date.now();
+
+  try {
+    const result = await dbPool.query(
+      "SELECT " +
+      "EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'aurixa') AS schema_exists, " +
+      "EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'aurixa' AND table_name = 'ctrader_tokens') AS table_exists, " +
+      "EXISTS (SELECT 1 FROM aurixa.ctrader_tokens WHERE id = 1) AS token_stored"
+    );
+
+    const row = result.rows[0] || {};
+
+    return {
+      status: "HEALTHY",
+      connected: true,
+      provider: "postgresql",
+      schema: "aurixa",
+      table: "ctrader_tokens",
+      schemaReady: row.schema_exists === true,
+      tableReady: row.table_exists === true,
+      tokenStored: row.token_stored === true,
+      latencyMs: Date.now() - started,
+      checkedAt,
+      detail: "Live PostgreSQL health check passed"
+    };
+  } catch (err) {
+    return {
+      status: "ERROR",
+      connected: false,
+      provider: "postgresql",
+      schema: "aurixa",
+      table: "ctrader_tokens",
+      tokenStored: false,
+      latencyMs: Date.now() - started,
+      checkedAt,
+      detail: safeError(err)
+    };
+  }
+}
+
 function registerCTrader(app) {
   setTimeout(() => restoreCTraderSession(), 500);
 
@@ -978,5 +1036,6 @@ function getCTraderStatus() {
 module.exports = {
   registerCTrader,
   getCTraderStatus,
-  setMarketEngine
+  setMarketEngine,
+  getDatabaseHealth
 };
