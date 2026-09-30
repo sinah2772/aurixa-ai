@@ -773,59 +773,81 @@ function calculatePrediction(candles) {
      CONFIDENCE
      ------------------------------------------------------------ */
 
-  let confidence = 45;
+  /*
+ * V4.1 CONSERVATIVE CONFIDENCE
+ *
+ * Confidence is a model-strength indicator, NOT
+ * a probability of being correct.
+ *
+ * V4 validation showed that the previous 90-94%
+ * confidence range was substantially over-calibrated.
+ *
+ * Therefore V4.1:
+ * - reduces score amplification
+ * - rewards directional agreement
+ * - penalizes abnormal volatility
+ * - penalizes extreme RSI
+ * - caps directional confidence at 79
+ * - keeps WAIT below directional confidence
+ */
+let confidence = 45;
 
-  if (signal !== "WAIT") {
-    confidence =
-      52 +
-      Math.min(
-        38,
-        absScore * 3 +
-        directionalGap * 2
-      );
+if (signal !== "WAIT") {
+  const scoreComponent = Math.min(16, absScore * 2);
+  const agreementComponent = Math.min(10, directionalGap * 2);
 
-    /*
-     * Don't present extreme confidence during
-     * abnormal volatility.
-     */
-    if (volatilityState === "high") {
-      confidence -= 8;
-    }
+  confidence =
+    50 +
+    scoreComponent +
+    agreementComponent;
 
-    /*
-     * A very strong RSI is a warning against
-     * chasing the move.
-     */
-    if (
-      signal === "BUY" &&
-      r > 76
-    ) {
-      confidence -= 12;
-    }
-
-    if (
-      signal === "SELL" &&
-      r < 24
-    ) {
-      confidence -= 12;
-    }
-
-    confidence =
-      Math.max(
-        50,
-        Math.min(
-          94,
-          confidence
-        )
-      );
-  } else {
-    confidence =
-      Math.min(
-        68,
-        42 +
-        absScore * 3
-      );
+  /*
+   * High volatility makes directional predictions
+   * less reliable.
+   */
+  if (volatilityState === "high") {
+    confidence -= 8;
   }
+
+  /*
+   * Extreme RSI means the move may already be
+   * extended, so reduce confidence.
+   */
+  if (
+    signal === "BUY" &&
+    r > 76
+  ) {
+    confidence -= 8;
+  }
+
+  if (
+    signal === "SELL" &&
+    r < 24
+  ) {
+    confidence -= 8;
+  }
+
+  /*
+   * Prevent the UI from presenting an inflated
+   * probability-like number.
+   *
+   * Maximum displayed directional confidence: 79.
+   */
+  confidence = Math.max(
+    50,
+    Math.min(79, confidence)
+  );
+} else {
+  /*
+   * WAIT is intentionally kept below directional
+   * confidence because the engine has not found
+   * enough agreement for a directional signal.
+   */
+  confidence = Math.min(
+    62,
+    42 + Math.min(20, absScore * 2)
+  );
+}
 
 
   /* ------------------------------------------------------------

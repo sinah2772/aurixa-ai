@@ -1033,9 +1033,18 @@ function getCTraderStatus() {
   };
 }
 
+async function queryDatabase(text, params = []) {
+  if (!dbPool) {
+    throw new Error("Database URL is not configured");
+  }
+
+  return dbPool.query(text, params);
+}
+
 module.exports = {
   registerCTrader,
   getCTraderStatus,
   setMarketEngine,
-  getDatabaseHealth
+  getDatabaseHealth,
+  queryDatabase
 };

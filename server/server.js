@@ -8,11 +8,26 @@ const {
   registerCTrader,
   getCTraderStatus,
   setMarketEngine,
-  getDatabaseHealth
+  getDatabaseHealth,
+  queryDatabase
 } = require("./ctrader");
+
+const signalTracker = require("./signal-tracker");
 const marketEngine = require("./market-engine");
 const { backtest } = require("./validation");
 setMarketEngine(marketEngine);
+
+signalTracker.configure({
+  query: queryDatabase,
+  getState: () => {
+    const state = marketEngine.getState();
+
+    return {
+      ...state,
+      predictionEngine: marketEngine.calculatePrediction
+    };
+  }
+});
 registerCTrader(app);
 const PORT = Number(process.env.PORT || 8787);
 
@@ -382,6 +397,43 @@ app.get("/api/validation",(req,res)=>{
   }
 });
 
+
+/* ============================================================
+   AURIXA SIGNAL TRACKING V1
+   ============================================================ */
+
+app.get("/api/signals/stats", async (req, res) => {
+  try {
+    const stats = await signalTracker.getStats();
+
+    res.json(stats);
+  } catch (err) {
+    console.error("Signal stats error:", err);
+
+    res.status(500).json({
+      ok: false,
+      error: "Signal statistics unavailable"
+    });
+  }
+});
+
+app.get("/api/signals/recent", async (req, res) => {
+  try {
+    const recent = await signalTracker.getRecent(
+      req.query.limit
+    );
+
+    res.json(recent);
+  } catch (err) {
+    console.error("Recent signals error:", err);
+
+    res.status(500).json({
+      ok: false,
+      error: "Signal history unavailable"
+    });
+  }
+});
+
 app.get("/api/market",(req,res)=>{
   const ct = getCTraderStatus();
   const state = marketEngine.getState();
@@ -453,5 +505,35 @@ app.listen(PORT,"0.0.0.0",async()=>{
   console.log(`Symbol: ${process.env.SYMBOL}`);
   console.log("Auto trading: DISABLED");
   console.log("Paper trading: ENABLED");
+  console.log("Signal tracking: ENABLED");
   console.log("======================================");
+
+  try {
+    await signalTracker.init();
+  } catch (err) {
+    console.error(
+      "AURIXA Signal Tracking initialization failed:",
+      err.message
+    );
+  }
+
+  setInterval(async () => {
+    try {
+      await signalTracker.trackLatestClosedSignal();
+    } catch (err) {
+      console.error(
+        "Signal tracking error:",
+        err.message
+      );
+    }
+
+    try {
+      await signalTracker.evaluatePending();
+    } catch (err) {
+      console.error(
+        "Signal evaluation error:",
+        err.message
+      );
+    }
+  }, signalTracker.getHorizonIntervalMs());
 });
