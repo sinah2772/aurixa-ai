@@ -745,3 +745,116 @@ footer {
     min-height: 300px;
   }
 }
+
+/* ================================
+   AURIXA V2 ADVANCED ANALYSIS
+   ================================ */
+
+.v2-analysis {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.v2-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 14px;
+}
+
+.v2-title h2 {
+  margin: 4px 0 0;
+  font-size: 15px;
+  letter-spacing: .02em;
+}
+
+.agreement-badge {
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.v2-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+}
+
+.v2-box {
+  background: rgba(255,255,255,.025);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 12px;
+}
+
+.v2-box span {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.v2-box strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.factor-bars {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.factor-row > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.factor-row strong {
+  color: var(--text);
+}
+
+.factor-meter {
+  height: 6px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(255,255,255,.07);
+}
+
+.factor-meter > div {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: var(--green);
+  transition: width .35s ease;
+}
+
+.factor-meter.bearish > div {
+  background: var(--red);
+}
+
+@media (max-width: 600px) {
+  .v2-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .v2-title {
+    align-items: flex-start;
+  }
+}
+

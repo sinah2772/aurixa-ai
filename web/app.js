@@ -25,6 +25,13 @@
     });
   }
 
+  function signedNumber(value, decimals = 4) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+
+    return `${n >= 0 ? "+" : ""}${n.toFixed(decimals)}%`;
+  }
+
   function normalizeSignal(signal) {
     const s = String(signal || "WAIT").toUpperCase();
 
@@ -72,9 +79,13 @@
     const p = data.prediction || {};
 
     const signal = normalizeSignal(p.signal);
+    const confidence = Math.max(
+      0,
+      Math.min(100, Number(p.confidence) || 0)
+    );
 
     setText("prediction", signal);
-    setText("confidence", `${Math.round(Number(p.confidence) || 0)}%`);
+    setText("confidence", `${Math.round(confidence)}%`);
 
     setText("ema9", number(p.ema9, 2));
     setText("ema21", number(p.ema21, 2));
@@ -96,11 +107,6 @@
     const meter = $("meterFill");
 
     if (meter) {
-      const confidence = Math.max(
-        0,
-        Math.min(100, Number(p.confidence) || 0)
-      );
-
       meter.style.width = `${confidence}%`;
     }
 
@@ -129,6 +135,81 @@
     if (buy) buy.classList.toggle("active", signal === "BUY");
     if (sell) sell.classList.toggle("active", signal === "SELL");
     if (neutral) neutral.classList.toggle("active", signal === "WAIT");
+
+    /* V2 fields */
+
+    setText("momentum3", signedNumber(p.momentum3, 4));
+    setText("momentum5", signedNumber(p.momentum5, 4));
+    setText("momentum8", signedNumber(p.momentum8, 4));
+
+    const slope = Number(p.slope);
+    setText(
+      "slope",
+      Number.isFinite(slope)
+        ? `${slope >= 0 ? "+" : ""}${slope.toFixed(4)}`
+        : "—"
+    );
+
+    const body = Number(p.bodyStrength);
+    setText(
+      "bodyStrength",
+      Number.isFinite(body)
+        ? `${body.toFixed(1)}%`
+        : "—"
+    );
+
+    setText(
+      "volatility",
+      String(p.volatility || "unknown").toUpperCase()
+    );
+
+    const breakout = Number(p.breakout);
+
+    let breakoutText = "NONE";
+
+    if (breakout > 0) breakoutText = "BULLISH";
+    if (breakout < 0) breakoutText = "BEARISH";
+
+    setText("breakout", breakoutText);
+
+    const bullish = Math.max(
+      0,
+      Math.min(8, Number(p.bullishFactors) || 0)
+    );
+
+    const bearish = Math.max(
+      0,
+      Math.min(8, Number(p.bearishFactors) || 0)
+    );
+
+    setText("bullishFactors", `${bullish} / 8`);
+    setText("bearishFactors", `${bearish} / 8`);
+
+    setText("bullishText", `${bullish} / 8`);
+    setText("bearishText", `${bearish} / 8`);
+
+    const bullishBar = $("bullishBar");
+    const bearishBar = $("bearishBar");
+
+    if (bullishBar) {
+      bullishBar.style.width = `${bullish * 12.5}%`;
+    }
+
+    if (bearishBar) {
+      bearishBar.style.width = `${bearish * 12.5}%`;
+    }
+
+    const agreement = $("v2Agreement");
+
+    if (agreement) {
+      if (bullish > bearish) {
+        agreement.textContent = `BULLISH ${bullish}/8`;
+      } else if (bearish > bullish) {
+        agreement.textContent = `BEARISH ${bearish}/8`;
+      } else {
+        agreement.textContent = "BALANCED";
+      }
+    }
   }
 
   function updateStatus(data) {
@@ -312,6 +393,7 @@
 
     const priceRange = max - min;
     const step = chartWidth / clean.length;
+
     const candleWidth = Math.max(
       2,
       Math.min(10, step * 0.65)
@@ -488,6 +570,13 @@
       data.timeframe || "5m"
     );
 
+    setText(
+      "chartInfo",
+      candles.length
+        ? `${candles.length} M5 candles`
+        : "Waiting for market data"
+    );
+
     if (data.error) {
       setText(
         "errorMessage",
@@ -495,6 +584,8 @@
           ? data.error
           : JSON.stringify(data.error)
       );
+    } else {
+      setText("errorMessage", "");
     }
 
     renderCandleChart(candles);
@@ -527,9 +618,20 @@
         error
       );
 
-      setText("systemStatus", "CONNECTION ERROR");
-      setText("dataStatus", "OFFLINE");
-      setText("errorMessage", error.message);
+      setText(
+        "systemStatus",
+        "CONNECTION ERROR"
+      );
+
+      setText(
+        "dataStatus",
+        "OFFLINE"
+      );
+
+      setText(
+        "errorMessage",
+        error.message
+      );
     }
   }
 
@@ -561,7 +663,7 @@
 
   function init() {
     console.log(
-      "AURIXA AI live dashboard initialized"
+      "AURIXA AI V2 live dashboard initialized"
     );
 
     bindEvents();
