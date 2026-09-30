@@ -6,6 +6,7 @@ require("dotenv").config();
 const app = express();
 const { registerCTrader, getCTraderStatus, setMarketEngine } = require("./ctrader");
 const marketEngine = require("./market-engine");
+const { backtest } = require("./validation");
 setMarketEngine(marketEngine);
 registerCTrader(app);
 const PORT = Number(process.env.PORT || 8787);
@@ -317,6 +318,29 @@ app.get("/api/simulation", (req, res) => {
     entry: simState.entry,
     pnl: Number(simState.pnl.toFixed(2))
   });
+});
+
+
+app.get("/api/validation",(req,res)=>{
+  try {
+    const state = marketEngine.getState();
+
+    const result = backtest(
+      state.candles || []
+    );
+
+    res.json({
+      ok: true,
+      autoTrading: false,
+      paperTrading: true,
+      ...result
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: String(err.message || err)
+    });
+  }
 });
 
 app.get("/api/market",(req,res)=>{
