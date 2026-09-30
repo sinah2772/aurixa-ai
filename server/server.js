@@ -339,12 +339,23 @@ app.get("/api/market",(req,res)=>{
       confidence: prediction.confidence ?? 0,
       reason: prediction.reason || "Waiting for enough M5 data",
       dataReady: prediction.dataReady ?? false,
+
       ema9: prediction.ema9 ?? null,
       ema21: prediction.ema21 ?? null,
       ema50: prediction.ema50 ?? null,
       rsi: prediction.rsi ?? null,
       atr: prediction.atr ?? null,
-      score: prediction.score ?? 0
+      score: prediction.score ?? 0,
+
+      momentum3: prediction.momentum3 ?? null,
+      momentum5: prediction.momentum5 ?? null,
+      momentum8: prediction.momentum8 ?? null,
+      slope: prediction.slope ?? null,
+      bodyStrength: prediction.bodyStrength ?? null,
+      volatility: prediction.volatility || "unknown",
+      breakout: prediction.breakout ?? 0,
+      bullishFactors: prediction.bullishFactors ?? 0,
+      bearishFactors: prediction.bearishFactors ?? 0
     },
 
     liveConnected: !!(ct.connected && ct.authorized),
@@ -364,8 +375,7 @@ app.get("/api/market",(req,res)=>{
       candleCount: state.candleCount || 0
     }
   });
-});;
-
+});
 
 app.use((req,res)=>{
   res.sendFile(path.join(__dirname,"..","web","index.html"));
