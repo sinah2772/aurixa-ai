@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { Pool } = require("pg");
 
 let marketEngine = null;
 
@@ -71,21 +72,119 @@ function send(ws, payloadType, payload = {}) {
 
 const TOKEN_FILE = path.join(__dirname, "..", ".ctrader-tokens.json");
 
-function saveTokens() {
-  if (!state.refreshToken) return;
+const DATABASE_URL =
+  process.env.AURIXA_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  "";
 
-  fs.writeFileSync(
-    TOKEN_FILE,
-    JSON.stringify({
-      accessToken: state.accessToken,
-      refreshToken: state.refreshToken,
-      expiresAt: state.expiresAt
-    }),
-    { mode: 0o600 }
-  );
+const dbPool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: DATABASE_URL.includes("render.com")
+        ? { rejectUnauthorized: false }
+        : undefined,
+      max: 2
+    })
+  : null;
+
+let dbReady = false;
+
+async function initTokenStorage() {
+  if (!dbPool) {
+    console.log(
+      "AURIXA storage: database URL not configured; using local token file"
+    );
+    return false;
+  }
+
+  try {
+    await dbPool.query("CREATE SCHEMA IF NOT EXISTS aurixa");
+
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS aurixa.ctrader_tokens (
+        id INTEGER PRIMARY KEY,
+        refresh_token TEXT NOT NULL,
+        access_token TEXT,
+        expires_at BIGINT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    dbReady = true;
+    console.log("AURIXA storage: aurixa.ctrader_tokens ready");
+    return true;
+  } catch (err) {
+    dbReady = false;
+    console.error("AURIXA storage initialization failed:", safeError(err));
+    return false;
+  }
 }
 
-function loadTokens() {
+async function saveTokens() {
+  if (!state.refreshToken) return;
+
+  if (dbReady) {
+    try {
+      await dbPool.query(
+        `INSERT INTO aurixa.ctrader_tokens
+          (id, refresh_token, access_token, expires_at, updated_at)
+         VALUES (1, $1, $2, $3, NOW())
+         ON CONFLICT (id)
+         DO UPDATE SET
+           refresh_token = EXCLUDED.refresh_token,
+           access_token = EXCLUDED.access_token,
+           expires_at = EXCLUDED.expires_at,
+           updated_at = NOW()`,
+        [
+          state.refreshToken,
+          state.accessToken,
+          Number(state.expiresAt || 0)
+        ]
+      );
+      return;
+    } catch (err) {
+      console.error("AURIXA storage save failed:", safeError(err));
+    }
+  }
+
+  try {
+    fs.writeFileSync(
+      TOKEN_FILE,
+      JSON.stringify({
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+        expiresAt: state.expiresAt
+      }),
+      { mode: 0o600 }
+    );
+  } catch (err) {
+    console.error("Local cTrader token save failed:", safeError(err));
+  }
+}
+
+async function loadTokens() {
+  if (dbReady) {
+    try {
+      const result = await dbPool.query(
+        `SELECT access_token, refresh_token, expires_at
+         FROM aurixa.ctrader_tokens
+         WHERE id = 1
+         LIMIT 1`
+      );
+
+      const row = result.rows[0];
+
+      if (row?.refresh_token) {
+        state.accessToken = row.access_token || null;
+        state.refreshToken = row.refresh_token;
+        state.expiresAt = Number(row.expires_at || 0);
+        return true;
+      }
+    } catch (err) {
+      console.error("AURIXA storage load failed:", safeError(err));
+    }
+  }
+
   try {
     const data = JSON.parse(fs.readFileSync(TOKEN_FILE, "utf8"));
 
@@ -130,7 +229,7 @@ async function refreshAccessToken() {
   state.expiresAt =
     Date.now() + Number(data.expiresIn || 0) * 1000;
 
-  saveTokens();
+  await saveTokens();
 
   return true;
 }
@@ -164,7 +263,7 @@ async function exchangeCode(code) {
   state.accessToken = data.accessToken;
   state.refreshToken = data.refreshToken || null;
   state.expiresAt = Date.now() + Number(data.expiresIn || 0) * 1000;
-  saveTokens();
+  await saveTokens();
 
   return data;
 }
@@ -723,7 +822,8 @@ function connectOpenApi() {
 
 
 async function restoreCTraderSession() {
-  loadTokens();
+  await initTokenStorage();
+  await loadTokens();
 
   if (!state.accessToken) {
     console.log("cTrader: no saved OAuth token; authorization required");
