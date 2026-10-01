@@ -2,6 +2,10 @@
 
 const HORIZONS = [5, 15, 30];
 
+const {
+  calculatePrediction
+} = require("./market-engine");
+
 let dbQuery = null;
 let getMarketState = null;
 
@@ -164,42 +168,92 @@ async function trackClosedSignal() {
   if (candles.length < 60) return null;
 
   /*
-   * state.candles contains the current live candle.
-   * Therefore the candle immediately before it is the
-   * latest fully completed M5 candle.
+   * Prefer the market engine's explicit lastClosedTime.
+   * This avoids depending on whether a live/current candle
+   * is present in state.candles.
    */
-  const closedCandle =
-    candles.length >= 2
+  let candleTime = Number(state?.lastClosedTime);
+
+  if (!Number.isFinite(candleTime)) {
+    /*
+     * Fallback:
+     * If the engine has a current candle, the previous candle
+     * is closed. Otherwise the newest candle is treated as the
+     * latest available closed candle.
+     */
+    const hasCurrent =
+      state?.currentCandle &&
+      Number.isFinite(Number(state.currentCandle.time));
+
+    const candidate = hasCurrent
       ? candles[candles.length - 2]
-      : null;
+      : candles[candles.length - 1];
 
-  if (!closedCandle) return null;
-
-  const candleTime = Number(closedCandle.time);
+    candleTime = Number(candidate?.time);
+  }
 
   if (!Number.isFinite(candleTime)) return null;
 
+  /*
+   * Find the exact candle by timestamp.
+   */
+  const closedCandle = candles.find(
+    c => Number(c?.time) === candleTime
+  );
+
+  if (!closedCandle) return null;
+
   const candleDate = new Date(candleTime);
 
-  if (!Number.isFinite(candleDate.getTime())) return null;
+  if (!Number.isFinite(candleDate.getTime())) {
+    return null;
+  }
 
   /*
-   * Calculate the prediction using candles only through
-   * the completed candle. This prevents future/current
-   * candle information from leaking into the signal.
+   * Build prediction using candles up to and including
+   * the closed candle only.
+   *
+   * If a current live candle exists, exclude it.
+   * Otherwise all available candles are already closed.
    */
-  const completedCandles = candles.slice(0, -1);
+  let completedCandles = candles;
 
-  const prediction =
-    state.predictionEngine
-      ? state.predictionEngine(completedCandles)
+  if (
+    state?.currentCandle &&
+    Number.isFinite(Number(state.currentCandle.time))
+  ) {
+    const currentTime = Number(state.currentCandle.time);
+
+    completedCandles = candles.filter(
+      c => Number(c?.time) <= candleTime && Number(c?.time) < currentTime
+    );
+  } else {
+    completedCandles = candles.filter(
+      c => Number(c?.time) <= candleTime
+    );
+  }
+
+  if (completedCandles.length < 60) return null;
+
+  /*
+   * IMPORTANT:
+   * Calculate the signal directly from the completed candles.
+   *
+   * Do not use state.prediction here because that prediction
+   * may have been calculated from the newest/live market state.
+   * Using calculatePrediction(completedCandles) prevents the
+   * current candle from leaking into historical signal tracking.
+   */
+  const finalPrediction =
+    typeof calculatePrediction === "function"
+      ? calculatePrediction(completedCandles)
       : null;
 
   return {
     candleTime,
     candleDate,
     candle: closedCandle,
-    prediction
+    prediction: finalPrediction
   };
 }
 
@@ -326,8 +380,24 @@ async function recordSignal(signalData) {
 
   const signalId = result.rows[0]?.id || null;
 
-  if (!signalId) return null;
+  /*
+   * Duplicate candle:
+   * PostgreSQL already contains this signal.
+   */
+  if (!signalId) {
+    return {
+      id: null,
+      direction,
+      entryPrice,
+      candleTime: signalData.candleTime,
+      duplicate: true
+    };
+  }
 
+  /*
+   * Only directional signals receive outcome evaluations.
+   * WAIT is still stored in aurixa.signals.
+   */
   if (direction === "BUY" || direction === "SELL") {
     for (const horizon of HORIZONS) {
       await dbQuery(`
@@ -364,7 +434,8 @@ async function recordSignal(signalData) {
     id: signalId,
     direction,
     entryPrice,
-    candleTime
+    candleTime: signalData.candleTime,
+    duplicate: false
   };
 }
 
@@ -376,50 +447,54 @@ async function trackLatestClosedSignal() {
     ? state.candles
     : [];
 
-  if (candles.length < 61) return null;
+  if (candles.length < 60) return null;
 
-  const closedCandle = candles[candles.length - 2];
+  /*
+   * market-engine already knows the last completed candle.
+   */
+  let candleTime = Number(state?.lastClosedTime);
 
-  if (!closedCandle) return null;
+  if (!Number.isFinite(candleTime)) {
+    const hasCurrent =
+      state?.currentCandle &&
+      Number.isFinite(Number(state.currentCandle.time));
 
-  const candleTime = Number(closedCandle.time);
+    const candidate = hasCurrent
+      ? candles[candles.length - 2]
+      : candles[candles.length - 1];
+
+    candleTime = Number(candidate?.time);
+  }
 
   if (!Number.isFinite(candleTime)) return null;
 
-  if (lastTrackedCandle === candleTime) {
-    return null;
-  }
-
   /*
-   * Only track after the live engine has moved onto
-   * the next M5 candle. This guarantees the candle is closed.
+   * Never process the same candle twice in this process.
    */
-  const currentCandle = candles[candles.length - 1];
-
-  if (
-    currentCandle &&
-    Number(currentCandle.time) === candleTime
-  ) {
+  if (lastTrackedCandle === candleTime) {
     return null;
   }
 
   const signalData = await trackClosedSignal();
 
-  if (!signalData) return null;
+  if (!signalData) {
+    return null;
+  }
 
   const saved = await recordSignal(signalData);
 
   /*
-   * Mark the candle as processed even if it was WAIT.
-   * WAIT is intentionally recorded but excluded from
-   * directional win-rate calculations.
+   * Mark the candle processed even when:
+   * - signal is WAIT
+   * - PostgreSQL reports duplicate
    */
   lastTrackedCandle = candleTime;
 
   if (saved) {
     console.log(
       `AURIXA Signal: ${saved.direction} @ ${saved.entryPrice} ` +
-      `(candle ${new Date(candleTime).toISOString()})`
+      `(candle ${new Date(candleTime).toISOString()})` +
+      (saved.duplicate ? " [already recorded]" : "")
     );
   }
 

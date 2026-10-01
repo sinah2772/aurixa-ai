@@ -786,6 +786,8 @@ function connectOpenApi() {
         }
 
         // ProtoOASpotEvent
+        // cTrader delivers live trendbars INSIDE the SpotEvent.
+        // The trendbar field contains the current/live M5 bar data.
         if (msg.payloadType === 2131) {
           if (
             state.symbolId !== null &&
@@ -794,18 +796,62 @@ function connectOpenApi() {
             return;
           }
 
+          // ------------------------------------------------------------
+          // LIVE BID / ASK
+          // ------------------------------------------------------------
           if (payload.bid !== undefined) {
-            state.bid = Number(payload.bid) / 100000;
+            const bid = Number(payload.bid) / 100000;
+
+            if (Number.isFinite(bid) && bid > 0) {
+              state.bid = bid;
+            }
           }
 
           if (payload.ask !== undefined) {
-            state.ask = Number(payload.ask) / 100000;
+            const ask = Number(payload.ask) / 100000;
+
+            if (Number.isFinite(ask) && ask > 0) {
+              state.ask = ask;
+            }
           }
 
+          // ------------------------------------------------------------
+          // LIVE M5 TRENDBARS
+          //
+          // ProtoOASpotEvent.trendbar is repeated, so normalize it
+          // to an array before feeding the market engine.
+          // ------------------------------------------------------------
+          if (Array.isArray(payload.trendbar) && payload.trendbar.length) {
+            const bars = payload.trendbar;
+
+            console.log(
+              "AURIXA_LIVE_M5:",
+              JSON.stringify({
+                symbolId: Number(payload.symbolId),
+                barCount: bars.length,
+                bars: bars.map(bar => ({
+                  time: bar.utcTimestampInMinutes,
+                  low: bar.low,
+                  deltaOpen: bar.deltaOpen,
+                  deltaClose: bar.deltaClose,
+                  deltaHigh: bar.deltaHigh,
+                  volume: bar.volume
+                }))
+              })
+            );
+
+            feedLiveTrendbars(bars);
+          }
+
+          // ------------------------------------------------------------
+          // UPDATE LAST LIVE SPOT TIME
+          // ------------------------------------------------------------
           state.lastUpdate =
             payload.timestamp
               ? new Date(Number(payload.timestamp)).toISOString()
               : new Date().toISOString();
+
+          return;
         }
 
       } catch (err) {
