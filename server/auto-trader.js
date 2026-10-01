@@ -168,13 +168,14 @@ async function executeSignal(signal) {
         signal_entry_price,
         order_id,
         position_id,
+        client_msg_id,
         volume,
         stop_loss_distance,
         take_profit_distance,
         status
       )
       VALUES
-      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       ON CONFLICT (signal_id) DO NOTHING
     `, [
       signal.id,
@@ -184,6 +185,7 @@ async function executeSignal(signal) {
       signal.entryPrice,
       result.orderId || null,
       result.positionId || null,
+      result.clientMsgId || null,
       cfg.volume,
       cfg.sl,
       cfg.tp || null,
@@ -345,6 +347,16 @@ async function init() {
       profit NUMERIC(18,5),
       error TEXT
     )
+  `);
+
+  await dbQuery(`
+    ALTER TABLE aurixa.auto_trades
+    ADD COLUMN IF NOT EXISTS client_msg_id TEXT
+  `);
+
+  await dbQuery(`
+    CREATE INDEX IF NOT EXISTS idx_auto_trades_client_msg_id
+    ON aurixa.auto_trades(client_msg_id)
   `);
 
   await dbQuery(`

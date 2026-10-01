@@ -59,6 +59,78 @@ function safeError(err) {
   return err instanceof Error ? err.message : String(err);
 }
 
+async function reconcileTradeExecution(payload) {
+  if (!dbPool || !payload) return;
+
+  const clientMsgId =
+    payload.clientMsgId ||
+    payload.client_msg_id ||
+    null;
+
+  const orderId =
+    payload.order?.orderId ||
+    payload.orderId ||
+    null;
+
+  const positionId =
+    payload.position?.positionId ||
+    payload.positionId ||
+    null;
+
+  const executionPrice =
+    payload.deal?.executionPrice ||
+    payload.order?.executionPrice ||
+    payload.position?.price ||
+    null;
+
+  if (!clientMsgId) {
+    console.log(
+      "AURIXA execution received without clientMsgId; cannot match automatically"
+    );
+    return;
+  }
+
+  try {
+    const result = await dbPool.query(
+      `
+      UPDATE aurixa.auto_trades
+      SET
+        order_id = COALESCE($2, order_id),
+        position_id = COALESCE($3, position_id),
+        signal_entry_price = COALESCE(signal_entry_price, $4),
+        status = 'OPEN',
+        opened_at = COALESCE(opened_at, NOW()),
+        error = NULL
+      WHERE client_msg_id = $1
+      RETURNING id, signal_id, order_id, position_id, signal_entry_price, status
+      `,
+      [
+        clientMsgId,
+        orderId,
+        positionId,
+        executionPrice
+      ]
+    );
+
+    if (result.rows.length) {
+      console.log(
+        "AURIXA_TRADE_RECONCILED:",
+        JSON.stringify(result.rows[0])
+      );
+    } else {
+      console.log(
+        "AURIXA execution clientMsgId not found:",
+        clientMsgId
+      );
+    }
+  } catch (err) {
+    console.error(
+      "AURIXA trade reconciliation error:",
+      safeError(err)
+    );
+  }
+}
+
 function send(ws, payloadType, payload = {}) {
   if (!ws || ws.readyState !== 1) {
     throw new Error("cTrader WebSocket is not connected");
@@ -588,6 +660,7 @@ function connectOpenApi() {
           console.log(
             "AURIXA_CTRADER_EXECUTION:",
             JSON.stringify({
+              clientMsgId: msg.clientMsgId || payload.clientMsgId || null,
               executionType,
               orderId: payload.order?.orderId || null,
               positionId: payload.position?.positionId || null,
@@ -600,20 +673,72 @@ function connectOpenApi() {
             })
           );
 
+          await reconcileTradeExecution({
+            ...payload,
+            clientMsgId: msg.clientMsgId || payload.clientMsgId || null
+          });
+
           return;
         }
 
         // AURIXA order error event.
         if (payloadType === 2132) {
+          const clientMsgId =
+            msg.clientMsgId ||
+            payload.clientMsgId ||
+            null;
+
+          const errorCode =
+            payload.errorCode || "UNKNOWN";
+
+          const description =
+            payload.description || null;
+
           console.error(
             "AURIXA_CTRADER_ORDER_ERROR:",
             JSON.stringify({
-              errorCode: payload.errorCode || "UNKNOWN",
-              description: payload.description || null,
+              clientMsgId,
+              errorCode,
+              description,
               orderId: payload.orderId || null,
               positionId: payload.positionId || null
             })
           );
+
+          if (dbPool && clientMsgId) {
+            try {
+              const result = await dbPool.query(
+                `
+                UPDATE aurixa.auto_trades
+                SET
+                  status = 'ERROR',
+                  error = $2,
+                  order_id = COALESCE($3, order_id),
+                  position_id = COALESCE($4, position_id)
+                WHERE client_msg_id = $1
+                RETURNING id, signal_id, status, error
+                `,
+                [
+                  clientMsgId,
+                  `${errorCode}: ${description || "cTrader order rejected"}`,
+                  payload.orderId || null,
+                  payload.positionId || null
+                ]
+              );
+
+              if (result.rows.length) {
+                console.log(
+                  "AURIXA_TRADE_ERROR_RECONCILED:",
+                  JSON.stringify(result.rows[0])
+                );
+              }
+            } catch (err) {
+              console.error(
+                "AURIXA trade error reconciliation failed:",
+                safeError(err)
+              );
+            }
+          }
 
           return;
         }
