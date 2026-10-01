@@ -132,7 +132,7 @@ async function init() {
       SELECT
         s.id,
         $1,
-        s.candle_time + ($1 || ' minutes')::interval,
+        s.candle_time + ($1::INTEGER * INTERVAL '1 minute'),
         s.entry_price,
         'PENDING'
       FROM aurixa.signals s
@@ -141,7 +141,7 @@ async function init() {
           SELECT 1
           FROM aurixa.signal_evaluations e
           WHERE e.signal_id = s.id
-            AND e.horizon_minutes = $1
+            AND e.horizon_minutes::INTEGER = $1::INTEGER
         )
     `, [horizon]);
   }
