@@ -131,24 +131,30 @@ async function reconcileTradeExecution(payload) {
   }
 }
 
-function send(ws, payloadType, payload = {}) {
+function send(ws, payloadType, payload = {}, clientMsgId = null) {
   if (!ws || ws.readyState !== 1) {
     throw new Error("cTrader WebSocket is not connected");
   }
 
-  const clientMsgId = crypto.randomUUID();
+  const id = clientMsgId || crypto.randomUUID();
 
   ws.send(JSON.stringify({
-    clientMsgId,
+    clientMsgId: id,
     payloadType,
     payload
   }));
 
-  return clientMsgId;
+  return id;
 }
 
 function request(ws, payloadType, payload = {}, timeoutMs = 10000) {
-  const clientMsgId = send(ws, payloadType, payload);
+  if (!ws || ws.readyState !== 1) {
+    return Promise.reject(
+      new Error("cTrader WebSocket is not connected")
+    );
+  }
+
+  const clientMsgId = crypto.randomUUID();
 
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -162,8 +168,17 @@ function request(ws, payloadType, payload = {}, timeoutMs = 10000) {
       resolve,
       reject,
       timer,
-      payloadType
+      payloadType,
+      clientMsgId
     });
+
+    try {
+      send(ws, payloadType, payload, clientMsgId);
+    } catch (err) {
+      clearTimeout(timer);
+      pendingRequests.delete(clientMsgId);
+      reject(err);
+    }
   });
 }
 
@@ -673,9 +688,33 @@ function connectOpenApi() {
             })
           );
 
+          let responseClientMsgId =
+            msg.clientMsgId ||
+            payload.clientMsgId ||
+            null;
+
+          if (!responseClientMsgId) {
+            const pendingOrder = [...pendingRequests.entries()]
+              .find(([, pending]) => Number(pending.payloadType) === 2106);
+
+            if (pendingOrder) {
+              const [pendingId, pending] = pendingOrder;
+              responseClientMsgId = pendingId;
+
+              clearTimeout(pending.timer);
+              pendingRequests.delete(pendingId);
+
+              pending.resolve({
+                ...msg,
+                clientMsgId: pendingId,
+                payload
+              });
+            }
+          }
+
           await reconcileTradeExecution({
             ...payload,
-            clientMsgId: msg.clientMsgId || payload.clientMsgId || null
+            clientMsgId: responseClientMsgId
           });
 
           return;
@@ -704,6 +743,25 @@ function connectOpenApi() {
               positionId: payload.positionId || null
             })
           );
+
+          if (!clientMsgId) {
+            const pendingOrder = [...pendingRequests.entries()]
+              .find(([, pending]) => Number(pending.payloadType) === 2106);
+
+            if (pendingOrder) {
+              const [pendingId, pending] = pendingOrder;
+              clientMsgId = pendingId;
+
+              clearTimeout(pending.timer);
+              pendingRequests.delete(pendingId);
+
+              pending.reject(
+                new Error(
+                  `cTrader order rejected: ${errorCode}: ${description || "unknown error"}`
+                )
+              );
+            }
+          }
 
           if (dbPool && clientMsgId) {
             try {
@@ -1399,17 +1457,37 @@ async function placeDemoMarketOrder({
     );
   }
 
-  const clientMsgId = send(
+  const response = await request(
     state.ws,
     2106,
-    payload
+    payload,
+    15000
   );
 
+  const responsePayload = response?.payload || {};
+
+  const orderId =
+    responsePayload.order?.orderId ||
+    responsePayload.orderId ||
+    null;
+
+  const positionId =
+    responsePayload.position?.positionId ||
+    responsePayload.positionId ||
+    null;
+
+  const executionPrice =
+    responsePayload.deal?.executionPrice ||
+    responsePayload.order?.executionPrice ||
+    responsePayload.position?.price ||
+    null;
+
   return {
-    status: "SUBMITTED",
-    clientMsgId,
-    orderId: null,
-    positionId: null,
+    status: positionId ? "OPEN" : (orderId ? "ACCEPTED" : "SUBMITTED"),
+    clientMsgId: response?.clientMsgId || null,
+    orderId,
+    positionId,
+    executionPrice,
     volume: Number(volume),
     direction,
     stopLossDistance: Number(stopLossDistance),

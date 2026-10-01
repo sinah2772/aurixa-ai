@@ -150,12 +150,60 @@ async function executeSignal(signal) {
     }
   }
 
-  const result = await cTrader.placeDemoMarketOrder({
-    direction: signal.direction,
-    volume: cfg.volume,
-    stopLossDistance: cfg.sl,
-    takeProfitDistance: cfg.tp
-  });
+  let result;
+
+  try {
+    result = await cTrader.placeDemoMarketOrder({
+      direction: signal.direction,
+      volume: cfg.volume,
+      stopLossDistance: cfg.sl,
+      takeProfitDistance: cfg.tp
+    });
+  } catch (err) {
+    console.error(
+      "AURIXA Auto-Trader: cTrader order was not accepted:",
+      err.message
+    );
+
+    if (typeof dbQuery === "function" && signal.id) {
+      await dbQuery(`
+        INSERT INTO aurixa.auto_trades
+        (
+          signal_id,
+          symbol,
+          timeframe,
+          direction,
+          signal_entry_price,
+          volume,
+          stop_loss_distance,
+          take_profit_distance,
+          status,
+          error
+        )
+        VALUES
+        ($1,$2,$3,$4,$5,$6,$7,$8,'ERROR',$9)
+        ON CONFLICT (signal_id) DO NOTHING
+      `, [
+        signal.id,
+        "XAUUSD",
+        "5m",
+        signal.direction,
+        signal.entryPrice,
+        cfg.volume,
+        cfg.sl,
+        cfg.tp || null,
+        err.message
+      ]);
+    }
+
+    return {
+      executed: false,
+      signalId: signal.id,
+      direction: signal.direction,
+      reason: "CTRADER_ORDER_REJECTED",
+      error: err.message
+    };
+  }
 
   if (typeof dbQuery === "function" && signal.id) {
     await dbQuery(`
@@ -194,7 +242,7 @@ async function executeSignal(signal) {
   }
 
   return {
-    executed: true,
+    executed: ["OPEN", "ACCEPTED"].includes(result.status),
     signalId: signal.id,
     direction: signal.direction,
     ...result
