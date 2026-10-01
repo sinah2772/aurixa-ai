@@ -483,6 +483,27 @@ app.get("/api/auto-trader/dry-run", async (req, res) => {
   }
 });
 
+app.get("/api/auto-trader/positions", async (req, res) => {
+  try {
+    const positions = await require("./ctrader").inspectOpenXAUUSDPositions();
+
+    res.json({
+      ok: true,
+      readOnly: true,
+      count: positions.length,
+      positions
+    });
+  } catch (err) {
+    console.error("Auto-Trader position inspection error:", err);
+
+    res.status(500).json({
+      ok: false,
+      readOnly: true,
+      error: "Position inspection unavailable"
+    });
+  }
+});
+
 app.get("/api/auto-trader/trades", async (req, res) => {
   try {
     const limit = Math.min(
