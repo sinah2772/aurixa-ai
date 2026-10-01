@@ -177,6 +177,118 @@ async function executeSignal(signal) {
   };
 }
 
+
+async function dryRunSignal(signal) {
+  const cfg = config();
+
+  const result = {
+    dryRun: true,
+    wouldExecute: false,
+    orderSubmitted: false,
+    direction: signal?.direction || null,
+    signalId: signal?.id || null,
+    signalEntryPrice: signal?.entryPrice || null,
+    volume: cfg.volume,
+    stopLossDistance: cfg.sl,
+    takeProfitDistance: cfg.tp || 0,
+    maxPositions: cfg.maxPositions,
+    checks: {}
+  };
+
+  result.checks.autoTradingEnabled = cfg.enabled;
+  result.checks.demoOnly = cfg.demoOnly;
+
+  if (!signal || !["BUY", "SELL"].includes(signal.direction)) {
+    result.reason = "NON_DIRECTIONAL_SIGNAL";
+    return result;
+  }
+
+  if (!cfg.sl || cfg.sl <= 0) {
+    result.reason = "INVALID_STOP_LOSS";
+    return result;
+  }
+
+  if (!cTrader || typeof cTrader.getCTraderStatus !== "function") {
+    result.reason = "CTRADER_STATUS_NOT_CONFIGURED";
+    return result;
+  }
+
+  const status = cTrader.getCTraderStatus();
+
+  result.checks.connected = Boolean(status.connected);
+  result.checks.authorized = Boolean(status.authorized);
+  result.checks.demoAccount = status.account?.isLive === false;
+  result.checks.liveAccount = status.account?.isLive === true;
+  result.checks.symbol = String(
+    status.symbolName || status.symbol || ""
+  ).toUpperCase();
+  result.checks.symbolId = status.symbolId || null;
+  result.checks.currentBid = status.bid ?? null;
+  result.checks.currentAsk = status.ask ?? null;
+  result.checks.currentMid = status.bid !== null && status.ask !== null
+    ? (status.bid + status.ask) / 2
+    : null;
+
+  if (!status.connected || !status.authorized) {
+    result.reason = "CTRADER_NOT_READY";
+    return result;
+  }
+
+  if (cfg.demoOnly && status.account?.isLive === true) {
+    result.reason = "LIVE_ACCOUNT_BLOCKED";
+    return result;
+  }
+
+  if (cfg.demoOnly && status.account?.isLive !== false) {
+    result.reason = "ACCOUNT_ENVIRONMENT_UNKNOWN";
+    return result;
+  }
+
+  if (!status.symbolId || result.checks.symbol !== "XAUUSD") {
+    result.reason = "XAUUSD_NOT_READY";
+    return result;
+  }
+
+  if (typeof cTrader.getOpenXAUUSDPositions !== "function") {
+    result.reason = "POSITION_CHECK_NOT_CONFIGURED";
+    return result;
+  }
+
+  const openPositions = await cTrader.getOpenXAUUSDPositions();
+
+  result.checks.openPositions = openPositions.length;
+  result.checks.positionLimitAvailable =
+    openPositions.length < cfg.maxPositions;
+
+  if (openPositions.length >= cfg.maxPositions) {
+    result.reason = "MAX_OPEN_POSITIONS";
+    return result;
+  }
+
+  if (typeof dbQuery === "function" && signal.id) {
+    const duplicate = await dbQuery(`
+      SELECT id
+      FROM aurixa.auto_trades
+      WHERE signal_id = $1
+      LIMIT 1
+    `, [signal.id]);
+
+    result.checks.signalAlreadyTraded = duplicate.rows.length > 0;
+
+    if (duplicate.rows.length) {
+      result.reason = "SIGNAL_ALREADY_TRADED";
+      return result;
+    }
+  } else {
+    result.checks.signalAlreadyTraded = false;
+  }
+
+  result.wouldExecute = true;
+  result.reason = "DRY_RUN_READY_NO_ORDER_SUBMITTED";
+
+  return result;
+}
+
 async function init() {
   if (typeof dbQuery !== "function") return false;
 
@@ -225,5 +337,6 @@ module.exports = {
   configure,
   init,
   executeSignal,
+  dryRunSignal,
   getStatus
 };

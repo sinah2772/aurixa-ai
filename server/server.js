@@ -439,6 +439,50 @@ app.get("/api/auto-trader/status", (req, res) => {
   }
 });
 
+app.get("/api/auto-trader/dry-run", async (req, res) => {
+  try {
+    const result = await queryDatabase(`
+      SELECT
+        id,
+        direction,
+        entry_price AS "entryPrice",
+        candle_time AS "candleTime"
+      FROM aurixa.signals
+      WHERE direction IN ('BUY', 'SELL')
+      ORDER BY candle_time DESC
+      LIMIT 1
+    `);
+
+    const signal = result.rows[0] || null;
+
+    if (!signal) {
+      return res.json({
+        ok: true,
+        dryRun: true,
+        wouldExecute: false,
+        orderSubmitted: false,
+        reason: "NO_DIRECTIONAL_SIGNAL"
+      });
+    }
+
+    const dryRun = await autoTrader.dryRunSignal(signal);
+
+    res.json({
+      ok: true,
+      ...dryRun
+    });
+  } catch (err) {
+    console.error("Auto-Trader dry-run error:", err);
+
+    res.status(500).json({
+      ok: false,
+      dryRun: true,
+      orderSubmitted: false,
+      error: "Auto-Trader dry-run unavailable"
+    });
+  }
+});
+
 app.get("/api/signals/recent", async (req, res) => {
   try {
     const recent = await signalTracker.getRecent(
