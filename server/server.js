@@ -434,6 +434,25 @@ app.get("/api/signals/recent", async (req, res) => {
   }
 });
 
+app.get("/api/market/state", (req, res) => {
+  try {
+    const state = marketEngine.getState();
+
+    res.json({
+      ok: true,
+      source: "AURIXA market-engine",
+      timestamp: new Date().toISOString(),
+      ...state
+    });
+  } catch (error) {
+    console.error("GET /api/market/state error:", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message
+    });
+  }
+});
+
 app.get("/api/market",(req,res)=>{
   const ct = getCTraderStatus();
   const state = marketEngine.getState();
