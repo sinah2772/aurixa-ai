@@ -83,6 +83,23 @@ async function reconcileTradeExecution(payload) {
     payload.position?.price ||
     null;
 
+  const executionType = Number(payload.executionType);
+
+  // cTrader ProtoOAExecutionType:
+  // 2 = ORDER_ACCEPTED
+  // 3 = ORDER_FILLED
+  // 4 = ORDER_PARTIAL_FILL
+  //
+  // Only a filled/partial execution represents an opened
+  // trading position. An accepted order is not yet OPEN.
+  let tradeStatus = "ACCEPTED";
+
+  if (executionType === 3) {
+    tradeStatus = "OPEN";
+  } else if (executionType === 4) {
+    tradeStatus = "PARTIAL";
+  }
+
   if (!clientMsgId) {
     console.log(
       "AURIXA execution received without clientMsgId; cannot match automatically"
@@ -98,17 +115,28 @@ async function reconcileTradeExecution(payload) {
         order_id = COALESCE($2, order_id),
         position_id = COALESCE($3, position_id),
         signal_entry_price = COALESCE(signal_entry_price, $4),
-        status = 'OPEN',
-        opened_at = COALESCE(opened_at, NOW()),
+        status = $5,
+        opened_at = CASE
+          WHEN $5 IN ('OPEN', 'PARTIAL')
+            THEN COALESCE(opened_at, NOW())
+          ELSE opened_at
+        END,
         error = NULL
       WHERE client_msg_id = $1
-      RETURNING id, signal_id, order_id, position_id, signal_entry_price, status
+      RETURNING
+        id,
+        signal_id,
+        order_id,
+        position_id,
+        signal_entry_price,
+        status
       `,
       [
         clientMsgId,
         orderId,
         positionId,
-        executionPrice
+        executionPrice,
+        tradeStatus
       ]
     );
 
@@ -574,7 +602,18 @@ function connectOpenApi() {
         // Never dump complete cTrader payloads in production logs.
         const payloadType = Number(msg.payloadType);
 
-        if (msg.clientMsgId && pendingRequests.has(msg.clientMsgId)) {
+        // Do NOT resolve a pending 2106 order here.
+        // 2106 is completed by the specialized 2126 execution handler
+        // or rejected by the specialized 2132 order-error handler.
+        // Resolving it here first removes the pending request before those
+        // handlers can reconcile the PostgreSQL auto_trades record.
+
+        if (
+          msg.clientMsgId &&
+          pendingRequests.has(msg.clientMsgId) &&
+          payloadType !== 2126 &&
+          payloadType !== 2132
+        ) {
           const pending = pendingRequests.get(msg.clientMsgId);
           clearTimeout(pending.timer);
           pendingRequests.delete(msg.clientMsgId);
@@ -703,13 +742,48 @@ function connectOpenApi() {
 
               clearTimeout(pending.timer);
               pendingRequests.delete(pendingId);
+            }
+          }
 
-              pending.resolve({
-                ...msg,
-                clientMsgId: pendingId,
-                payload
+          const orderId =
+            payload.order?.orderId ||
+            payload.orderId ||
+            null;
+
+          const positionId =
+            payload.position?.positionId ||
+            payload.positionId ||
+            null;
+
+          const executionPrice =
+            payload.deal?.executionPrice ||
+            payload.order?.executionPrice ||
+            payload.position?.price ||
+            null;
+
+          // Never classify an execution event with no usable order/position
+          // reference as a confirmed order.
+          if (!orderId && !positionId) {
+            console.error(
+              "AURIXA_CTRADER_EXECUTION_AMBIGUOUS:",
+              JSON.stringify({
+                clientMsgId: responseClientMsgId,
+                executionType,
+                orderId: null,
+                positionId: null,
+                dealId: payload.deal?.dealId || null,
+                executionPrice
+              })
+            );
+
+            if (responseClientMsgId) {
+              await reconcileTradeExecution({
+                ...payload,
+                clientMsgId: responseClientMsgId
               });
             }
+
+            return;
           }
 
           await reconcileTradeExecution({
