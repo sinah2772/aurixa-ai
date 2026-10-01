@@ -483,6 +483,55 @@ app.get("/api/auto-trader/dry-run", async (req, res) => {
   }
 });
 
+app.get("/api/auto-trader/trades", async (req, res) => {
+  try {
+    const limit = Math.min(
+      100,
+      Math.max(1, Number(req.query.limit) || 20)
+    );
+
+    const result = await queryDatabase(`
+      SELECT
+        id,
+        signal_id AS "signalId",
+        created_at AS "createdAt",
+        symbol,
+        timeframe,
+        direction,
+        signal_entry_price AS "signalEntryPrice",
+        order_id AS "orderId",
+        position_id AS "positionId",
+        volume,
+        stop_loss_distance AS "stopLossDistance",
+        take_profit_distance AS "takeProfitDistance",
+        status,
+        opened_at AS "openedAt",
+        closed_at AS "closedAt",
+        close_price AS "closePrice",
+        profit,
+        error
+      FROM aurixa.auto_trades
+      ORDER BY created_at DESC
+      LIMIT $1
+    `, [limit]);
+
+    res.json({
+      ok: true,
+      autoTradingEnabled:
+        String(process.env.AUTO_TRADING || "false").toLowerCase() === "true",
+      count: result.rows.length,
+      trades: result.rows
+    });
+  } catch (err) {
+    console.error("Auto-Trader trades error:", err);
+
+    res.status(500).json({
+      ok: false,
+      error: "Auto-Trader trade history unavailable"
+    });
+  }
+});
+
 app.get("/api/signals/recent", async (req, res) => {
   try {
     const recent = await signalTracker.getRecent(
