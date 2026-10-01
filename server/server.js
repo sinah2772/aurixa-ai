@@ -424,6 +424,21 @@ app.get("/api/signals/stats", async (req, res) => {
   }
 });
 
+app.get("/api/auto-trader/status", (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      ...autoTrader.getStatus()
+    });
+  } catch (err) {
+    console.error("Auto-Trader status error:", err);
+    res.status(500).json({
+      ok: false,
+      error: "Auto-Trader status unavailable"
+    });
+  }
+});
+
 app.get("/api/signals/recent", async (req, res) => {
   try {
     const recent = await signalTracker.getRecent(
