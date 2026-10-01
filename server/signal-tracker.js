@@ -515,6 +515,7 @@ async function trackLatestClosedSignal() {
   }
 
   let lastSaved = null;
+  const newSignals = [];
 
   for (const targetCandle of missingCandles) {
     const candleTime = Number(targetCandle.time);
@@ -562,6 +563,14 @@ async function trackLatestClosedSignal() {
     if (saved) {
       lastSaved = saved;
 
+
+      if (
+        !saved.duplicate &&
+        saved.id &&
+        ["BUY", "SELL"].includes(saved.direction)
+      ) {
+        newSignals.push(saved);
+      }
       console.log(
         `AURIXA Signal: ${saved.direction} @ ${saved.entryPrice} ` +
         `(candle ${new Date(candleTime).toISOString()})` +
@@ -570,7 +579,10 @@ async function trackLatestClosedSignal() {
     }
   }
 
-  return lastSaved;
+  return {
+    lastSaved,
+    signals: newSignals
+  };
 }
 
 async function evaluatePending() {

@@ -13,6 +13,7 @@ const {
 } = require("./ctrader");
 
 const signalTracker = require("./signal-tracker");
+const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const { backtest } = require("./validation");
 setMarketEngine(marketEngine);
@@ -28,6 +29,12 @@ signalTracker.configure({
     };
   }
 });
+
+autoTrader.configure({
+  ctrader: require("./ctrader"),
+  query: queryDatabase
+});
+
 registerCTrader(app);
 const PORT = Number(process.env.PORT || 8787);
 
@@ -536,23 +543,57 @@ app.listen(PORT,"0.0.0.0",async()=>{
     );
   }
 
-  setInterval(async () => {
-    try {
-      await signalTracker.trackLatestClosedSignal();
-    } catch (err) {
-      console.error(
-        "Signal tracking error:",
-        err.message
-      );
-    }
+  try {
+    await autoTrader.init();
+    console.log("AURIXA Auto-Trader: initialized (execution remains controlled by AUTO_TRADING)");
+  } catch (err) {
+    console.error(
+      "AURIXA Auto-Trader initialization failed:",
+      err.message
+    );
+  }
 
-    try {
-      await signalTracker.evaluatePending();
-    } catch (err) {
-      console.error(
-        "Signal evaluation error:",
-        err.message
-      );
-    }
-  }, signalTracker.getHorizonIntervalMs());
+    setInterval(async () => {
+      try {
+        const tracking = await signalTracker.trackLatestClosedSignal();
+
+        if (tracking?.signals?.length) {
+          for (const signal of tracking.signals) {
+            try {
+              const result = await autoTrader.executeSignal(signal);
+
+              console.log(
+                "AURIXA Auto-Trader:",
+                JSON.stringify({
+                  signalId: signal.id,
+                  direction: signal.direction,
+                  entryPrice: signal.entryPrice,
+                  executed: result.executed,
+                  reason: result.reason || null
+                })
+              );
+            } catch (err) {
+              console.error(
+                "AURIXA Auto-Trader execution error:",
+                err.message
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.error(
+          "Signal tracking error:",
+          err.message
+        );
+      }
+
+      try {
+        await signalTracker.evaluatePending();
+      } catch (err) {
+        console.error(
+          "Signal evaluation error:",
+          err.message
+        );
+      }
+    }, signalTracker.getHorizonIntervalMs());
 });

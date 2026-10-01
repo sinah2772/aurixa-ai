@@ -28,6 +28,8 @@ function notifyMarket(method, value, extra) {
   }
 }
 
+const pendingRequests = new Map();
+
 const state = {
   accessToken: null,
   refreshToken: null,
@@ -62,11 +64,35 @@ function send(ws, payloadType, payload = {}) {
     throw new Error("cTrader WebSocket is not connected");
   }
 
+  const clientMsgId = crypto.randomUUID();
+
   ws.send(JSON.stringify({
-    clientMsgId: crypto.randomUUID(),
+    clientMsgId,
     payloadType,
     payload
   }));
+
+  return clientMsgId;
+}
+
+function request(ws, payloadType, payload = {}, timeoutMs = 10000) {
+  const clientMsgId = send(ws, payloadType, payload);
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingRequests.delete(clientMsgId);
+      reject(new Error(
+        `cTrader request timeout: payloadType=${payloadType}`
+      ));
+    }, timeoutMs);
+
+    pendingRequests.set(clientMsgId, {
+      resolve,
+      reject,
+      timer,
+      payloadType
+    });
+  });
 }
 
 
@@ -461,6 +487,13 @@ function connectOpenApi() {
         // Never dump complete cTrader payloads in production logs.
         const payloadType = Number(msg.payloadType);
 
+        if (msg.clientMsgId && pendingRequests.has(msg.clientMsgId)) {
+          const pending = pendingRequests.get(msg.clientMsgId);
+          clearTimeout(pending.timer);
+          pendingRequests.delete(msg.clientMsgId);
+          pending.resolve(msg);
+        }
+
         // ProtoOAApplicationAuthRes
         if (msg.payloadType === 2101) {
           // Application authorization succeeded.
@@ -545,6 +578,43 @@ function connectOpenApi() {
             ctidTraderAccountId: Number(state.accountId),
             accessToken: state.accessToken
           });
+          return;
+        }
+
+        // AURIXA trade execution event.
+        if (payloadType === 2126) {
+          const executionType = Number(payload.executionType);
+
+          console.log(
+            "AURIXA_CTRADER_EXECUTION:",
+            JSON.stringify({
+              executionType,
+              orderId: payload.order?.orderId || null,
+              positionId: payload.position?.positionId || null,
+              dealId: payload.deal?.dealId || null,
+              executionPrice:
+                payload.deal?.executionPrice ||
+                payload.order?.executionPrice ||
+                payload.position?.price ||
+                null
+            })
+          );
+
+          return;
+        }
+
+        // AURIXA order error event.
+        if (payloadType === 2132) {
+          console.error(
+            "AURIXA_CTRADER_ORDER_ERROR:",
+            JSON.stringify({
+              errorCode: payload.errorCode || "UNKNOWN",
+              description: payload.description || null,
+              orderId: payload.orderId || null,
+              positionId: payload.positionId || null
+            })
+          );
+
           return;
         }
 
@@ -1060,6 +1130,133 @@ function registerCTrader(app) {
   });
 }
 
+async function getOpenXAUUSDPositions() {
+  if (!state.ws || state.ws.readyState !== 1) {
+    throw new Error("cTrader WebSocket is not connected");
+  }
+
+  if (!state.connected || !state.authorized || !state.accountId) {
+    throw new Error("cTrader account is not authorized");
+  }
+
+  const msg = await request(
+    state.ws,
+    2124,
+    {
+      ctidTraderAccountId: Number(state.accountId),
+      returnProtectionOrders: false
+    },
+    10000
+  );
+
+  const payload = msg.payload || {};
+  const positions = Array.isArray(payload.position)
+    ? payload.position
+    : [];
+
+  return positions.filter(position => {
+    const symbolId = Number(position?.tradeData?.symbolId);
+    const positionStatus = Number(position?.positionStatus);
+
+    return (
+      symbolId === Number(state.symbolId) &&
+      positionStatus === 1
+    );
+  });
+}
+
+async function placeDemoMarketOrder({
+  direction,
+  volume,
+  stopLossDistance,
+  takeProfitDistance = 0
+}) {
+  if (!state.ws || state.ws.readyState !== 1) {
+    throw new Error("cTrader WebSocket is not connected");
+  }
+
+  if (!state.connected || !state.authorized) {
+    throw new Error("cTrader account is not authorized");
+  }
+
+  // Absolute demo-only protection.
+  if (state.account?.isLive === true) {
+    throw new Error("LIVE ACCOUNT BLOCKED: demo auto-trading only");
+  }
+
+  if (state.account?.isLive !== false) {
+    throw new Error("ACCOUNT ENVIRONMENT UNKNOWN");
+  }
+
+  if (String(state.symbolName || "").toUpperCase() !== "XAUUSD") {
+    throw new Error("XAUUSD is not the active trading symbol");
+  }
+
+  if (!Number.isInteger(Number(volume)) || Number(volume) <= 0) {
+    throw new Error("Invalid cTrader volume");
+  }
+
+  if (
+    !Number.isFinite(Number(stopLossDistance)) ||
+    Number(stopLossDistance) <= 0
+  ) {
+    throw new Error("A positive stop-loss distance is required");
+  }
+
+  const openPositions = await getOpenXAUUSDPositions();
+
+  if (openPositions.length >= 1) {
+    throw new Error("Maximum XAUUSD position limit reached");
+  }
+
+  const tradeSide =
+    direction === "BUY"
+      ? 1
+      : direction === "SELL"
+        ? 2
+        : null;
+
+  if (!tradeSide) {
+    throw new Error("Invalid trade direction");
+  }
+
+  const payload = {
+    ctidTraderAccountId: Number(state.accountId),
+    symbolId: Number(state.symbolId),
+    orderType: 1,
+    tradeSide,
+    volume: Number(volume),
+    relativeStopLoss: Math.round(
+      Number(stopLossDistance) * 100000
+    ),
+    label: "AURIXA-DEMO-V1",
+    comment: "AURIXA closed-candle demo signal"
+  };
+
+  if (Number(takeProfitDistance) > 0) {
+    payload.relativeTakeProfit = Math.round(
+      Number(takeProfitDistance) * 100000
+    );
+  }
+
+  const clientMsgId = send(
+    state.ws,
+    2106,
+    payload
+  );
+
+  return {
+    status: "SUBMITTED",
+    clientMsgId,
+    orderId: null,
+    positionId: null,
+    volume: Number(volume),
+    direction,
+    stopLossDistance: Number(stopLossDistance),
+    takeProfitDistance: Number(takeProfitDistance) || 0
+  };
+}
+
 function getCTraderStatus() {
   return {
     configured: Boolean(CLIENT_ID && CLIENT_SECRET),
@@ -1092,5 +1289,7 @@ module.exports = {
   getCTraderStatus,
   setMarketEngine,
   getDatabaseHealth,
-  queryDatabase
+  queryDatabase,
+  getOpenXAUUSDPositions,
+  placeDemoMarketOrder
 };
