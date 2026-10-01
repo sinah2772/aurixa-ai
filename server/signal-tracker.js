@@ -443,6 +443,7 @@ async function trackLatestClosedSignal() {
   if (!initialized) return null;
 
   const state = getMarketState();
+
   const candles = Array.isArray(state?.candles)
     ? state.candles
     : [];
@@ -450,11 +451,12 @@ async function trackLatestClosedSignal() {
   if (candles.length < 60) return null;
 
   /*
-   * market-engine already knows the last completed candle.
+   * The market engine explicitly identifies the newest CLOSED candle.
+   * Never process the current/live candle.
    */
-  let candleTime = Number(state?.lastClosedTime);
+  let lastClosedTime = Number(state?.lastClosedTime);
 
-  if (!Number.isFinite(candleTime)) {
+  if (!Number.isFinite(lastClosedTime)) {
     const hasCurrent =
       state?.currentCandle &&
       Number.isFinite(Number(state.currentCandle.time));
@@ -463,42 +465,112 @@ async function trackLatestClosedSignal() {
       ? candles[candles.length - 2]
       : candles[candles.length - 1];
 
-    candleTime = Number(candidate?.time);
+    lastClosedTime = Number(candidate?.time);
   }
 
-  if (!Number.isFinite(candleTime)) return null;
+  if (!Number.isFinite(lastClosedTime)) return null;
 
   /*
-   * Never process the same candle twice in this process.
+   * Find the newest candle already stored in PostgreSQL.
+   *
+   * This is more reliable than an in-memory lastTrackedCandle because:
+   * - Render restarts do not lose tracking position.
+   * - missed candles are automatically recovered.
+   * - existing database records are never duplicated.
    */
-  if (lastTrackedCandle === candleTime) {
+  const existing = await dbQuery(`
+    SELECT COALESCE(
+      MAX(EXTRACT(EPOCH FROM candle_time) * 1000),
+      0
+    ) AS max_candle_time
+    FROM aurixa.signals
+    WHERE symbol = 'XAUUSD'
+      AND timeframe = '5m'
+  `);
+
+  const lastStoredTime =
+    Number(existing.rows[0]?.max_candle_time) || 0;
+
+  /*
+   * Process every closed candle after the newest stored candle.
+   *
+   * This intentionally catches up multiple candles if the service
+   * was asleep, restarted, or missed a 5-minute interval.
+   */
+  const missingCandles = candles
+    .filter(c => {
+      const t = Number(c?.time);
+
+      return (
+        Number.isFinite(t) &&
+        t > lastStoredTime &&
+        t <= lastClosedTime
+      );
+    })
+    .sort((a, b) => Number(a.time) - Number(b.time));
+
+  if (missingCandles.length === 0) {
+    lastTrackedCandle = lastClosedTime;
     return null;
   }
 
-  const signalData = await trackClosedSignal();
+  let lastSaved = null;
 
-  if (!signalData) {
-    return null;
-  }
+  for (const targetCandle of missingCandles) {
+    const candleTime = Number(targetCandle.time);
 
-  const saved = await recordSignal(signalData);
-
-  /*
-   * Mark the candle processed even when:
-   * - signal is WAIT
-   * - PostgreSQL reports duplicate
-   */
-  lastTrackedCandle = candleTime;
-
-  if (saved) {
-    console.log(
-      `AURIXA Signal: ${saved.direction} @ ${saved.entryPrice} ` +
-      `(candle ${new Date(candleTime).toISOString()})` +
-      (saved.duplicate ? " [already recorded]" : "")
+    /*
+     * Only use candles through this exact closed candle.
+     * This prevents future/live candle data from leaking into
+     * the historical prediction.
+     */
+    const completedCandles = candles.filter(
+      c => {
+        const t = Number(c?.time);
+        return Number.isFinite(t) && t <= candleTime;
+      }
     );
+
+    if (completedCandles.length < 60) {
+      continue;
+    }
+
+    const prediction =
+      typeof calculatePrediction === "function"
+        ? calculatePrediction(completedCandles)
+        : null;
+
+    if (!prediction) {
+      continue;
+    }
+
+    const signalData = {
+      candleTime,
+      candleDate: new Date(candleTime),
+      candle: targetCandle,
+      prediction
+    };
+
+    const saved = await recordSignal(signalData);
+
+    /*
+     * Move the in-memory marker forward after successful processing.
+     * PostgreSQL remains the authoritative recovery point.
+     */
+    lastTrackedCandle = candleTime;
+
+    if (saved) {
+      lastSaved = saved;
+
+      console.log(
+        `AURIXA Signal: ${saved.direction} @ ${saved.entryPrice} ` +
+        `(candle ${new Date(candleTime).toISOString()})` +
+        (saved.duplicate ? " [already recorded]" : "")
+      );
+    }
   }
 
-  return saved;
+  return lastSaved;
 }
 
 async function evaluatePending() {
