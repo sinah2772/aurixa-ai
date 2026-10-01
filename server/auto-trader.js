@@ -27,7 +27,11 @@ function config() {
     volume: Math.max(1, Number(process.env.AUTO_TRADING_VOLUME || 100)),
     sl: Number(process.env.AUTO_TRADING_SL || 0),
     tp: Number(process.env.AUTO_TRADING_TP || 0),
-    maxPositions: Math.max(1, Number(process.env.AUTO_TRADING_MAX_POSITIONS || 1))
+    maxPositions: Math.max(1, Number(process.env.AUTO_TRADING_MAX_POSITIONS || 1)),
+    maxSignalAgeMinutes: Math.max(
+      1,
+      Number(process.env.AUTO_TRADING_MAX_SIGNAL_AGE_MINUTES || 7)
+    )
   };
 }
 
@@ -64,6 +68,24 @@ async function executeSignal(signal) {
 
   if (!signal || !["BUY", "SELL"].includes(signal.direction)) {
     return { executed: false, reason: "NON_DIRECTIONAL_SIGNAL" };
+  }
+
+  const signalTime = new Date(signal.candleTime).getTime();
+  const signalAgeMs = Date.now() - signalTime;
+
+  if (
+    !Number.isFinite(signalTime) ||
+    signalAgeMs < 0 ||
+    signalAgeMs > cfg.maxSignalAgeMinutes * 60 * 1000
+  ) {
+    return {
+      executed: false,
+      reason: "STALE_SIGNAL",
+      signalAgeMinutes: Number.isFinite(signalAgeMs)
+        ? Number((signalAgeMs / 60000).toFixed(2))
+        : null,
+      maxSignalAgeMinutes: cfg.maxSignalAgeMinutes
+    };
   }
 
   if (!cfg.sl || cfg.sl <= 0) {
