@@ -545,8 +545,35 @@ function connectOpenApi() {
     state.ws = ws;
 
     let settled = false;
+    let heartbeatTimer = null;
+
+    const stopHeartbeat = () => {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    };
+
+    const startHeartbeat = () => {
+      stopHeartbeat();
+
+      // cTrader WebSocket heartbeat keepalive
+      heartbeatTimer = setInterval(() => {
+        if (ws.readyState !== 1) return;
+
+        try {
+          send(ws, 51, {});
+        } catch (err) {
+          console.error(
+            "cTrader heartbeat failed:",
+            safeError(err)
+          );
+        }
+      }, 10000);
+    };
 
     const fail = (err) => {
+      stopHeartbeat();
       state.connected = false;
       state.authorized = false;
       state.error = safeError(err);
@@ -560,6 +587,7 @@ function connectOpenApi() {
     ws.addEventListener("open", () => {
       state.connected = true;
       state.error = null;
+      startHeartbeat();
 
       try {
         // ProtoOAApplicationAuthReq
@@ -577,6 +605,7 @@ function connectOpenApi() {
     });
 
     ws.addEventListener("close", () => {
+      stopHeartbeat();
       state.connected = false;
       state.authorized = false;
       state.ws = null;
@@ -1044,35 +1073,7 @@ function connectOpenApi() {
           return;
         }
 
-              );
 
-              send(ws, 2102, {
-                ctidTraderAccountId:
-                  Number(state.accountId),
-                accessToken:
-                  state.accessToken
-              });
-
-              return;
-            }
-          }
-
-          state.authorized = false;
-          state.error =
-            "cTrader " +
-            code +
-            ": " +
-            description;
-
-          if (!settled) {
-            settled = true;
-            reject(
-              new Error(state.error)
-            );
-          }
-
-          return;
-        }
 
         // ProtoOAAccountAuthRes
         if (msg.payloadType === 2103) {
