@@ -1347,19 +1347,13 @@
       const sell = data.directions?.SELL || {};
       const confidence = data.confidenceBands || {};
 
-      const directional =
-        Number(buy["5"]?.evaluated || 0) +
-        Number(sell["5"]?.evaluated || 0);
+      // V2.2: use accurate totals from all stored signals.
+      const totals = data.totals || {};
 
-      set("v21Directional", directional);
-      set("v21BuyCount", buy["5"]?.evaluated || 0);
-      set("v21SellCount", sell["5"]?.evaluated || 0);
-
-      /*
-       * WAIT is intentionally shown as unavailable because
-       * the V2 endpoint only returns evaluated BUY/SELL data.
-       */
-      set("v21WaitCount", "—");
+      set("v21Directional", totals.directional ?? "—");
+      set("v21BuyCount", totals.buy ?? "—");
+      set("v21SellCount", totals.sell ?? "—");
+      set("v21WaitCount", totals.wait ?? "—");
 
       set("v2Buy5", horizon(buy, 5));
       set("v2Buy15", horizon(buy, 15));
