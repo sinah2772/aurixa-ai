@@ -1006,15 +1006,24 @@ async function getV2Stats() {
     WHERE
       s.direction IN ('BUY','SELL')
       AND s.confidence IS NOT NULL
+      AND s.confidence >= 40
 
-    GROUP BY confidence_band, e.horizon_minutes
+    GROUP BY
+      CASE
+        WHEN s.confidence >= 40 AND s.confidence < 50 THEN '40-49'
+        WHEN s.confidence >= 50 AND s.confidence < 60 THEN '50-59'
+        WHEN s.confidence >= 60 AND s.confidence < 70 THEN '60-69'
+        WHEN s.confidence >= 70 AND s.confidence < 80 THEN '70-79'
+        WHEN s.confidence >= 80 THEN '80+'
+      END,
+      e.horizon_minutes
     ORDER BY
-      CASE confidence_band
-        WHEN '40-49' THEN 1
-        WHEN '50-59' THEN 2
-        WHEN '60-69' THEN 3
-        WHEN '70-79' THEN 4
-        WHEN '80+' THEN 5
+      CASE
+        WHEN s.confidence >= 40 AND s.confidence < 50 THEN 1
+        WHEN s.confidence >= 50 AND s.confidence < 60 THEN 2
+        WHEN s.confidence >= 60 AND s.confidence < 70 THEN 3
+        WHEN s.confidence >= 70 AND s.confidence < 80 THEN 4
+        WHEN s.confidence >= 80 THEN 5
       END,
       e.horizon_minutes
   `);
