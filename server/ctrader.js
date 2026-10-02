@@ -1348,7 +1348,7 @@ function registerCTrader(app) {
 
     url.searchParams.set("client_id", CLIENT_ID);
     url.searchParams.set("redirect_uri", REDIRECT_URI);
-    url.searchParams.set("scope", "accounts");
+    url.searchParams.set("scope", "trading");
     url.searchParams.set("product", "web");
 
     res.redirect(url.toString());
