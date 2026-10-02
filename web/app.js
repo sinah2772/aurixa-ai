@@ -110,11 +110,6 @@
     );
 
     text(
-      "dataStatus",
-      connected ? "LIVE" : "DISCONNECTED"
-    );
-
-    text(
       "accountId",
       first(status.accountId, status.account?.ctidTraderAccountId)
     );
@@ -1208,8 +1203,6 @@
 
 })();
 
-/* ============================================================
-   AURIXA SIGNAL TRACKING V2 DASHBOARD
 /* ============================================================
    AURIXA SIGNAL TRACKING V2.1 DASHBOARD
    Analytics only. Does NOT modify trading logic.
