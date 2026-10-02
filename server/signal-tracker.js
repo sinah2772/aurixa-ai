@@ -960,72 +960,83 @@ async function getV2Stats() {
 
   const confidenceResult = await dbQuery(`
     SELECT
-      CASE
-        WHEN s.confidence < 50 THEN '40-49'
-        WHEN s.confidence < 60 THEN '50-59'
-        WHEN s.confidence < 70 THEN '60-69'
-        WHEN s.confidence < 80 THEN '70-79'
-        ELSE '80+'
-      END AS confidence_band,
+      confidence_band,
+      horizon_minutes,
+      evaluated,
+      wins,
+      losses,
+      flats,
+      win_rate
+    FROM (
+      SELECT
+        CASE
+          WHEN s.confidence >= 40 AND s.confidence < 50 THEN '40-49'
+          WHEN s.confidence >= 50 AND s.confidence < 60 THEN '50-59'
+          WHEN s.confidence >= 60 AND s.confidence < 70 THEN '60-69'
+          WHEN s.confidence >= 70 AND s.confidence < 80 THEN '70-79'
+          WHEN s.confidence >= 80 THEN '80+'
+        END AS confidence_band,
 
-      e.horizon_minutes,
+        e.horizon_minutes,
 
-      COUNT(*) FILTER (
-        WHERE e.result IN ('WIN','LOSS','FLAT')
-      ) AS evaluated,
+        COUNT(*) FILTER (
+          WHERE e.result IN ('WIN','LOSS','FLAT')
+        ) AS evaluated,
 
-      COUNT(*) FILTER (
-        WHERE e.result = 'WIN'
-      ) AS wins,
+        COUNT(*) FILTER (
+          WHERE e.result = 'WIN'
+        ) AS wins,
 
-      COUNT(*) FILTER (
-        WHERE e.result = 'LOSS'
-      ) AS losses,
+        COUNT(*) FILTER (
+          WHERE e.result = 'LOSS'
+        ) AS losses,
 
-      COUNT(*) FILTER (
-        WHERE e.result = 'FLAT'
-      ) AS flats,
+        COUNT(*) FILTER (
+          WHERE e.result = 'FLAT'
+        ) AS flats,
 
-      ROUND(
-        100.0 *
-        COUNT(*) FILTER (WHERE e.result = 'WIN')
-        /
-        NULLIF(
-          COUNT(*) FILTER (
-            WHERE e.result IN ('WIN','LOSS')
+        ROUND(
+          100.0 *
+          COUNT(*) FILTER (WHERE e.result = 'WIN')
+          /
+          NULLIF(
+            COUNT(*) FILTER (
+              WHERE e.result IN ('WIN','LOSS')
+            ),
+            0
           ),
-          0
-        ),
-        2
-      ) AS win_rate
+          2
+        ) AS win_rate
 
-    FROM aurixa.signals s
-    JOIN aurixa.signal_evaluations e
-      ON e.signal_id = s.id
+      FROM aurixa.signals s
+      JOIN aurixa.signal_evaluations e
+        ON e.signal_id = s.id
 
-    WHERE
-      s.direction IN ('BUY','SELL')
-      AND s.confidence IS NOT NULL
-      AND s.confidence >= 40
+      WHERE
+        s.direction IN ('BUY','SELL')
+        AND s.confidence IS NOT NULL
+        AND s.confidence >= 40
 
-    GROUP BY
-      CASE
-        WHEN s.confidence >= 40 AND s.confidence < 50 THEN '40-49'
-        WHEN s.confidence >= 50 AND s.confidence < 60 THEN '50-59'
-        WHEN s.confidence >= 60 AND s.confidence < 70 THEN '60-69'
-        WHEN s.confidence >= 70 AND s.confidence < 80 THEN '70-79'
-        WHEN s.confidence >= 80 THEN '80+'
-      END,
-      e.horizon_minutes
+      GROUP BY
+        CASE
+          WHEN s.confidence >= 40 AND s.confidence < 50 THEN '40-49'
+          WHEN s.confidence >= 50 AND s.confidence < 60 THEN '50-59'
+          WHEN s.confidence >= 60 AND s.confidence < 70 THEN '60-69'
+          WHEN s.confidence >= 70 AND s.confidence < 80 THEN '70-79'
+          WHEN s.confidence >= 80 THEN '80+'
+        END,
+        e.horizon_minutes
+    ) AS grouped_confidence
+
     ORDER BY
-      CASE
-        WHEN s.confidence >= 40 AND s.confidence < 50 THEN 1
-        WHEN s.confidence >= 50 AND s.confidence < 60 THEN 2
-        WHEN s.confidence >= 60 AND s.confidence < 70 THEN 3
-        WHEN s.confidence >= 70 AND s.confidence < 80 THEN 4
-        WHEN s.confidence >= 80 THEN 5
+      CASE confidence_band
+        WHEN '40-49' THEN 1
+        WHEN '50-59' THEN 2
+        WHEN '60-69' THEN 3
+        WHEN '70-79' THEN 4
+        WHEN '80+' THEN 5
       END,
-      e.horizon_minutes
+      horizon_minutes
   `);
 
   const confidenceBands = {
