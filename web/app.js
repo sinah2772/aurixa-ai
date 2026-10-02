@@ -694,7 +694,13 @@
       getJSON(API.ctrader)
     ]);
 
-    updateMarket(marketState || market, ctrader);
+    updateMarket(
+      {
+        ...(marketState || {}),
+        ...(market || {})
+      },
+      ctrader
+    );
 
     updateSignal(signal);
 
