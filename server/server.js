@@ -424,6 +424,27 @@ app.get("/api/signals/stats", async (req, res) => {
   }
 });
 
+
+app.get("/api/signals/history", async (req, res) => {
+  try {
+    const limit = Math.min(
+      Math.max(Number(req.query.limit) || 20, 1),
+      100
+    );
+
+    const history = await signalTracker.getRecent(limit);
+
+    res.json(history);
+  } catch (err) {
+    console.error("Signal history error:", err);
+
+    res.status(500).json({
+      ok: false,
+      error: "Signal history unavailable"
+    });
+  }
+});
+
 app.get("/api/auto-trader/status", (req, res) => {
   try {
     res.json({
