@@ -948,6 +948,8 @@
 
     body.innerHTML = rows.slice(0, 30).map(row => {
       const time = pick(row, [
+        "candle_time",
+        "candleTime",
         "createdAt",
         "created_at",
         "timestamp",
