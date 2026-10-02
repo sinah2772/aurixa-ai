@@ -1569,6 +1569,65 @@ async function placeDemoMarketOrder({
   };
 }
 
+
+async function closeXAUUSDPosition(positionId, volume) {
+  if (!state.ws || state.ws.readyState !== 1) {
+    throw new Error("cTrader WebSocket is not connected");
+  }
+
+  if (!state.connected || !state.authorized || !state.accountId) {
+    throw new Error("cTrader account is not authorized");
+  }
+
+  if (state.account?.isLive === true) {
+    throw new Error("LIVE ACCOUNT BLOCKED: demo auto-trading only");
+  }
+
+  if (state.account?.isLive !== false) {
+    throw new Error("ACCOUNT ENVIRONMENT UNKNOWN");
+  }
+
+  const pid = Number(positionId);
+  const vol = Number(volume);
+
+  if (!Number.isFinite(pid) || pid <= 0) {
+    throw new Error("Invalid cTrader position ID");
+  }
+
+  if (!Number.isInteger(vol) || vol <= 0) {
+    throw new Error("Invalid cTrader close volume");
+  }
+
+  const response = await request(
+    state.ws,
+    2111,
+    {
+      ctidTraderAccountId: Number(state.accountId),
+      positionId: pid,
+      volume: vol
+    },
+    15000
+  );
+
+  const payload = response?.payload || {};
+
+  return {
+    status: "CLOSED",
+    clientMsgId: response?.clientMsgId || null,
+    positionId: pid,
+    volume: vol,
+    orderId:
+      payload.order?.orderId ||
+      payload.orderId ||
+      null,
+    executionPrice:
+      payload.deal?.executionPrice ||
+      payload.order?.executionPrice ||
+      payload.position?.price ||
+      null
+  };
+}
+
 function getCTraderStatus() {
   return {
     configured: Boolean(CLIENT_ID && CLIENT_SECRET),
@@ -1604,5 +1663,6 @@ module.exports = {
   queryDatabase,
   getOpenXAUUSDPositions,
   inspectOpenXAUUSDPositions,
+  closeXAUUSDPosition,
   placeDemoMarketOrder
 };
