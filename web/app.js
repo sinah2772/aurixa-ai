@@ -702,7 +702,14 @@
       ctrader
     );
 
-    updateSignal(signal);
+    // Use live prediction from /api/market/state
+    const livePrediction =
+      marketState?.prediction ||
+      market?.prediction ||
+      signal ||
+      null;
+
+    updateSignal(livePrediction);
 
     updateTrackingStats(
       stats
