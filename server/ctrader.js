@@ -1285,7 +1285,25 @@ send(ws, 2137, m1HistoricalRequest);
         // ProtoOASpotEvent
         // cTrader delivers live trendbars INSIDE the SpotEvent.
         // The trendbar field contains the current/live M5 bar data.
-        if (msg.payloadType === 2131) {
+        if (payloadType === 2131) {
+
+          console.log(
+            "AURIXA_SPOT_EVENT:",
+            JSON.stringify({
+              symbolId: Number(payload.symbolId),
+              expectedSymbolId: state.symbolId,
+              hasBid: payload.bid !== undefined,
+              hasAsk: payload.ask !== undefined,
+              trendbarCount: Array.isArray(payload.trendbar)
+                ? payload.trendbar.length
+                : 0,
+              periods: Array.isArray(payload.trendbar)
+                ? payload.trendbar.map(bar => Number(bar.period))
+                : [],
+              timestamp: payload.timestamp ?? null
+            })
+          );
+
           if (
             state.symbolId !== null &&
             Number(payload.symbolId) !== state.symbolId
