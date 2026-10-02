@@ -462,7 +462,7 @@ app.get("/api/signals/history", async (req, res) => {
 
 app.post("/api/auto-trader/test-sell", async (req, res) => {
   try {
-    const cfg = autoTrader.config();
+    const cfg = { enabled: String(process.env.AUTO_TRADING || "false").toLowerCase() === "true", demoOnly: String(process.env.AUTO_TRADING_DEMO_ONLY || "true").toLowerCase() !== "false", volume: Math.max(1, Number(process.env.AUTO_TRADING_VOLUME || 100)), sl: Number(process.env.AUTO_TRADING_SL || 2), tp: Number(process.env.AUTO_TRADING_TP || 0) };
 
     if (!cfg.enabled) {
       return res.status(403).json({
