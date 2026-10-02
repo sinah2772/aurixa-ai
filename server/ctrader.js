@@ -3,6 +3,8 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 
+
+const openingRangeStrategy = require("./opening-range-strategy");
 let marketEngine = null;
 
 function setMarketEngine(engine) {
@@ -1156,6 +1158,13 @@ function connectOpenApi() {
             period: 5
           });
 
+// Opening Range strategy: live XAUUSD M1 candles.
+send(ws, 2135, {
+  ctidTraderAccountId: Number(state.accountId),
+  symbolId: Number(state.symbolId),
+  period: 1
+});
+
           // ProtoOAGetTrendbarsReq
           // Request the latest 300 XAUUSD M5 candles.
           // Using toTimestamp + count avoids an unnecessarily
@@ -1176,6 +1185,16 @@ function connectOpenApi() {
             toTimestamp: now
           };
 
+// Opening Range strategy M1 history.
+const m1HistoricalRequest = {
+  ctidTraderAccountId: Number(state.accountId),
+  symbolId: Number(state.symbolId),
+  period: 1,
+  count: 2000,
+  fromTimestamp,
+  toTimestamp: now
+};
+
           console.log(
             "AURIXA_HISTORICAL_REQUEST:",
             JSON.stringify({
@@ -1190,6 +1209,16 @@ function connectOpenApi() {
 
           send(ws, 2137, historicalRequest);
 
+console.log(
+  "AURIXA_M1_HISTORICAL_REQUEST:",
+  JSON.stringify({
+    period: m1HistoricalRequest.period,
+    count: m1HistoricalRequest.count
+  })
+);
+
+send(ws, 2137, m1HistoricalRequest);
+
           // Resolve connection once the symbol and
           // live spot stream are established.
           if (!settled) {
@@ -1203,37 +1232,55 @@ function connectOpenApi() {
         // ProtoOAGetTrendbarsRes
         // Historical XAUUSD M5 candles.
         if (payloadType === 2138) {
-          const bars = Array.isArray(payload.trendbar)
-            ? payload.trendbar
-            : [];
+  const bars = Array.isArray(payload.trendbar)
+    ? payload.trendbar
+    : [];
 
-          console.log(
-            "AURIXA_HISTORICAL_M5:",
-            JSON.stringify({
-              payloadType: Number(msg.payloadType),
-              payloadKeys: Object.keys(payload),
-              barCount: bars.length,
-              firstBarKeys: bars.length
-                ? Object.keys(bars[0])
-                : []
-            })
-          );
+  const period = Number(
+    payload.period ??
+    (bars[0] && bars[0].period)
+  );
 
-          if (bars.length) {
-            console.log(
-              "cTrader: historical payload fields:",
-              Object.keys(payload)
-            );
+  console.log(
+    "AURIXA_HISTORICAL_TRENDBARS:",
+    JSON.stringify({
+      period,
+      barCount: bars.length
+    })
+  );
 
-            console.log(
-              "cTrader: historical trendbar fields:",
-              Object.keys(bars[0])
-            );
-          }
+  if (period === 5) {
+    feedHistoricalTrendbars(bars);
 
-          feedHistoricalTrendbars(bars);
-          return;
-        }
+    const candles = bars
+      .map(bar => trendbarToCandle(bar))
+      .filter(Boolean);
+
+    openingRangeStrategy.setM5Candles(candles);
+
+    console.log(
+      "AURIXA_STRATEGY_M5_HISTORY:",
+      candles.length
+    );
+  }
+
+  if (period === 1) {
+    const candles = bars
+      .map(bar => trendbarToCandle(bar))
+      .filter(Boolean);
+
+    openingRangeStrategy.setHistoricalM1Candles(
+      candles
+    );
+
+    console.log(
+      "AURIXA_STRATEGY_M1_HISTORY:",
+      candles.length
+    );
+  }
+
+  return;
+}
 
         // ProtoOASpotEvent
         // cTrader delivers live trendbars INSIDE the SpotEvent.
@@ -1266,32 +1313,54 @@ function connectOpenApi() {
           }
 
           // ------------------------------------------------------------
-          // LIVE M5 TRENDBARS
-          //
-          // ProtoOASpotEvent.trendbar is repeated, so normalize it
-          // to an array before feeding the market engine.
-          // ------------------------------------------------------------
-          if (Array.isArray(payload.trendbar) && payload.trendbar.length) {
-            const bars = payload.trendbar;
+// LIVE M1 + M5 TRENDBARS
+// ------------------------------------------------------------
+if (
+  Array.isArray(payload.trendbar) &&
+  payload.trendbar.length
+) {
+  const bars = payload.trendbar;
 
-            console.log(
-              "AURIXA_LIVE_M5:",
-              JSON.stringify({
-                symbolId: Number(payload.symbolId),
-                barCount: bars.length,
-                bars: bars.map(bar => ({
-                  time: bar.utcTimestampInMinutes,
-                  low: bar.low,
-                  deltaOpen: bar.deltaOpen,
-                  deltaClose: bar.deltaClose,
-                  deltaHigh: bar.deltaHigh,
-                  volume: bar.volume
-                }))
-              })
-            );
+  console.log(
+    "AURIXA_LIVE_TRENDBARS:",
+    JSON.stringify({
+      symbolId: Number(payload.symbolId),
+      barCount: bars.length,
+      periods: bars.map(bar => Number(bar.period))
+    })
+  );
 
-            feedLiveTrendbars(bars);
-          }
+  for (const bar of bars) {
+    const period = Number(bar.period);
+    const candle = trendbarToCandle(bar);
+
+    if (!candle) continue;
+
+    if (period === 5) {
+      // Existing AURIXA M5 market engine.
+      feedLiveTrendbars([bar]);
+
+      // Opening Range strategy M5.
+      openingRangeStrategy.updateM5Candle(
+        candle
+      );
+    }
+
+    if (period === 1) {
+      // Opening Range strategy M1.
+      openingRangeStrategy.updateLiveM1Candle(
+        candle
+      );
+
+      console.log(
+        "AURIXA_OPENING_RANGE_SIGNAL:",
+        JSON.stringify(
+          openingRangeStrategy.getPrediction()
+        )
+      );
+    }
+  }
+}
 
           // ------------------------------------------------------------
           // UPDATE LAST LIVE SPOT TIME
