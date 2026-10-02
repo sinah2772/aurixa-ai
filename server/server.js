@@ -1,3 +1,4 @@
+const { analyze: analyzeOrderflowV1 } = require('./chris-creamer-orderflow');
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -40,6 +41,38 @@ const PORT = Number(process.env.PORT || 8787);
 
 app.use(cors());
 app.use(express.json());
+app.get('/api/strategies/of1', (req, res) => {
+  try {
+    const marketState = marketEngine.getState();
+    const candlesSource = marketState?.candles;
+    const candles = Array.isArray(candlesSource)
+      ? candlesSource
+      : [];
+
+    const result = analyzeOrderflowV1(candles);
+
+    res.json({
+      ok: true,
+      strategy: 'AURIXA_OF1',
+      strategyVersion: '1.0.0',
+      symbol: 'XAUUSD',
+      timeframe: 'M5',
+      candleCount: candles.length,
+      liveExecution: false,
+      result,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('AURIXA_OF1 endpoint error:', error);
+
+    res.status(500).json({
+      ok: false,
+      strategy: 'AURIXA_OF1',
+      error: error.message
+    });
+  }
+});
+
 app.use(express.static(path.join(__dirname, "..", "web")));
 
 let candles = [];
@@ -769,6 +802,15 @@ app.get("/api/market",(req,res)=>{
 app.use((req,res)=>{
   res.sendFile(path.join(__dirname,"..","web","index.html"));
 });
+
+
+/*
+ * AURIXA_OF1 — separate OrderFlow V1 endpoint.
+ * Does not replace the existing AURIXA strategy.
+ * Live execution is intentionally NOT connected here.
+ */
+
+
 
 app.listen(PORT,"0.0.0.0",async()=>{
   console.log("");
