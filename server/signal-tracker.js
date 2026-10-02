@@ -873,6 +873,27 @@ async function getV2Stats() {
 
   requireConfigured();
 
+  // V2.2: accurate totals from all stored signals.
+  const totalsResult = await dbQuery(`
+    SELECT
+      COUNT(*) FILTER (WHERE direction IN ('BUY','SELL')) AS directional,
+      COUNT(*) FILTER (WHERE direction = 'BUY') AS buy,
+      COUNT(*) FILTER (WHERE direction = 'SELL') AS sell,
+      COUNT(*) FILTER (WHERE direction = 'WAIT') AS wait
+    FROM aurixa.signals
+    WHERE symbol = 'XAUUSD'
+      AND timeframe = '5m'
+  `);
+
+  const totalRow = totalsResult.rows[0] || {};
+
+  const totals = {
+    directional: Number(totalRow.directional || 0),
+    buy: Number(totalRow.buy || 0),
+    sell: Number(totalRow.sell || 0),
+    wait: Number(totalRow.wait || 0)
+  };
+
   const directionResult = await dbQuery(`
     SELECT
       s.direction,
@@ -1070,6 +1091,7 @@ async function getV2Stats() {
 
   return {
     ok: true,
+    totals,
     directions,
     confidenceBands,
     updatedAt: new Date().toISOString()
