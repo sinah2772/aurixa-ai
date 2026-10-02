@@ -147,6 +147,83 @@
     }
   }
 
+
+  function calculateEMA(values, period) {
+    if (!Array.isArray(values) || values.length < period) return null;
+    const k = 2 / (period + 1);
+    let ema = values.slice(0, period).reduce((a, b) => a + Number(b), 0) / period;
+    for (let i = period; i < values.length; i++) {
+      ema = Number(values[i]) * k + ema * (1 - k);
+    }
+    return ema;
+  }
+
+  function calculateRSI(candles, period = 14) {
+    if (!Array.isArray(candles) || candles.length <= period) return null;
+
+    const closes = candles.map(c => Number(c.close)).filter(Number.isFinite);
+    if (closes.length <= period) return null;
+
+    let gains = 0;
+    let losses = 0;
+
+    for (let i = 1; i <= period; i++) {
+      const change = closes[i] - closes[i - 1];
+      if (change >= 0) gains += change;
+      else losses -= change;
+    }
+
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+
+    for (let i = period + 1; i < closes.length; i++) {
+      const change = closes[i] - closes[i - 1];
+      const gain = Math.max(change, 0);
+      const loss = Math.max(-change, 0);
+
+      avgGain = ((avgGain * (period - 1)) + gain) / period;
+      avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+    }
+
+    if (avgLoss === 0) return 100;
+
+    return 100 - (100 / (1 + (avgGain / avgLoss)));
+  }
+
+  function calculateATR(candles, period = 14) {
+    if (!Array.isArray(candles) || candles.length <= period) return null;
+
+    const tr = [];
+
+    for (let i = 0; i < candles.length; i++) {
+      const high = Number(candles[i].high);
+      const low = Number(candles[i].low);
+      const prevClose = i > 0 ? Number(candles[i - 1].close) : null;
+
+      if (!Number.isFinite(high) || !Number.isFinite(low)) continue;
+
+      tr.push(
+        i === 0 || !Number.isFinite(prevClose)
+          ? high - low
+          : Math.max(
+              high - low,
+              Math.abs(high - prevClose),
+              Math.abs(low - prevClose)
+            )
+      );
+    }
+
+    if (tr.length <= period) return null;
+
+    let atr = tr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+    for (let i = period; i < tr.length; i++) {
+      atr = ((atr * (period - 1)) + tr[i]) / period;
+    }
+
+    return atr;
+  }
+
   function updateMarket(data, ctrader) {
     if (!data) return;
 
@@ -187,9 +264,36 @@
       data.candleCount
     );
 
+    let calculated = {};
+
     if (Array.isArray(candles)) {
       text("candleCount", candles.length);
       drawChart(candles);
+
+      const closes = candles
+        .map(c => Number(c.close))
+        .filter(Number.isFinite);
+
+      const ema9 = calculateEMA(closes, 9);
+      const ema21 = calculateEMA(closes, 21);
+      const ema50 = calculateEMA(closes, 50);
+      const rsi14 = calculateRSI(candles, 14);
+      const atr14 = calculateATR(candles, 14);
+      const latest = candles[candles.length - 1];
+
+      calculated = {
+        ema9,
+        ema21,
+        ema50,
+        rsi14,
+        atr14
+      };
+
+      const latestTime = latest && latest.time
+        ? new Date(Number(latest.time)).toLocaleString()
+        : "—";
+
+      text("latestCandle", latestTime);
     } else {
       text("candleCount", first(candles, "—"));
     }
@@ -201,27 +305,27 @@
 
     text(
       "ema9",
-      number(first(indicators.ema9, market.ema9), 2)
+      number(first(indicators.ema9, market.ema9, calculated.ema9), 2)
     );
 
     text(
       "ema21",
-      number(first(indicators.ema21, market.ema21), 2)
+      number(first(indicators.ema21, market.ema21, calculated.ema21), 2)
     );
 
     text(
       "ema50",
-      number(first(indicators.ema50, market.ema50), 2)
+      number(first(indicators.ema50, market.ema50, calculated.ema50), 2)
     );
 
     text(
       "rsi",
-      number(first(indicators.rsi14, indicators.rsi, market.rsi14, market.rsi), 2)
+      number(first(indicators.rsi14, indicators.rsi, market.rsi14, market.rsi, calculated.rsi14), 2)
     );
 
     text(
       "atr",
-      number(first(indicators.atr14, indicators.atr, market.atr14, market.atr), 2)
+      number(first(indicators.atr14, indicators.atr, market.atr14, market.atr, calculated.atr14), 2)
     );
 
     text(
