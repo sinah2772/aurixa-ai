@@ -1081,3 +1081,242 @@
   }
 
 })();
+
+/* ============================================================
+   AURIXA SIGNAL TRACKING V2 DASHBOARD
+   Analytics only. Does NOT modify trading logic.
+   ============================================================ */
+
+(function initAurixaSignalTrackingV2() {
+  "use strict";
+
+  const V2_URL = "/api/signals/v2-stats";
+
+  function esc(value) {
+    return String(value ?? "—")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function stat(obj) {
+    obj = obj || {};
+
+    const rate =
+      obj.winRate === null || obj.winRate === undefined
+        ? "—"
+        : `${Number(obj.winRate).toFixed(2)}%`;
+
+    return `
+      <div class="tracking-v2-cell">
+        <strong>${esc(rate)}</strong>
+        <span>
+          ${Number(obj.evaluated || 0)} eval /
+          ${Number(obj.wins || 0)}W /
+          ${Number(obj.losses || 0)}L
+        </span>
+      </div>
+    `;
+  }
+
+  function horizon(direction, h) {
+    return stat(
+      direction &&
+      (direction[String(h)] || direction[h])
+    );
+  }
+
+  function ensurePanel() {
+    let panel = document.getElementById("aurixaTrackingV2");
+
+    if (panel) return panel;
+
+    panel = document.createElement("section");
+    panel.id = "aurixaTrackingV2";
+    panel.className = "tracking-v2";
+
+    panel.innerHTML = `
+      <div class="card tracking-card">
+        <div class="section-title">
+          AURIXA SIGNAL TRACKING V2
+        </div>
+
+        <div class="tracking-v2-subtitle">
+          Direction and confidence performance from stored signals
+        </div>
+
+        <h3>BUY vs SELL</h3>
+
+        <div class="tracking-v2-table">
+          <div class="tracking-v2-row tracking-v2-header">
+            <div>Direction</div>
+            <div>5 MIN</div>
+            <div>15 MIN</div>
+            <div>30 MIN</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div class="tracking-v2-label">BUY</div>
+            <div id="v2Buy5">—</div>
+            <div id="v2Buy15">—</div>
+            <div id="v2Buy30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div class="tracking-v2-label">SELL</div>
+            <div id="v2Sell5">—</div>
+            <div id="v2Sell15">—</div>
+            <div id="v2Sell30">—</div>
+          </div>
+        </div>
+
+        <h3>CONFIDENCE BANDS</h3>
+
+        <div class="tracking-v2-table">
+          <div class="tracking-v2-row tracking-v2-header">
+            <div>CONFIDENCE</div>
+            <div>5 MIN</div>
+            <div>15 MIN</div>
+            <div>30 MIN</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>40–49</div>
+            <div id="v2C40_5">—</div>
+            <div id="v2C40_15">—</div>
+            <div id="v2C40_30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>50–59</div>
+            <div id="v2C50_5">—</div>
+            <div id="v2C50_15">—</div>
+            <div id="v2C50_30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>60–69</div>
+            <div id="v2C60_5">—</div>
+            <div id="v2C60_15">—</div>
+            <div id="v2C60_30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>70–79</div>
+            <div id="v2C70_5">—</div>
+            <div id="v2C70_15">—</div>
+            <div id="v2C70_30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>80+</div>
+            <div id="v2C80_5">—</div>
+            <div id="v2C80_15">—</div>
+            <div id="v2C80_30">—</div>
+          </div>
+        </div>
+
+        <div id="trackingV2Updated" class="tracking-v2-updated">
+          Waiting for analytics…
+        </div>
+      </div>
+    `;
+
+    const target =
+      document.querySelector(".database-card") ||
+      document.querySelector("#database") ||
+      document.querySelector(".dashboard") ||
+      document.querySelector("main");
+
+    if (target && target.parentNode) {
+      target.parentNode.insertBefore(panel, target);
+    } else {
+      document.body.appendChild(panel);
+    }
+
+    return panel;
+  }
+
+  function set(id, html) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  }
+
+  async function refresh() {
+    ensurePanel();
+
+    try {
+      const response = await fetch(
+        `${V2_URL}?_=${Date.now()}`,
+        {
+          cache: "no-store"
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data || data.ok !== true) {
+        throw new Error("Invalid V2 response");
+      }
+
+      const buy = data.directions?.BUY || {};
+      const sell = data.directions?.SELL || {};
+      const confidence = data.confidenceBands || {};
+
+      set("v2Buy5", horizon(buy, 5));
+      set("v2Buy15", horizon(buy, 15));
+      set("v2Buy30", horizon(buy, 30));
+
+      set("v2Sell5", horizon(sell, 5));
+      set("v2Sell15", horizon(sell, 15));
+      set("v2Sell30", horizon(sell, 30));
+
+      const bands = [
+        ["40-49", "40"],
+        ["50-59", "50"],
+        ["60-69", "60"],
+        ["70-79", "70"],
+        ["80+", "80"]
+      ];
+
+      for (const [band, id] of bands) {
+        const row = confidence[band] || {};
+
+        set(`v2C${id}_5`, stat(row["5"]));
+        set(`v2C${id}_15`, stat(row["15"]));
+        set(`v2C${id}_30`, stat(row["30"]));
+      }
+
+      set(
+        "trackingV2Updated",
+        `Updated ${new Date().toLocaleTimeString()}`
+      );
+
+    } catch (err) {
+      console.error("AURIXA Signal Tracking V2:", err);
+
+      set(
+        "trackingV2Updated",
+        "V2 analytics temporarily unavailable"
+      );
+    }
+  }
+
+  function start() {
+    ensurePanel();
+    refresh();
+    setInterval(refresh, 30000);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
+})();

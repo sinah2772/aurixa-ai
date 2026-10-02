@@ -860,6 +860,213 @@ async function getRecent(limit = 20) {
   };
 }
 
+
+async function getV2Stats() {
+  if (typeof dbQuery !== "function") {
+    return {
+      ok: true,
+      tracking: false,
+      directions: {},
+      confidenceBands: {}
+    };
+  }
+
+  requireConfigured();
+
+  const directionResult = await dbQuery(`
+    SELECT
+      s.direction,
+      e.horizon_minutes,
+
+      COUNT(*) FILTER (
+        WHERE e.result IN ('WIN','LOSS','FLAT')
+      ) AS evaluated,
+
+      COUNT(*) FILTER (
+        WHERE e.result = 'WIN'
+      ) AS wins,
+
+      COUNT(*) FILTER (
+        WHERE e.result = 'LOSS'
+      ) AS losses,
+
+      COUNT(*) FILTER (
+        WHERE e.result = 'FLAT'
+      ) AS flats,
+
+      ROUND(
+        100.0 *
+        COUNT(*) FILTER (WHERE e.result = 'WIN')
+        /
+        NULLIF(
+          COUNT(*) FILTER (
+            WHERE e.result IN ('WIN','LOSS')
+          ),
+          0
+        ),
+        2
+      ) AS win_rate
+
+    FROM aurixa.signals s
+    JOIN aurixa.signal_evaluations e
+      ON e.signal_id = s.id
+
+    WHERE s.direction IN ('BUY','SELL')
+
+    GROUP BY s.direction, e.horizon_minutes
+    ORDER BY s.direction, e.horizon_minutes
+  `);
+
+  const directions = {
+    BUY: {},
+    SELL: {}
+  };
+
+  for (const row of directionResult.rows) {
+    const direction = row.direction;
+    const horizon = String(Number(row.horizon_minutes));
+
+    if (!directions[direction]) {
+      directions[direction] = {};
+    }
+
+    directions[direction][horizon] = {
+      evaluated: Number(row.evaluated || 0),
+      wins: Number(row.wins || 0),
+      losses: Number(row.losses || 0),
+      flats: Number(row.flats || 0),
+      winRate:
+        row.win_rate === null
+          ? null
+          : Number(row.win_rate)
+    };
+  }
+
+  for (const direction of ["BUY", "SELL"]) {
+    for (const horizon of HORIZONS) {
+      const key = String(horizon);
+
+      if (!directions[direction][key]) {
+        directions[direction][key] = {
+          evaluated: 0,
+          wins: 0,
+          losses: 0,
+          flats: 0,
+          winRate: null
+        };
+      }
+    }
+  }
+
+  const confidenceResult = await dbQuery(`
+    SELECT
+      CASE
+        WHEN s.confidence < 50 THEN '40-49'
+        WHEN s.confidence < 60 THEN '50-59'
+        WHEN s.confidence < 70 THEN '60-69'
+        WHEN s.confidence < 80 THEN '70-79'
+        ELSE '80+'
+      END AS confidence_band,
+
+      e.horizon_minutes,
+
+      COUNT(*) FILTER (
+        WHERE e.result IN ('WIN','LOSS','FLAT')
+      ) AS evaluated,
+
+      COUNT(*) FILTER (
+        WHERE e.result = 'WIN'
+      ) AS wins,
+
+      COUNT(*) FILTER (
+        WHERE e.result = 'LOSS'
+      ) AS losses,
+
+      COUNT(*) FILTER (
+        WHERE e.result = 'FLAT'
+      ) AS flats,
+
+      ROUND(
+        100.0 *
+        COUNT(*) FILTER (WHERE e.result = 'WIN')
+        /
+        NULLIF(
+          COUNT(*) FILTER (
+            WHERE e.result IN ('WIN','LOSS')
+          ),
+          0
+        ),
+        2
+      ) AS win_rate
+
+    FROM aurixa.signals s
+    JOIN aurixa.signal_evaluations e
+      ON e.signal_id = s.id
+
+    WHERE
+      s.direction IN ('BUY','SELL')
+      AND s.confidence IS NOT NULL
+
+    GROUP BY confidence_band, e.horizon_minutes
+    ORDER BY
+      CASE confidence_band
+        WHEN '40-49' THEN 1
+        WHEN '50-59' THEN 2
+        WHEN '60-69' THEN 3
+        WHEN '70-79' THEN 4
+        WHEN '80+' THEN 5
+      END,
+      e.horizon_minutes
+  `);
+
+  const confidenceBands = {
+    "40-49": {},
+    "50-59": {},
+    "60-69": {},
+    "70-79": {},
+    "80+": {}
+  };
+
+  for (const row of confidenceResult.rows) {
+    const band = row.confidence_band;
+    const horizon = String(Number(row.horizon_minutes));
+
+    confidenceBands[band][horizon] = {
+      evaluated: Number(row.evaluated || 0),
+      wins: Number(row.wins || 0),
+      losses: Number(row.losses || 0),
+      flats: Number(row.flats || 0),
+      winRate:
+        row.win_rate === null
+          ? null
+          : Number(row.win_rate)
+    };
+  }
+
+  for (const band of Object.keys(confidenceBands)) {
+    for (const horizon of HORIZONS) {
+      const key = String(horizon);
+
+      if (!confidenceBands[band][key]) {
+        confidenceBands[band][key] = {
+          evaluated: 0,
+          wins: 0,
+          losses: 0,
+          flats: 0,
+          winRate: null
+        };
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    directions,
+    confidenceBands,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 function getHorizonIntervalMs() {
   return 5000;
 }
@@ -870,6 +1077,7 @@ module.exports = {
   trackLatestClosedSignal,
   evaluatePending,
   getStats,
+  getV2Stats,
   getRecent,
   getHorizonIntervalMs
 };

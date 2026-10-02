@@ -425,6 +425,20 @@ app.get("/api/signals/stats", async (req, res) => {
 });
 
 
+app.get("/api/signals/v2-stats", async (req, res) => {
+  try {
+    const stats = await signalTracker.getV2Stats();
+    res.json(stats);
+  } catch (err) {
+    console.error("Signal V2 stats error:", err);
+
+    res.status(500).json({
+      ok: false,
+      error: "Signal V2 statistics unavailable"
+    });
+  }
+});
+
 app.get("/api/signals/history", async (req, res) => {
   try {
     const limit = Math.min(
