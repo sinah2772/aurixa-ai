@@ -459,6 +459,90 @@ app.get("/api/signals/history", async (req, res) => {
   }
 });
 
+
+app.post("/api/auto-trader/test-sell", async (req, res) => {
+  try {
+    const cfg = autoTrader.config();
+
+    if (!cfg.enabled) {
+      return res.status(403).json({
+        ok: false,
+        orderSubmitted: false,
+        reason: "AUTO_TRADING_DISABLED"
+      });
+    }
+
+    if (!cfg.demoOnly) {
+      return res.status(403).json({
+        ok: false,
+        orderSubmitted: false,
+        reason: "DEMO_ONLY_GUARD_DISABLED"
+      });
+    }
+
+    const status = getCTraderStatus();
+
+    if (status?.account?.isLive === true || status?.isLive === true) {
+      return res.status(403).json({
+        ok: false,
+        orderSubmitted: false,
+        reason: "LIVE_ACCOUNT_BLOCKED"
+      });
+    }
+
+    const ctrader = require("./ctrader");
+
+    if (
+      typeof ctrader.placeDemoMarketOrder !== "function" ||
+      typeof ctrader.getOpenXAUUSDPositions !== "function"
+    ) {
+      return res.status(503).json({
+        ok: false,
+        orderSubmitted: false,
+        reason: "POSITION_EXECUTOR_NOT_CONFIGURED"
+      });
+    }
+
+    const positions = await ctrader.getOpenXAUUSDPositions();
+
+    if (positions.length > 0) {
+      return res.status(409).json({
+        ok: false,
+        orderSubmitted: false,
+        reason: "POSITION_ALREADY_OPEN",
+        openPositions: positions.length
+      });
+    }
+
+    const result = await ctrader.placeDemoMarketOrder({
+      direction: "SELL",
+      volume: cfg.volume,
+      stopLossDistance: cfg.sl,
+      takeProfitDistance: cfg.tp
+    });
+
+    res.json({
+      ok: true,
+      test: true,
+      demoOnly: true,
+      direction: "SELL",
+      orderSubmitted: true,
+      result
+    });
+  } catch (err) {
+    console.error("Demo test SELL error:", err);
+
+    res.status(500).json({
+      ok: false,
+      test: true,
+      demoOnly: true,
+      orderSubmitted: false,
+      reason: "TEST_SELL_FAILED",
+      error: err.message
+    });
+  }
+});
+
 app.get("/api/auto-trader/status", (req, res) => {
   try {
     res.json({
