@@ -26,9 +26,14 @@
         headers: { Accept: "application/json" }
       });
 
-      if (!r.ok) return null;
+      if (!r.ok) {
+        console.error("AURIXA API ERROR:", url, r.status);
+        return null;
+      }
 
-      return await r.json();
+      const json = await r.json();
+      console.log("AURIXA API RESPONSE:", url, json);
+      return json;
     } catch {
       return null;
     }
@@ -697,24 +702,34 @@
       ctrader
     );
 
-    // Use live prediction from /api/market/state
-    const livePrediction =
-      marketState?.prediction ||
-      marketState?.signal ||
-      market?.prediction ||
-      signal ||
-      null;
+    // =========================================================
+    // LIVE PREDICTION V2
+    // /api/market/state is the ONLY authoritative source.
+    // Never fall back to /api/signal or old cached prediction data.
+    // =========================================================
+    const livePrediction = marketState?.prediction || null;
 
-    console.log("AURIXA LIVE PREDICTION:", livePrediction);
+    console.log("AURIXA MARKET STATE:", marketState);
+    console.log("AURIXA LIVE PREDICTION V2:", livePrediction);
 
     if (livePrediction) {
       updateSignal(livePrediction);
+
+      text(
+        "engineStatus",
+        livePrediction.dataReady === false ? "WAITING FOR DATA" : "LIVE"
+      );
     } else {
-      updateSignal({
-        signal: "WAIT",
-        confidence: 0,
-        reason: "No live prediction received from /api/market/state"
-      });
+      setSignal("WAIT");
+
+      text("confidence", "0%");
+      text(
+        "reason",
+        "Live prediction unavailable from /api/market/state"
+      );
+      text("signalEntry", "—");
+      text("signalTime", new Date().toLocaleTimeString());
+      text("engineStatus", "NO LIVE DATA");
     }
 
     updateTrackingStats(
