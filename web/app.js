@@ -137,7 +137,7 @@
     }
   }
 
-  function updateMarket(data) {
+  function updateMarket(data, ctrader) {
     if (!data) return;
 
     const market =
@@ -154,8 +154,8 @@
       market.close
     );
 
-    const bid = first(market.bid);
-    const ask = first(market.ask);
+    const bid = first(market.bid, market.bidPrice, data.bid, data.bidPrice, ctrader?.bid, ctrader?.bidPrice);
+    const ask = first(market.ask, market.askPrice, data.ask, data.askPrice, ctrader?.ask, ctrader?.askPrice);
 
     text("price", number(price, 2));
     text("bid", number(bid, 2));
@@ -580,10 +580,7 @@
       getJSON(API.ctrader)
     ]);
 
-    updateMarket(
-      marketState ||
-      market
-    );
+    updateMarket(marketState || market, ctrader);
 
     updateSignal(signal);
 
