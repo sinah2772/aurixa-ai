@@ -945,6 +945,47 @@ function connectOpenApi() {
             description
           );
 
+          let clientMsgId =
+            msg.clientMsgId ||
+            payload.clientMsgId ||
+            null;
+
+          if (
+            !clientMsgId ||
+            !pendingRequests.has(clientMsgId)
+          ) {
+            const pendingOrder = [...pendingRequests.entries()]
+              .find(([, pending]) =>
+                Number(pending.payloadType) === 2106 ||
+                Number(pending.payloadType) === 2111
+              );
+
+            if (pendingOrder) {
+              clientMsgId = pendingOrder[0];
+            }
+          }
+
+          if (clientMsgId && pendingRequests.has(clientMsgId)) {
+            const pending =
+              pendingRequests.get(clientMsgId);
+
+            clearTimeout(pending.timer);
+            pendingRequests.delete(clientMsgId);
+
+            pending.reject(
+              new Error(
+                `cTrader ${code}: ${description}`
+              )
+            );
+          }
+
+          const authErrorCodes = new Set([
+            "CH_ACCESS_TOKEN_INVALID",
+            "CH_AUTH_TOKEN_EXPIRED",
+            "CH_ACCESS_TOKEN_EXPIRED",
+            "ACCOUNT_NOT_AUTHORIZED"
+          ]);
+
           if (code === "RET_ACCOUNT_DISABLED") {
             const nextIndex =
               state.accountCandidateIndex + 1;
@@ -977,6 +1018,32 @@ function connectOpenApi() {
               console.log(
                 "cTrader: trying next account",
                 state.accountId
+              );
+
+              send(ws, 2102, {
+                ctidTraderAccountId:
+                  Number(state.accountId),
+                accessToken:
+                  state.accessToken
+              });
+
+              return;
+            }
+          }
+
+          if (authErrorCodes.has(code)) {
+            state.authorized = false;
+          }
+
+          state.error =
+            "cTrader " +
+            code +
+            ": " +
+            description;
+
+          return;
+        }
+
               );
 
               send(ws, 2102, {
