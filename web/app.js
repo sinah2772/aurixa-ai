@@ -1084,10 +1084,12 @@
 
 /* ============================================================
    AURIXA SIGNAL TRACKING V2 DASHBOARD
+/* ============================================================
+   AURIXA SIGNAL TRACKING V2.1 DASHBOARD
    Analytics only. Does NOT modify trading logic.
    ============================================================ */
 
-(function initAurixaSignalTrackingV2() {
+(function initAurixaSignalTrackingV21() {
   "use strict";
 
   const V2_URL = "/api/signals/v2-stats";
@@ -1139,12 +1141,35 @@
 
     panel.innerHTML = `
       <div class="card tracking-card">
+
         <div class="section-title">
-          AURIXA SIGNAL TRACKING V2
+          AURIXA SIGNAL TRACKING V2.1
         </div>
 
         <div class="tracking-v2-subtitle">
-          Direction and confidence performance from stored signals
+          Historical signal performance from stored AURIXA signals
+        </div>
+
+        <div class="tracking-v21-summary">
+          <div class="tracking-v21-stat">
+            <span>Directional</span>
+            <strong id="v21Directional">—</strong>
+          </div>
+
+          <div class="tracking-v21-stat">
+            <span>BUY</span>
+            <strong id="v21BuyCount">—</strong>
+          </div>
+
+          <div class="tracking-v21-stat">
+            <span>SELL</span>
+            <strong id="v21SellCount">—</strong>
+          </div>
+
+          <div class="tracking-v21-stat">
+            <span>WAIT</span>
+            <strong id="v21WaitCount">—</strong>
+          </div>
         </div>
 
         <h3>BUY vs SELL</h3>
@@ -1218,9 +1243,29 @@
           </div>
         </div>
 
+        <h3>HORIZON SUMMARY</h3>
+
+        <div class="tracking-v21-horizon">
+          <div>
+            <span>5 MIN</span>
+            <strong id="v21H5">—</strong>
+          </div>
+
+          <div>
+            <span>15 MIN</span>
+            <strong id="v21H15">—</strong>
+          </div>
+
+          <div>
+            <span>30 MIN</span>
+            <strong id="v21H30">—</strong>
+          </div>
+        </div>
+
         <div id="trackingV2Updated" class="tracking-v2-updated">
           Waiting for analytics…
         </div>
+
       </div>
     `;
 
@@ -1242,6 +1287,39 @@
   function set(id, html) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = html;
+  }
+
+  function combinedSummary(a, b) {
+    a = a || {};
+    b = b || {};
+
+    const evaluated =
+      Number(a.evaluated || 0) +
+      Number(b.evaluated || 0);
+
+    const wins =
+      Number(a.wins || 0) +
+      Number(b.wins || 0);
+
+    const losses =
+      Number(a.losses || 0) +
+      Number(b.losses || 0);
+
+    const flats =
+      Number(a.flats || 0) +
+      Number(b.flats || 0);
+
+    const rate =
+      wins + losses > 0
+        ? `${((wins / (wins + losses)) * 100).toFixed(2)}%`
+        : "—";
+
+    return `
+      <div class="tracking-v21-horizon-value">
+        <strong>${esc(rate)}</strong>
+        <span>${evaluated} eval · ${wins}W · ${losses}L · ${flats}F</span>
+      </div>
+    `;
   }
 
   async function refresh() {
@@ -1269,6 +1347,20 @@
       const sell = data.directions?.SELL || {};
       const confidence = data.confidenceBands || {};
 
+      const directional =
+        Number(buy["5"]?.evaluated || 0) +
+        Number(sell["5"]?.evaluated || 0);
+
+      set("v21Directional", directional);
+      set("v21BuyCount", buy["5"]?.evaluated || 0);
+      set("v21SellCount", sell["5"]?.evaluated || 0);
+
+      /*
+       * WAIT is intentionally shown as unavailable because
+       * the V2 endpoint only returns evaluated BUY/SELL data.
+       */
+      set("v21WaitCount", "—");
+
       set("v2Buy5", horizon(buy, 5));
       set("v2Buy15", horizon(buy, 15));
       set("v2Buy30", horizon(buy, 30));
@@ -1293,17 +1385,25 @@
         set(`v2C${id}_30`, stat(row["30"]));
       }
 
+      set("v21H5", combinedSummary(buy["5"], sell["5"]));
+      set("v21H15", combinedSummary(buy["15"], sell["15"]));
+      set("v21H30", combinedSummary(buy["30"], sell["30"]));
+
+      const updated = data.updatedAt
+        ? new Date(data.updatedAt).toLocaleTimeString()
+        : new Date().toLocaleTimeString();
+
       set(
         "trackingV2Updated",
-        `Updated ${new Date().toLocaleTimeString()}`
+        `Analytics updated ${esc(updated)} · refresh 30s`
       );
 
     } catch (err) {
-      console.error("AURIXA Signal Tracking V2:", err);
+      console.error("AURIXA Signal Tracking V2.1:", err);
 
       set(
         "trackingV2Updated",
-        "V2 analytics temporarily unavailable"
+        "V2.1 analytics temporarily unavailable"
       );
     }
   }
@@ -1319,4 +1419,6 @@
   } else {
     start();
   }
+
 })();
+

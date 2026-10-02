@@ -631,3 +631,80 @@ body {
     padding: 8px 5px;
   }
 }
+
+/* ============================================================
+   AURIXA SIGNAL TRACKING V2.1
+   ============================================================ */
+
+.tracking-v21-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 20px;
+}
+
+.tracking-v21-stat {
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  text-align: center;
+}
+
+.tracking-v21-stat span {
+  display: block;
+  font-size: 11px;
+  opacity: .65;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.tracking-v21-stat strong {
+  display: block;
+  font-size: 20px;
+}
+
+.tracking-v21-horizon {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.tracking-v21-horizon > div {
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  text-align: center;
+}
+
+.tracking-v21-horizon > div > span {
+  display: block;
+  font-size: 11px;
+  opacity: .65;
+  margin-bottom: 7px;
+}
+
+.tracking-v21-horizon-value strong {
+  display: block;
+  font-size: 20px;
+}
+
+.tracking-v21-horizon-value span {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  opacity: .6;
+}
+
+@media (max-width: 700px) {
+  .tracking-v21-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tracking-v21-horizon {
+    grid-template-columns: 1fr;
+  }
+}
+
