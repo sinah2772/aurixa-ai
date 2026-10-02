@@ -700,11 +700,22 @@
     // Use live prediction from /api/market/state
     const livePrediction =
       marketState?.prediction ||
+      marketState?.signal ||
       market?.prediction ||
       signal ||
       null;
 
-    updateSignal(livePrediction);
+    console.log("AURIXA LIVE PREDICTION:", livePrediction);
+
+    if (livePrediction) {
+      updateSignal(livePrediction);
+    } else {
+      updateSignal({
+        signal: "WAIT",
+        confidence: 0,
+        reason: "No live prediction received from /api/market/state"
+      });
+    }
 
     updateTrackingStats(
       stats
