@@ -105,6 +105,11 @@
     );
 
     text(
+      "dataStatus",
+      connected ? "LIVE" : "DISCONNECTED"
+    );
+
+    text(
       "accountId",
       first(status.accountId, status.account?.ctidTraderAccountId)
     );
