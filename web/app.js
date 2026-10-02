@@ -75,7 +75,7 @@
   }
 
   function setSignal(signal) {
-    const el = $("prediction");
+    const el = $("signal");
 
     if (!el) return;
 
@@ -359,7 +359,7 @@
     );
 
     text(
-      "signalReason",
+      "reason",
       first(
         s.reason,
         s.marketReason,
