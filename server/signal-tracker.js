@@ -976,28 +976,21 @@ async function getV2Stats() {
           WHEN s.confidence >= 70 AND s.confidence < 80 THEN '70-79'
           WHEN s.confidence >= 80 THEN '80+'
         END AS confidence_band,
-
         e.horizon_minutes,
-
         COUNT(*) FILTER (
           WHERE e.result IN ('WIN','LOSS','FLAT')
         ) AS evaluated,
-
         COUNT(*) FILTER (
           WHERE e.result = 'WIN'
         ) AS wins,
-
         COUNT(*) FILTER (
           WHERE e.result = 'LOSS'
         ) AS losses,
-
         COUNT(*) FILTER (
           WHERE e.result = 'FLAT'
         ) AS flats,
-
         ROUND(
-          100.0 *
-          COUNT(*) FILTER (WHERE e.result = 'WIN')
+          100.0 * COUNT(*) FILTER (WHERE e.result = 'WIN')
           /
           NULLIF(
             COUNT(*) FILTER (
@@ -1007,16 +1000,13 @@ async function getV2Stats() {
           ),
           2
         ) AS win_rate
-
       FROM aurixa.signals s
       JOIN aurixa.signal_evaluations e
         ON e.signal_id = s.id
-
       WHERE
         s.direction IN ('BUY','SELL')
         AND s.confidence IS NOT NULL
         AND s.confidence >= 40
-
       GROUP BY
         CASE
           WHEN s.confidence >= 40 AND s.confidence < 50 THEN '40-49'
@@ -1026,8 +1016,7 @@ async function getV2Stats() {
           WHEN s.confidence >= 80 THEN '80+'
         END,
         e.horizon_minutes
-    ) AS grouped_confidence
-
+    ) grouped_confidence
     ORDER BY
       CASE confidence_band
         WHEN '40-49' THEN 1
