@@ -175,7 +175,13 @@ function send(ws, payloadType, payload = {}, clientMsgId = null) {
   return id;
 }
 
-function request(ws, payloadType, payload = {}, timeoutMs = 10000) {
+function request(
+  ws,
+  payloadType,
+  payload = {},
+  timeoutMs = 10000,
+  options = {}
+) {
   if (!ws || ws.readyState !== 1) {
     return Promise.reject(
       new Error("cTrader WebSocket is not connected")
@@ -197,7 +203,8 @@ function request(ws, payloadType, payload = {}, timeoutMs = 10000) {
       reject,
       timer,
       payloadType,
-      clientMsgId
+      clientMsgId,
+      waitForExecution: options.waitForExecution === true
     });
 
     try {
@@ -615,9 +622,13 @@ function connectOpenApi() {
           payloadType !== 2132
         ) {
           const pending = pendingRequests.get(msg.clientMsgId);
-          clearTimeout(pending.timer);
-          pendingRequests.delete(msg.clientMsgId);
-          pending.resolve(msg);
+
+          // Trade requests must wait for the actual 2126 execution event.
+          if (!pending.waitForExecution) {
+            clearTimeout(pending.timer);
+            pendingRequests.delete(msg.clientMsgId);
+            pending.resolve(msg);
+          }
         }
 
         // ProtoOAApplicationAuthRes
@@ -734,14 +745,14 @@ function connectOpenApi() {
 
           if (!responseClientMsgId) {
             const pendingOrder = [...pendingRequests.entries()]
-              .find(([, pending]) => Number(pending.payloadType) === 2106);
+              .find(([, pending]) =>
+                Number(pending.payloadType) === 2106 &&
+                pending.waitForExecution === true
+              );
 
             if (pendingOrder) {
-              const [pendingId, pending] = pendingOrder;
+              const [pendingId] = pendingOrder;
               responseClientMsgId = pendingId;
-
-              clearTimeout(pending.timer);
-              pendingRequests.delete(pendingId);
             }
           }
 
@@ -791,21 +802,47 @@ function connectOpenApi() {
             clientMsgId: responseClientMsgId
           });
 
-          // Resolve trade requests only after FILLED execution.
+          // Trade requests are resolved only by a real execution event.
           if (
             responseClientMsgId &&
-            pendingRequests.has(responseClientMsgId) &&
-            executionType === 3
+            pendingRequests.has(responseClientMsgId)
           ) {
             const pending = pendingRequests.get(responseClientMsgId);
 
             if (
-              Number(pending.payloadType) === 2106 ||
-              Number(pending.payloadType) === 2111
+              pending.waitForExecution &&
+              (
+                Number(pending.payloadType) === 2106 ||
+                Number(pending.payloadType) === 2111
+              )
             ) {
-              clearTimeout(pending.timer);
-              pendingRequests.delete(responseClientMsgId);
-              pending.resolve(msg);
+              // 3 = ORDER_FILLED
+              // 4 = PARTIAL_FILL
+              if (executionType === 3 || executionType === 4) {
+                clearTimeout(pending.timer);
+                pendingRequests.delete(responseClientMsgId);
+                pending.resolve(msg);
+              }
+
+              // Reject/cancel/error execution states.
+              else if (
+                executionType === 5 ||
+                executionType === 6 ||
+                executionType === 7 ||
+                executionType === 8 ||
+                executionType === 9 ||
+                executionType === 10
+              ) {
+                clearTimeout(pending.timer);
+                pendingRequests.delete(responseClientMsgId);
+
+                const failure =
+                  payload.description ||
+                  payload.errorCode ||
+                  `cTrader order execution failed: executionType=${executionType}`;
+
+                pending.reject(new Error(failure));
+              }
             }
           }
 
@@ -1549,11 +1586,14 @@ async function placeDemoMarketOrder({
     );
   }
 
+  // 2106 is asynchronous. Do not treat an intermediary response
+  // as an executed trade. Wait for 2126 execution confirmation.
   const response = await request(
     state.ws,
     2106,
     payload,
-    15000
+    20000,
+    { waitForExecution: true }
   );
 
   const responsePayload = response?.payload || {};
@@ -1574,8 +1614,16 @@ async function placeDemoMarketOrder({
     responsePayload.position?.price ||
     null;
 
+  if (!orderId && !positionId) {
+    throw new Error(
+      "cTrader reported execution without an orderId or positionId"
+    );
+  }
+
+  const executionType = Number(responsePayload.executionType);
+
   return {
-    status: positionId ? "OPEN" : (orderId ? "ACCEPTED" : "SUBMITTED"),
+    status: executionType === 4 ? "PARTIAL" : "OPEN",
     clientMsgId: response?.clientMsgId || null,
     orderId,
     positionId,
