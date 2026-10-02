@@ -791,12 +791,30 @@ function connectOpenApi() {
             clientMsgId: responseClientMsgId
           });
 
+          // Resolve trade requests only after FILLED execution.
+          if (
+            responseClientMsgId &&
+            pendingRequests.has(responseClientMsgId) &&
+            executionType === 3
+          ) {
+            const pending = pendingRequests.get(responseClientMsgId);
+
+            if (
+              Number(pending.payloadType) === 2106 ||
+              Number(pending.payloadType) === 2111
+            ) {
+              clearTimeout(pending.timer);
+              pendingRequests.delete(responseClientMsgId);
+              pending.resolve(msg);
+            }
+          }
+
           return;
         }
 
         // AURIXA order error event.
         if (payloadType === 2132) {
-          const clientMsgId =
+          let clientMsgId =
             msg.clientMsgId ||
             payload.clientMsgId ||
             null;
