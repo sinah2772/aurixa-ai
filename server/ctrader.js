@@ -1410,19 +1410,14 @@ send(ws, 2137, m1HistoricalRequest);
           // ------------------------------------------------------------
           // LIVE BID / ASK
           // ------------------------------------------------------------
-          if (payload.bid !== undefined) {
-            const digits = Number(
-            state.symbolDigits
-          );
-
+          const digits = Number(state.symbolDigits);
           const scale =
-            Number.isFinite(digits) &&
-            digits >= 0
+            Number.isFinite(digits) && digits >= 0
               ? 10 ** digits
               : 100000;
 
-          const bid =
-            Number(payload.bid) / scale;
+          if (payload.bid !== undefined) {
+            const bid = Number(payload.bid) / scale;
 
             if (Number.isFinite(bid) && bid > 0) {
               state.bid = bid;
@@ -1430,8 +1425,7 @@ send(ws, 2137, m1HistoricalRequest);
           }
 
           if (payload.ask !== undefined) {
-            const ask =
-            Number(payload.ask) / scale;
+            const ask = Number(payload.ask) / scale;
 
             if (Number.isFinite(ask) && ask > 0) {
               state.ask = ask;
