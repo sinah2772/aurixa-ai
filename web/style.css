@@ -708,3 +708,43 @@ body {
   }
 }
 
+
+
+/* ==========================================================
+   AURIXA PAIR SELECTOR
+   ========================================================== */
+
+.instrument-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pair-selector {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #111;
+  color: #fff;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 9px 34px 9px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.pair-selector:hover {
+  border-color: #555;
+}
+
+.pair-selector:focus {
+  border-color: #777;
+}
+
+.pair-selector option {
+  background: #111;
+  color: #fff;
+}
+

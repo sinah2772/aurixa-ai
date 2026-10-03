@@ -643,7 +643,7 @@
       data: {
         labels,
         datasets: [{
-          label: "XAUUSD",
+          label: ctrader?.symbol || "XAUUSD",
           data: values,
           tension: 0.25,
           pointRadius: 0,
@@ -673,7 +673,124 @@
     });
   }
 
-  async function refresh() {
+
+async function loadPairSelector() {
+  const selector =
+    document.getElementById(
+      "pairSelector"
+    );
+
+  if (!selector) return;
+
+  try {
+    const response =
+      await fetch(
+        "/api/ctrader/symbols",
+        {
+          cache: "no-store"
+        }
+      );
+
+    if (!response.ok) return;
+
+    const data =
+      await response.json();
+
+    const symbols =
+      Array.isArray(data.symbols)
+        ? data.symbols
+        : [];
+
+    selector.innerHTML = "";
+
+    for (const symbol of symbols) {
+      const option =
+        document.createElement(
+          "option"
+        );
+
+      option.value =
+        symbol.symbolName;
+
+      option.textContent =
+        symbol.symbolName;
+
+      if (
+        String(
+          symbol.symbolName
+        ).toUpperCase() ===
+        String(
+          data.selected || ""
+        ).toUpperCase()
+      ) {
+        option.selected = true;
+      }
+
+      selector.appendChild(
+        option
+      );
+    }
+
+  } catch (err) {
+    console.error(
+      "AURIXA pair list:",
+      err
+    );
+  }
+}
+
+async function selectPair(symbol) {
+  try {
+    const response =
+      await fetch(
+        "/api/ctrader/select-symbol",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+          body:
+            JSON.stringify({
+              symbol
+            })
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
+      throw new Error(
+        data.error ||
+        "Pair selection failed"
+      );
+    }
+
+    console.log(
+      "AURIXA selected:",
+      data.selected
+    );
+
+    await refresh();
+
+  } catch (err) {
+    console.error(
+      "AURIXA pair selection:",
+      err
+    );
+
+    alert(
+      err.message ||
+      "Unable to select pair"
+    );
+  }
+}
+
+async function refresh() {
     const [
       market,
       marketState,

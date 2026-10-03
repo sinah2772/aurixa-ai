@@ -32,6 +32,8 @@ function notifyMarket(method, value, extra) {
 
 const pendingRequests = new Map();
 
+const availableSymbols = new Map();
+
 const state = {
   accessToken: null,
   refreshToken: null,
@@ -40,6 +42,7 @@ const state = {
   account: null,
   symbolId: null,
   symbolName: null,
+  symbolDigits: 5,
   bid: null,
   ask: null,
   connected: false,
@@ -50,6 +53,68 @@ const state = {
   accountCandidates: [],
   accountCandidateIndex: 0
 };
+
+function normalizeSymbolName(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function rememberSymbols(symbols) {
+  availableSymbols.clear();
+
+  for (const symbol of symbols) {
+    const name = normalizeSymbolName(symbol.symbolName);
+
+    if (!name || !Number.isFinite(Number(symbol.symbolId))) {
+      continue;
+    }
+
+    availableSymbols.set(name, {
+      symbolId: Number(symbol.symbolId),
+      symbolName: String(symbol.symbolName),
+      digits: Number.isFinite(Number(symbol.digits))
+        ? Number(symbol.digits)
+        : null
+    });
+  }
+}
+
+function findAvailableSymbol(name) {
+  const wanted = normalizeSymbolName(name);
+
+  if (!wanted) return null;
+
+  return availableSymbols.get(wanted) || null;
+}
+
+function getSupportedSymbols() {
+  const result = [];
+
+  for (const symbol of availableSymbols.values()) {
+    const name = normalizeSymbolName(symbol.symbolName);
+
+    const isGold =
+      name === "XAUUSD" ||
+      name.includes("XAUUSD");
+
+    const isBitcoin =
+      name.includes("BTCUSD") ||
+      name === "BTC" ||
+      name.includes("BITCOIN") ||
+      name.includes("XBT");
+
+    if (isGold || isBitcoin) {
+      result.push({
+        symbolName: symbol.symbolName,
+        symbolId: Number(symbol.symbolId),
+        digits: symbol.digits
+      });
+    }
+  }
+
+  return result.sort((a, b) =>
+    a.symbolName.localeCompare(b.symbolName)
+  );
+}
 
 const CLIENT_ID = process.env.CTRADER_CLIENT_ID;
 const CLIENT_SECRET = process.env.CTRADER_CLIENT_SECRET;
@@ -346,6 +411,23 @@ async function loadTokens() {
     }
   } catch {}
 
+  // Local/dev fallback: use credentials supplied through .env
+  // when no database or saved OAuth token is available.
+  if (process.env.CTRADER_ACCESS_TOKEN) {
+    state.accessToken = process.env.CTRADER_ACCESS_TOKEN;
+    state.refreshToken = process.env.CTRADER_REFRESH_TOKEN || null;
+    state.expiresAt = Number(process.env.CTRADER_TOKEN_EXPIRES_AT || 0);
+
+    if (!state.accountId && process.env.CTRADER_ACCOUNT_ID) {
+      state.accountId = Number(process.env.CTRADER_ACCOUNT_ID);
+    }
+
+    console.log(
+      "cTrader: using access token from environment configuration"
+    );
+    return true;
+  }
+
   return false;
 }
 
@@ -429,7 +511,14 @@ function trendbarToCandle(bar) {
 
   if (!Number.isFinite(lowRaw)) return null;
 
-  const scale = 100000;
+  const digits = Number(
+    state.symbolDigits
+  );
+
+  const scale =
+    Number.isFinite(digits) && digits >= 0
+      ? 10 ** digits
+      : 100000;
 
   const low = lowRaw / scale;
   const open = (lowRaw + deltaOpen) / scale;
@@ -1102,6 +1191,8 @@ function connectOpenApi() {
             ? payload.symbol
             : [];
 
+          rememberSymbols(symbols);
+
           console.log(
             "cTrader: received",
             symbols.length,
@@ -1116,6 +1207,11 @@ function connectOpenApi() {
                 id: s.symbolId,
                 name: s.symbolName
               }))
+          );
+
+          console.log(
+            "AURIXA_SUPPORTED_PAIRS:",
+            JSON.stringify(getSupportedSymbols())
           );
 
           const exact = symbols.find(
@@ -1315,7 +1411,18 @@ send(ws, 2137, m1HistoricalRequest);
           // LIVE BID / ASK
           // ------------------------------------------------------------
           if (payload.bid !== undefined) {
-            const bid = Number(payload.bid) / 100000;
+            const digits = Number(
+            state.symbolDigits
+          );
+
+          const scale =
+            Number.isFinite(digits) &&
+            digits >= 0
+              ? 10 ** digits
+              : 100000;
+
+          const bid =
+            Number(payload.bid) / scale;
 
             if (Number.isFinite(bid) && bid > 0) {
               state.bid = bid;
@@ -1323,7 +1430,8 @@ send(ws, 2137, m1HistoricalRequest);
           }
 
           if (payload.ask !== undefined) {
-            const ask = Number(payload.ask) / 100000;
+            const ask =
+            Number(payload.ask) / scale;
 
             if (Number.isFinite(ask) && ask > 0) {
               state.ask = ask;
@@ -1567,6 +1675,153 @@ function registerCTrader(app) {
     }
   });
 
+  app.get("/api/ctrader/symbols", (req, res) => {
+    res.json({
+      ok: true,
+      connected: state.connected,
+      authorized: state.authorized,
+      selectedSymbol: state.symbolName,
+      selectedSymbolId: state.symbolId,
+      symbols: getSupportedSymbols()
+    });
+  });
+
+  app.post("/api/ctrader/select-symbol", (req, res) => {
+    try {
+      const requested = normalizeSymbolName(req.body?.symbol);
+
+      if (!requested) {
+        return res.status(400).json({
+          ok: false,
+          error: "symbol is required"
+        });
+      }
+
+      const symbol = findAvailableSymbol(requested);
+
+      if (!symbol) {
+        return res.status(404).json({
+          ok: false,
+          error: "Symbol is not available on this cTrader account",
+          requested,
+          available: getSupportedSymbols()
+        });
+      }
+
+      if (!state.ws || state.ws.readyState !== 1) {
+        return res.status(503).json({
+          ok: false,
+          error: "cTrader WebSocket is not connected"
+        });
+      }
+
+      if (!state.connected || !state.authorized || !state.accountId) {
+        return res.status(503).json({
+          ok: false,
+          error: "cTrader account is not authorized"
+        });
+      }
+
+      const accountId = Number(state.accountId);
+      const symbolId = Number(symbol.symbolId);
+
+      /*
+       * Reset AURIXA's generic M5 engine so candles from
+       * the previous pair cannot mix with the new pair.
+       */
+      if (marketEngine && typeof marketEngine.reset === "function") {
+        marketEngine.reset();
+      }
+
+      state.symbolId = symbolId;
+      state.symbolName = symbol.symbolName;
+      state.symbolDigits = Number.isFinite(Number(symbol.digits))
+        ? Number(symbol.digits)
+        : 5;
+      state.bid = null;
+      state.ask = null;
+      state.lastUpdate = null;
+      state.error = null;
+
+      /*
+       * Spot feed.
+       */
+      send(state.ws, 2127, {
+        ctidTraderAccountId: accountId,
+        symbolId: [symbolId],
+        subscribeToSpotTimestamp: true
+      });
+
+      /*
+       * M5 live trendbars.
+       */
+      send(state.ws, 2135, {
+        ctidTraderAccountId: accountId,
+        symbolId: symbolId,
+        period: 5
+      });
+
+      /*
+       * M5 historical candles.
+       */
+      const now = Date.now();
+      const fromTimestamp =
+        now - (2 * 24 * 60 * 60 * 1000);
+
+      send(state.ws, 2137, {
+        ctidTraderAccountId: accountId,
+        symbolId: symbolId,
+        period: 5,
+        count: 300,
+        fromTimestamp,
+        toTimestamp: now
+      });
+
+      /*
+       * Opening Range is XAUUSD-specific.
+       * Do NOT feed M1 Opening Range data to BTC.
+       */
+      if (normalizeSymbolName(symbol.symbolName).includes("XAUUSD")) {
+        send(state.ws, 2135, {
+          ctidTraderAccountId: accountId,
+          symbolId: symbolId,
+          period: 1
+        });
+      }
+
+      console.log(
+        "AURIXA_SYMBOL_SELECTED:",
+        JSON.stringify({
+          symbol: state.symbolName,
+          symbolId: state.symbolId,
+          digits: symbol.digits
+        })
+      );
+
+      return res.json({
+        ok: true,
+        symbol: state.symbolName,
+        symbolId: state.symbolId,
+        digits: symbol.digits,
+        tradingEnabled: false,
+        paperTrading: true
+      });
+
+    } catch (err) {
+      console.error(
+        "AURIXA symbol selection error:",
+        safeError(err)
+      );
+
+      state.error = safeError(err);
+
+      return res.status(500).json({
+        ok: false,
+        error: safeError(err)
+      });
+    }
+  });
+
   app.get("/api/ctrader/status", (req, res) => {
     res.json({
       configured: Boolean(CLIENT_ID && CLIENT_SECRET),
@@ -1583,6 +1838,7 @@ function registerCTrader(app) {
         : null,
       symbol: state.symbolName,
       symbolId: state.symbolId,
+      symbols: getSupportedSymbols(),
       bid: state.bid,
       ask: state.ask,
       mid:
@@ -1858,6 +2114,8 @@ function getCTraderStatus() {
     account: state.account ? { ctidTraderAccountId: state.account.ctidTraderAccountId, traderLogin: state.account.traderLogin, brokerTitleShort: state.account.brokerTitleShort, isLive: state.account.isLive } : null,
     symbol: state.symbolName,
     symbolId: state.symbolId,
+    symbolDigits: state.symbolDigits,
+    symbols: getSupportedSymbols(),
     bid: state.bid,
     ask: state.ask,
     mid: state.bid !== null && state.ask !== null ? (state.bid + state.ask) / 2 : null,
