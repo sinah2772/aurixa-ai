@@ -25,39 +25,43 @@
 
     <!-- MARKET -->
     <section class="panel hero">
-      <div class="eyebrow">INSTRUMENT</div>
-      <div class="instrument">XAUUSD</div>
+      <div class="market-top">
+        <div>
+          <div class="eyebrow">MARKET</div>
+          <div class="instrument-row">
+            <div id="instrument" class="instrument">XAUUSD</div>
+            <select id="pairSelector" class="pair-selector">
+              <option value="XAUUSD">XAUUSD</option>
+            </select>
+          </div>
+        </div>
 
-      <div class="hero-grid">
+        <div class="market-meta">
+          <span class="market-tag">M5</span>
+          <span id="dataStatus" class="market-tag live">CONNECTING</span>
+        </div>
+      </div>
+
+      <div class="hero-price">
+        <div class="eyebrow">LIVE PRICE</div>
+        <div id="price" class="price">—</div>
+
+        <div class="price-row">
+          <span>BID <strong id="bid">—</strong></span>
+          <span>ASK <strong id="ask">—</strong></span>
+          <span>SPREAD <strong id="spread">—</strong></span>
+        </div>
+      </div>
+
+      <div class="hero-grid compact-grid">
         <div>
           <div class="eyebrow">TIMEFRAME</div>
           <div class="value">5m</div>
         </div>
 
-        <div>
-          <div class="eyebrow">LIVE MARKET PRICE</div>
-          <div id="price" class="price">—</div>
-          <div id="priceChange" class="change">—</div>
-        </div>
-
-        <div>
-          <div class="eyebrow">BID</div>
-          <div id="bid" class="value">—</div>
-        </div>
-
-        <div>
-          <div class="eyebrow">ASK</div>
-          <div id="ask" class="value">—</div>
-        </div>
-
-        <div>
-          <div class="eyebrow">SPREAD</div>
-          <div id="spread" class="value">—</div>
-        </div>
-
-        <div>
-          <div class="eyebrow">DATA STATUS</div>
-          <div id="dataStatus" class="status good">CONNECTING</div>
+        <div class="market-mini">
+          <span>TIMEFRAME</span>
+          <strong>5 MIN</strong>
         </div>
       </div>
     </section>
@@ -183,8 +187,8 @@
     </section>
 
     <!-- SIGNAL TRACKING -->
-    <section class="panel">
-      <div class="section-title">MARKET CONNECTION</div>
+    <section class="panel compact-panel">
+      <div class="section-title">CONNECTION</div>
       <div class="section-heading">CTRADER / FXPRO</div>
 
       <div class="connection-row">
@@ -208,14 +212,13 @@
       </div>
 
       <button id="loginBtn" class="connect-button">
-        CONNECT / REAUTHORIZE CTRADER
+        RECONNECT cTRADER
       </button>
     </section>
 
     <!-- MODE -->
-    <section class="panel">
-      <div class="section-title">TRADING MODE</div>
-      <div class="section-heading">PAPER ANALYSIS</div>
+    <section class="panel compact-panel">
+      <div class="section-title">SAFETY</div>
 
       <div class="mode-row">
         <span>AUTO TRADING</span>
@@ -236,7 +239,7 @@
     <section class="system-footer">
       <span class="dot"></span>
       <strong id="systemStatus">SYSTEM ONLINE</strong>
-      <div>AURIXA AI · LIVE MARKET ANALYSIS · XAUUSD · M5</div>
+      <div>AURIXA AI · LIVE MARKET ANALYSIS</div>
     </section>
 
   </main>

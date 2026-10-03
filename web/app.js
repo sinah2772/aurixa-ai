@@ -879,17 +879,29 @@ async function refresh() {
   }
 
   function start() {
-    refresh();
+    loadPairSelector();
 
-    setInterval(refresh, 5000);
+    const selector = $("pairSelector");
 
-    const connectButton = $("connectCtrader");
+    if (selector) {
+      selector.addEventListener("change", () => {
+        selectPair(selector.value);
+      });
+    }
+
+    const connectButton =
+      $("loginBtn") ||
+      $("connectCtrader");
 
     if (connectButton) {
       connectButton.addEventListener("click", () => {
         window.location.href = "/auth/login";
       });
     }
+
+    refresh();
+
+    setInterval(refresh, 5000);
   }
 
   if (document.readyState === "loading") {

@@ -748,3 +748,203 @@ body {
   color: #fff;
 }
 
+
+
+/* ============================================================
+   AURIXA CLEAN UI OVERRIDE
+   ============================================================ */
+
+.market-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.instrument-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 5px;
+}
+
+.instrument {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+
+.pair-selector {
+  appearance: none;
+  background: #080b0f;
+  color: #fff;
+  border: 1px solid #303842;
+  border-radius: 9px;
+  padding: 8px 30px 8px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pair-selector:hover {
+  border-color: #59636e;
+}
+
+.market-meta {
+  display: flex;
+  gap: 7px;
+}
+
+.market-tag {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.market-tag.live {
+  color: var(--green);
+  border-color: #24513f;
+  background: #09150f;
+}
+
+.hero-price {
+  margin: 20px 0 15px;
+}
+
+.hero-price .price {
+  font-size: 46px;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: -.035em;
+  margin-top: 5px;
+}
+
+.price-row {
+  display: flex;
+  gap: 18px;
+  margin-top: 11px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.price-row strong {
+  color: var(--text);
+  margin-left: 4px;
+}
+
+.compact-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.market-mini {
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px;
+}
+
+.market-mini span {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+
+.market-mini strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 14px;
+}
+
+.hero {
+  padding-bottom: 15px;
+}
+
+/* Reduce visual noise from old tracking sections */
+.tracking-v1 {
+  margin-top: 10px;
+}
+
+.tracking-v2,
+.tracking-v21 {
+  margin-top: 10px;
+}
+
+.tracking-v2 .card,
+.tracking-v21 .card {
+  border-radius: 12px;
+}
+
+/* Mobile */
+@media (max-width: 520px) {
+  .market-top {
+    align-items: flex-start;
+  }
+
+  .market-meta {
+    flex-direction: column;
+  }
+
+  .instrument {
+    font-size: 25px;
+  }
+
+  .hero-price .price {
+    font-size: 36px;
+  }
+
+  .price-row {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .compact-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ===== AURIXA UI FINAL CLEANUP ===== */
+
+.compact-panel {
+  padding: 16px 18px;
+}
+
+.compact-panel .section-heading {
+  margin-bottom: 10px;
+}
+
+.connection-row,
+.mode-row {
+  min-height: 32px;
+}
+
+.compact-panel .connect-button {
+  margin-top: 10px;
+}
+
+.compact-panel .notice {
+  margin-top: 8px;
+}
+
+.system-footer {
+  margin-top: 12px;
+}
+
+/* Reduce visual noise on mobile */
+@media (max-width: 600px) {
+  .compact-panel {
+    padding: 14px;
+  }
+
+  .section-title {
+    letter-spacing: .08em;
+  }
+
+  .section-heading {
+    font-size: 12px;
+  }
+}
