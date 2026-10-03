@@ -36,11 +36,12 @@ autoTrader.configure({
   query: queryDatabase
 });
 
-registerCTrader(app);
 const PORT = Number(process.env.PORT || 8787);
 
 app.use(cors());
 app.use(express.json());
+
+registerCTrader(app);
 app.get('/api/strategies/of1', (req, res) => {
   try {
     const marketState = marketEngine.getState();
