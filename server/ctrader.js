@@ -511,14 +511,11 @@ function trendbarToCandle(bar) {
 
   if (!Number.isFinite(lowRaw)) return null;
 
-  const digits = Number(
-    state.symbolDigits
-  );
-
-  const scale =
-    Number.isFinite(digits) && digits >= 0
-      ? 10 ** digits
-      : 100000;
+  // cTrader trendbars for the currently supported FxPro symbols
+  // are delivered using 5-decimal integer price scaling.
+  // Do not use symbolDigits here because the symbols list currently
+  // returns digits=null / unreliable values.
+  const scale = 100000;
 
   const low = lowRaw / scale;
   const open = (lowRaw + deltaOpen) / scale;
