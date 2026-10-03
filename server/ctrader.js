@@ -1407,11 +1407,11 @@ send(ws, 2137, m1HistoricalRequest);
           // ------------------------------------------------------------
           // LIVE BID / ASK
           // ------------------------------------------------------------
-          const digits = Number(state.symbolDigits);
-          const scale =
-            Number.isFinite(digits) && digits >= 0
-              ? 10 ** digits
-              : 100000;
+          // cTrader FxPro spot prices for the supported symbols
+          // use 5-decimal integer scaling, just like trendbars.
+          // symbolDigits can be null/unreliable in SymbolsListRes,
+          // so never use it to determine the live spot scale.
+          const scale = 100000;
 
           if (payload.bid !== undefined) {
             const bid = Number(payload.bid) / scale;
