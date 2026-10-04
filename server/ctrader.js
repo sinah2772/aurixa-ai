@@ -1471,6 +1471,10 @@ send(ws, 2137, m1HistoricalRequest);
       .map(bar => trendbarToCandle(bar))
       .filter(Boolean);
 
+    persistHistoricalCandles(candles, period).catch(err =>
+      console.error("AURIXA M1 history save error:", err.message)
+    );
+
     openingRangeStrategy.setHistoricalM1Candles(
       candles
     );
