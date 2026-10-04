@@ -1146,3 +1146,12 @@ main { display:block; }
  .history-filter-actions button{flex:1}
  .history-board-title{align-items:flex-start;flex-direction:column}
 }
+
+
+/* Market session indicator */
+.market-tag.market-open {
+  border-color: rgba(80, 220, 140, 0.45);
+}
+.market-tag.market-closed {
+  border-color: rgba(255, 110, 110, 0.45);
+}
