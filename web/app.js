@@ -84,19 +84,33 @@
   }
 
   function setSignal(signal) {
-    const el = $("signal");
-
-    if (!el) return;
-
     const value = String(signal || "WAIT").toUpperCase();
 
-    el.textContent = value;
+    const el = $("signal");
+    if (el) {
+      el.textContent = value;
+      el.classList.remove("buy", "sell", "wait");
 
-    el.classList.remove("buy", "sell", "wait");
+      if (value === "BUY") el.classList.add("buy");
+      else if (value === "SELL") el.classList.add("sell");
+      else el.classList.add("wait");
+    }
 
-    if (value === "BUY") el.classList.add("buy");
-    else if (value === "SELL") el.classList.add("sell");
-    else el.classList.add("wait");
+    // Keep the three direction indicators synchronized with the
+    // single active signal. They are status indicators, not
+    // simultaneous signals.
+    ["buyIndicator", "waitIndicator", "sellIndicator"].forEach((id) => {
+      const option = $(id);
+      if (option) option.classList.remove("active");
+    });
+
+    const activeId =
+      value === "BUY" ? "buyIndicator" :
+      value === "SELL" ? "sellIndicator" :
+      "waitIndicator";
+
+    const active = $(activeId);
+    if (active) active.classList.add("active");
   }
 
   function updateConnection(status) {
