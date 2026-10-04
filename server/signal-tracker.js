@@ -386,7 +386,6 @@ async function recordSignal(signalData) {
       (CASE WHEN $3 > 0 AND $4 > 0 THEN TRUE ELSE FALSE END),
       $6,
       $7,
-      $7,
       $8,
       $9,
       $10,
@@ -401,7 +400,10 @@ async function recordSignal(signalData) {
       $19,
       $20,
       $21,
-      $22, $23, $24
+      $22,
+      $23,
+      $24,
+      $25
     )
     ON CONFLICT DO NOTHING
     RETURNING id
