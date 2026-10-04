@@ -323,6 +323,86 @@ const dbPool = DATABASE_URL
 
 let dbReady = false;
 
+async function persistHistoricalCandles(candles, period) {
+  if (!dbPool || !Array.isArray(candles) || !candles.length) return 0;
+  const accountId = Number(state.accountId);
+  const symbolId = Number(state.symbolId);
+  const symbol = String(state.symbolName || "").trim().toUpperCase();
+  const timeframe = Number(period) === 1 ? "1m" : Number(period) === 5 ? "5m" : String(period) + "m";
+
+  if (!Number.isFinite(accountId) || !Number.isFinite(symbolId) || !symbol) return 0;
+
+  await dbPool.query(`
+    CREATE SCHEMA IF NOT EXISTS aurixa
+  `);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS aurixa.market_candles (
+      id BIGSERIAL PRIMARY KEY,
+      ctid_trader_account_id BIGINT NOT NULL,
+      symbol_id BIGINT NOT NULL,
+      symbol TEXT NOT NULL,
+      timeframe TEXT NOT NULL,
+      candle_time TIMESTAMPTZ NOT NULL,
+      open NUMERIC(18,8) NOT NULL,
+      high NUMERIC(18,8) NOT NULL,
+      low NUMERIC(18,8) NOT NULL,
+      close NUMERIC(18,8) NOT NULL,
+      volume NUMERIC(24,8),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(ctid_trader_account_id, symbol_id, timeframe, candle_time)
+    )
+  `);
+
+  await dbPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_aurixa_market_candles_lookup
+    ON aurixa.market_candles(
+      ctid_trader_account_id,
+      symbol_id,
+      timeframe,
+      candle_time DESC
+    )
+  `);
+
+  let saved = 0;
+  for (const candle of candles) {
+    const time = Number(candle?.time);
+    const open = Number(candle?.open);
+    const high = Number(candle?.high);
+    const low = Number(candle?.low);
+    const close = Number(candle?.close);
+    const volume = Number(candle?.volume);
+
+    if (![time, open, high, low, close].every(Number.isFinite)) continue;
+
+    const result = await dbPool.query(`
+      INSERT INTO aurixa.market_candles
+      (ctid_trader_account_id, symbol_id, symbol, timeframe, candle_time,
+       open, high, low, close, volume)
+      VALUES ($1,$2,$3,$4,TO_TIMESTAMP($5 / 1000.0),$6,$7,$8,$9,$10)
+      ON CONFLICT (ctid_trader_account_id, symbol_id, timeframe, candle_time)
+      DO UPDATE SET
+        open=EXCLUDED.open,
+        high=EXCLUDED.high,
+        low=EXCLUDED.low,
+        close=EXCLUDED.close,
+        volume=EXCLUDED.volume
+    `, [
+      accountId, symbolId, symbol, timeframe, time,
+      open, high, low, close,
+      Number.isFinite(volume) ? volume : null
+    ]);
+
+    saved += result.rowCount;
+  }
+
+  console.log("AURIXA_MARKET_HISTORY_SAVED:", JSON.stringify({
+    accountId, symbolId, symbol, timeframe, saved
+  }));
+
+  return saved;
+}
+
 async function initTokenStorage() {
   if (!dbPool) {
     console.log(
@@ -1365,6 +1445,13 @@ send(ws, 2137, m1HistoricalRequest);
   );
 
   if (period === 5) {
+    const persisted = bars
+      .map(bar => trendbarToCandle(bar))
+      .filter(Boolean);
+    persistHistoricalCandles(persisted, period).catch(err =>
+      console.error("AURIXA market history save error:", err.message)
+    );
+
     feedHistoricalTrendbars(bars);
 
     const candles = bars
