@@ -472,6 +472,13 @@
 
     text("marketSession", label);
     text("dataStatus", open ? "LIVE" : "NOT LIVE");
+    text("dashMarketStatus", label);
+    text(
+      "dashMarketDetail",
+      open
+        ? "Fresh cTrader feed"
+        : (state.marketStatusDetail || "Trading signals blocked")
+    );
 
     const session = $("marketSession");
     if (session) {
