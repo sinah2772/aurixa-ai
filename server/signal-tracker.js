@@ -436,8 +436,13 @@ async function recordSignal(signalData) {
     JSON.stringify({
       symbol,
       symbolId,
+      accountId,
       timeframe,
-      symbolVerified: symbolId !== null && symbolId > 0,
+      symbolVerified:
+        symbolId !== null &&
+        symbolId > 0 &&
+        accountId !== null &&
+        accountId > 0,
       signal: direction,
       confidence: cleanNumber(p.confidence),
       score: cleanNumber(p.score),
