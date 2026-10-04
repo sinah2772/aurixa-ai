@@ -1155,3 +1155,14 @@ main { display:block; }
 .market-tag.market-closed {
   border-color: rgba(255, 110, 110, 0.45);
 }
+
+.market-tag.market-stale {
+  color: var(--yellow);
+  border-color: rgba(231, 200, 91, 0.45);
+  background: #181507;
+}
+.market-tag.market-disconnected {
+  color: var(--red);
+  border-color: rgba(255, 91, 101, 0.45);
+  background: #190b0d;
+}
