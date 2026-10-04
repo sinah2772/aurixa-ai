@@ -335,6 +335,7 @@ async function recordSignal(signalData) {
   const accountId = cleanNumber(
     signalData.accountId ??
     marketState.accountId ??
+    marketState.tradingAccount ??
     null
   );
 
