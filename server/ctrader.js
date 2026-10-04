@@ -33,6 +33,25 @@ function notifyMarket(method, value, extra) {
 const pendingRequests = new Map();
 
 const availableSymbols = new Map();
+const subscribedTrendbars = new Set();
+
+function subscribeLiveTrendbar(ws, accountId, symbolId, period) {
+  const key = String(symbolId) + ":" + String(period);
+
+  if (subscribedTrendbars.has(key)) {
+    console.log("cTrader: trendbar already subscribed:", key);
+    return false;
+  }
+
+  send(ws, 2135, {
+    ctidTraderAccountId: Number(accountId),
+    symbolId: Number(symbolId),
+    period: Number(period)
+  });
+
+  subscribedTrendbars.add(key);
+  return true;
+}
 
 const state = {
   accessToken: null,
@@ -1167,6 +1186,7 @@ function connectOpenApi() {
         if (msg.payloadType === 2103) {
           state.authorized = true;
           state.accountId = String(payload.ctidTraderAccountId);
+          subscribedTrendbars.clear();
 
           console.log(
             "cTrader: account authorized, requesting symbol list for",
@@ -1244,19 +1264,21 @@ function connectOpenApi() {
           });
 
           // ProtoOASubscribeLiveTrendbarReq
-          // Subscribe to live XAUUSD M5 candles.
-          send(ws, 2135, {
-            ctidTraderAccountId: Number(state.accountId),
-            symbolId: Number(state.symbolId),
-            period: 5
-          });
+          // Subscribe to live XAUUSD M5 candles once per connection.
+          subscribeLiveTrendbar(
+            ws,
+            state.accountId,
+            state.symbolId,
+            5
+          );
 
 // Opening Range strategy: live XAUUSD M1 candles.
-send(ws, 2135, {
-  ctidTraderAccountId: Number(state.accountId),
-  symbolId: Number(state.symbolId),
-  period: 1
-});
+subscribeLiveTrendbar(
+  ws,
+  state.accountId,
+  state.symbolId,
+  1
+);
 
           // ProtoOAGetTrendbarsReq
           // Request the latest 300 XAUUSD M5 candles.
@@ -1745,12 +1767,15 @@ function registerCTrader(app) {
 
       /*
        * M5 live trendbars.
+       * cTrader rejects duplicate subscriptions, so keep a
+       * per-connection subscription registry.
        */
-      send(state.ws, 2135, {
-        ctidTraderAccountId: accountId,
-        symbolId: symbolId,
-        period: 5
-      });
+      subscribeLiveTrendbar(
+        state.ws,
+        accountId,
+        symbolId,
+        5
+      );
 
       /*
        * M5 historical candles.
