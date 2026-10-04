@@ -1236,8 +1236,24 @@ async function refresh() {
         </div>
 
         <div class="tracking-history">
-          <div class="tracking-horizon-title">
-            RECENT SIGNAL HISTORY
+          <div class="history-filter">
+            <div class="history-filter-field">
+              <label for="historyFrom">FROM</label>
+              <input id="historyFrom" type="date">
+            </div>
+            <div class="history-filter-field">
+              <label for="historyTo">TO</label>
+              <input id="historyTo" type="date">
+            </div>
+            <div class="history-filter-actions">
+              <button id="historyApply" type="button">APPLY</button>
+              <button id="history7d" type="button">7 DAYS</button>
+              <button id="historyClear" type="button">CLEAR</button>
+            </div>
+          </div>
+
+          <div class="tracking-horizon-title history-board-title">
+            HISTORY BOARD <span id="historyFilterSummary">ALL DATES</span>
           </div>
 
           <table class="tracking-history-table">
@@ -1466,16 +1482,97 @@ async function refresh() {
     }).join("");
   }
 
+  function validDate(value) {
+    return /^\\d{4}-\\d{2}-\\d{2}$/.test(String(value || ""));
+  }
+
+  function buildHistoryUrl() {
+    const from = document.getElementById("historyFrom")?.value || "";
+    const to = document.getElementById("historyTo")?.value || "";
+    const params = new URLSearchParams({
+      symbol: "XAUUSD",
+      timeframe: "5m",
+      limit: "100"
+    });
+
+    if (validDate(from)) params.set("from", from);
+    if (validDate(to)) params.set("to", to);
+
+    return HISTORY_URL + "?" + params.toString();
+  }
+
+  function setHistorySummary(rows) {
+    const from = document.getElementById("historyFrom")?.value || "";
+    const to = document.getElementById("historyTo")?.value || "";
+    const el = document.getElementById("historyFilterSummary");
+    if (!el) return;
+
+    const range = from || to
+      ? (from || "…") + " → " + (to || "…")
+      : "ALL DATES";
+
+    el.textContent = range + " · " + rows.length + " SIGNALS";
+  }
+
+  function setHistoryDefault7d() {
+    const to = new Date();
+    const from = new Date(to);
+    from.setDate(from.getDate() - 6);
+
+    const iso = d => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return y + "-" + m + "-" + day;
+    };
+
+    const fromEl = document.getElementById("historyFrom");
+    const toEl = document.getElementById("historyTo");
+    if (fromEl) fromEl.value = iso(from);
+    if (toEl) toEl.value = iso(to);
+  }
+
+  function setupHistoryFilters() {
+    const apply = document.getElementById("historyApply");
+    const quick = document.getElementById("history7d");
+    const clear = document.getElementById("historyClear");
+
+    if (apply && !apply.dataset.bound) {
+      apply.dataset.bound = "1";
+      apply.addEventListener("click", fetchTracking);
+    }
+
+    if (quick && !quick.dataset.bound) {
+      quick.dataset.bound = "1";
+      quick.addEventListener("click", () => {
+        setHistoryDefault7d();
+        fetchTracking();
+      });
+    }
+
+    if (clear && !clear.dataset.bound) {
+      clear.dataset.bound = "1";
+      clear.addEventListener("click", () => {
+        const from = document.getElementById("historyFrom");
+        const to = document.getElementById("historyTo");
+        if (from) from.value = "";
+        if (to) to.value = "";
+        fetchTracking();
+      });
+    }
+  }
+
   async function fetchTracking() {
     try {
       ensureTrackingPanel();
+      setupHistoryFilters();
 
       const [statsResponse, historyResponse] = await Promise.all([
         fetch(STATS_URL, {
           cache: "no-store",
           headers: { "Accept": "application/json" }
         }),
-        fetch(HISTORY_URL, {
+        fetch(buildHistoryUrl(), {
           cache: "no-store",
           headers: { "Accept": "application/json" }
         })
@@ -1490,7 +1587,9 @@ async function refresh() {
 
       if (historyResponse.ok) {
         const history = await historyResponse.json();
+        const rows = extractHistory(history);
         renderHistory(history);
+        setHistorySummary(rows);
       } else {
         renderHistory([]);
       }
@@ -1519,6 +1618,7 @@ async function refresh() {
 
   function start() {
     ensureTrackingPanel();
+    setupHistoryFilters();
     fetchTracking();
 
     // Refresh statistics/history without touching trading logic.
