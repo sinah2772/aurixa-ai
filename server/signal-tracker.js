@@ -376,7 +376,7 @@ async function recordSignal(signalData) {
       $19,
       $20,
       $21,
-      $22
+      $22, $23, $24
     )
     ON CONFLICT (symbol, timeframe, candle_time)
     DO NOTHING
