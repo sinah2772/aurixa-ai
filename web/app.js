@@ -14,7 +14,10 @@
     market: "/api/market",
     marketState: "/api/market/state",
     system: "/api/system/state",
-    ctrader: "/api/ctrader/status"
+    ctrader: "/api/ctrader/status",
+    autoStatus: "/api/auto-trader/status",
+    autoPositions: "/api/auto-trader/positions",
+    autoTrades: "/api/auto-trader/trades"
   };
 
   let chart = null;
@@ -425,6 +428,67 @@
         data.timestamp
       ))
     );
+  }
+
+  function updateAutoTrader(status, positions, trades) {
+    if (!status) return;
+    const enabled = status.enabled === true;
+    const demo = status.demoAccount === true && status.demoOnly === true;
+    const connected = status.connected === true && status.authorized === true;
+    const blocked = status.blocked === true;
+    const state = blocked ? "BLOCKED" : (enabled && demo && connected ? "READY" : (enabled ? "WAITING" : "OFF"));
+
+    text("autoTradeStatus", state);
+    text("autoTradeMode", demo ? "DEMO ONLY" : "GUARDED");
+    text("autoTradePosition", positions?.count ? "OPEN" : "FLAT");
+
+    const rows = Array.isArray(trades?.trades) ? trades.trades : [];
+    const latest = rows[0];
+    text("autoTradeLastAction", latest ? String(first(latest.status, latest.direction, "—")).toUpperCase() : "—");
+
+    const list = Array.isArray(positions?.positions) ? positions.positions : [];
+    const p = list[0];
+
+    if (!p) {
+      text("autoPositionDirection", "FLAT");
+      text("autoPositionEntry", "—");
+      text("autoPositionCurrent", "—");
+      text("autoPositionVolume", "—");
+      text("autoPositionSL", "—");
+      text("autoPositionPnl", "—");
+      text("autoTradeNotice", state === "READY" ? "Demo auto-trader is armed. No XAUUSD position is open." : state);
+    } else {
+      const side = Number(p?.tradeData?.tradeSide) === 1 ? "BUY" : Number(p?.tradeData?.tradeSide) === 2 ? "SELL" : first(p.direction, "—");
+      const entry = first(p?.tradeData?.openPrice, p?.tradeData?.price, p?.price, p?.entryPrice);
+      const current = first(p?.currentPrice, p?.tradeData?.currentPrice, p?.price);
+      const volume = first(p?.tradeData?.volume, p?.volume);
+      const sl = first(p?.tradeData?.stopLoss, p?.stopLoss);
+      const pnl = first(p?.unrealizedNetProfit, p?.tradeData?.unrealizedNetProfit, p?.netProfit, p?.profit);
+      text("autoPositionDirection", side);
+      text("autoPositionEntry", number(entry, 2));
+      text("autoPositionCurrent", number(current, 2));
+      text("autoPositionVolume", volume ?? "—");
+      text("autoPositionSL", number(sl, 2));
+      text("autoPositionPnl", number(pnl, 2));
+      text("autoTradeNotice", "Demo XAUUSD position is open.");
+    }
+
+    const history = $("autoTradeHistory");
+    if (!history) return;
+    if (!rows.length) {
+      history.innerHTML = '<div class="empty-state">No demo trades recorded yet.</div>';
+      return;
+    }
+    history.innerHTML = rows.slice(0, 10).map((t) => {
+      const direction = String(first(t.direction, "—")).toUpperCase();
+      const statusText = String(first(t.status, "—")).toUpperCase();
+      const profit = first(t.profit);
+      return '<div class="auto-trade-row">' +
+        '<div><strong class="' + direction.toLowerCase() + '">' + escapeHTML(direction) + '</strong><span>' + escapeHTML(number(first(t.signalEntryPrice), 2)) + '</span></div>' +
+        '<div><small>' + escapeHTML(formatTime(first(t.createdAt, t.openedAt))) + '</small></div>' +
+        '<div><span class="trade-status">' + escapeHTML(statusText) + '</span><span>' + (profit === null || profit === undefined ? "P&L —" : "P&L " + escapeHTML(number(profit, 2))) + '</span></div>' +
+      '</div>';
+    }).join("");
   }
 
   function updateTrackingStats(data) {
@@ -873,7 +937,10 @@ async function refresh() {
       trackingStats,
       history,
       trackingHistory,
-      ctrader
+      ctrader,
+      autoStatus,
+      autoPositions,
+      autoTrades
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
@@ -882,7 +949,10 @@ async function refresh() {
       getJSON(API.trackingStats),
       getJSON(API.history),
       getJSON(API.trackingHistory),
-      getJSON(API.ctrader)
+      getJSON(API.ctrader),
+      getJSON(API.autoStatus),
+      getJSON(API.autoPositions),
+      getJSON(API.autoTrades)
     ]);
 
     updateMarket(
@@ -934,6 +1004,8 @@ async function refresh() {
     if (ctrader) {
       updateConnection(ctrader);
     }
+
+    updateAutoTrader(autoStatus, autoPositions, autoTrades);
 
     const system = await getJSON(API.system);
 
