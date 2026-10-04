@@ -948,3 +948,29 @@ body {
     font-size: 12px;
   }
 }
+
+
+/* AURIXA ORGANIZED MULTI-MARKET LAYOUT */
+.dashboard,
+main { display:block; }
+
+.tracking-host {
+  width:100%;
+  margin:0 0 14px;
+}
+
+.tracking-host > section {
+  width:100%;
+  margin:0 0 14px;
+}
+
+.tracking-host .card {
+  background:linear-gradient(145deg,var(--panel),var(--panel2));
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:18px;
+}
+
+@media (max-width:520px) {
+  .tracking-host .card { padding:14px; }
+}
