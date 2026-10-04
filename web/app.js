@@ -1054,6 +1054,17 @@ async function refresh() {
     );
   }
 
+  async function refreshLiveChart() {
+    try {
+      const market = await getJSON(API.market);
+      if (!market) return;
+
+      updateMarket(market, null);
+    } catch (error) {
+      console.error("AURIXA live chart refresh:", error);
+    }
+  }
+
   function start() {
     loadPairSelector();
 
@@ -1077,6 +1088,9 @@ async function refresh() {
 
     refresh();
 
+    // Fast chart-only polling keeps the visible market line current
+    // without running the full dashboard refresh every second.
+    setInterval(refreshLiveChart, 2000);
     setInterval(refresh, 5000);
   }
 
