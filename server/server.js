@@ -23,9 +23,13 @@ signalTracker.configure({
   query: queryDatabase,
   getState: () => {
     const state = marketEngine.getState();
+    const ctrader = getCTraderStatus();
 
     return {
       ...state,
+      symbol: ctrader.symbol,
+      symbolId: ctrader.symbolId,
+      symbolDigits: ctrader.symbolDigits,
       predictionEngine: marketEngine.calculatePrediction
     };
   }
