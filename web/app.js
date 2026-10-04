@@ -17,7 +17,8 @@
     ctrader: "/api/ctrader/status",
     autoStatus: "/api/auto-trader/status",
     autoPositions: "/api/auto-trader/positions",
-    autoTrades: "/api/auto-trader/trades"
+    autoTrades: "/api/auto-trader/trades",
+    openingRange: "/api/strategies/or-fvg"
   };
 
   let chart = null;
