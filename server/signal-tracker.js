@@ -929,12 +929,12 @@ async function getRecent(limit = 20, symbol = "XAUUSD", timeframe = "5m", from =
   const dateFilters = [];
   const dateParams = [safeLimit, symbol, timeframe];
 
-  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(String(from || ""))) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(from || ""))) {
     dateParams.push(String(from));
     dateFilters.push("s.candle_time::date >= $4::date");
   }
 
-  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(String(to || ""))) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(to || ""))) {
     dateParams.push(String(to));
     dateFilters.push("s.candle_time::date <= $" + dateParams.length + "::date");
   }
@@ -993,8 +993,8 @@ async function getRecent(limit = 20, symbol = "XAUUSD", timeframe = "5m", from =
     ok: true,
     signals: result.rows,
     filters: {
-      from: /^\\d{4}-\\d{2}-\\d{2}$/.test(String(from || "")) ? String(from) : null,
-      to: /^\\d{4}-\\d{2}-\\d{2}$/.test(String(to || "")) ? String(to) : null
+      from: /^\d{4}-\d{2}-\d{2}$/.test(String(from || "")) ? String(from) : null,
+      to: /^\d{4}-\d{2}-\d{2}$/.test(String(to || "")) ? String(to) : null
     }
   };
 }
