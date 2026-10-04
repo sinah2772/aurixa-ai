@@ -908,7 +908,7 @@ async function getStats(symbol = "XAUUSD", timeframe = "5m") {
   };
 }
 
-async function getRecent(limit = 20, symbol = "XAUUSD", timeframe = "5m") {
+async function getRecent(limit = 20, symbol = "XAUUSD", timeframe = "5m", from = null, to = null) {
   symbol = String(symbol || "XAUUSD").trim().toUpperCase();
   timeframe = String(timeframe || "5m").trim() || "5m";
   if (typeof dbQuery !== "function") {
@@ -925,6 +925,23 @@ async function getRecent(limit = 20, symbol = "XAUUSD", timeframe = "5m") {
     Math.max(Number(limit) || 20, 1),
     100
   );
+
+  const dateFilters = [];
+  const dateParams = [safeLimit, symbol, timeframe];
+
+  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(String(from || ""))) {
+    dateParams.push(String(from));
+    dateFilters.push("s.candle_time::date >= $4::date");
+  }
+
+  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(String(to || ""))) {
+    dateParams.push(String(to));
+    dateFilters.push("s.candle_time::date <= $" + dateParams.length + "::date");
+  }
+
+  const dateWhere = dateFilters.length
+    ? " AND " + dateFilters.join(" AND ")
+    : "";
 
   const result = await dbQuery(`
     SELECT
@@ -955,6 +972,7 @@ async function getRecent(limit = 20, symbol = "XAUUSD", timeframe = "5m") {
     WHERE s.symbol = $2
       AND s.timeframe = $3
       AND s.symbol_verified = TRUE
+      ${dateWhere}
 
     GROUP BY
       s.id,
@@ -969,11 +987,15 @@ async function getRecent(limit = 20, symbol = "XAUUSD", timeframe = "5m") {
 
     ORDER BY s.candle_time DESC
     LIMIT $1
-  `, [safeLimit, symbol, timeframe]);
+  `, dateParams);
 
   return {
     ok: true,
-    signals: result.rows
+    signals: result.rows,
+    filters: {
+      from: /^\\d{4}-\\d{2}-\\d{2}$/.test(String(from || "")) ? String(from) : null,
+      to: /^\\d{4}-\\d{2}-\\d{2}$/.test(String(to || "")) ? String(to) : null
+    }
   };
 }
 
