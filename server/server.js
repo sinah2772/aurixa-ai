@@ -445,7 +445,9 @@ app.get("/api/validation",(req,res)=>{
 
 app.get("/api/signals/stats", async (req, res) => {
   try {
-    const stats = await signalTracker.getStats();
+    const symbol = String(req.query.symbol || "XAUUSD").trim().toUpperCase();
+    const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
+    const stats = await signalTracker.getStats(symbol, timeframe);
 
     res.json(stats);
   } catch (err) {
@@ -461,7 +463,9 @@ app.get("/api/signals/stats", async (req, res) => {
 
 app.get("/api/signals/v2-stats", async (req, res) => {
   try {
-    const stats = await signalTracker.getV2Stats();
+    const symbol = String(req.query.symbol || "XAUUSD").trim().toUpperCase();
+    const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
+    const stats = await signalTracker.getV2Stats(symbol, timeframe);
     res.json(stats);
   } catch (err) {
     console.error("Signal V2 stats error:", err);
@@ -480,7 +484,9 @@ app.get("/api/signals/history", async (req, res) => {
       100
     );
 
-    const history = await signalTracker.getRecent(limit);
+    const symbol = String(req.query.symbol || "XAUUSD").trim().toUpperCase();
+    const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
+    const history = await signalTracker.getRecent(limit, symbol, timeframe);
 
     res.json(history);
   } catch (err) {
@@ -708,8 +714,12 @@ app.get("/api/auto-trader/trades", async (req, res) => {
 
 app.get("/api/signals/recent", async (req, res) => {
   try {
+    const symbol = String(req.query.symbol || "XAUUSD").trim().toUpperCase();
+    const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
     const recent = await signalTracker.getRecent(
-      req.query.limit
+      req.query.limit,
+      symbol,
+      timeframe
     );
 
     res.json(recent);

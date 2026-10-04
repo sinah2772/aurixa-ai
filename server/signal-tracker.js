@@ -81,6 +81,27 @@ async function init() {
     )
   `);
 
+  /*
+   * Symbol-safe tracking columns.
+   *
+   * Existing records intentionally remain unverified.
+   * New records will explicitly store symbol + symbol_id.
+   */
+  await dbQuery(`
+    ALTER TABLE aurixa.signals
+      ADD COLUMN IF NOT EXISTS symbol_id BIGINT
+  `);
+
+  await dbQuery(`
+    ALTER TABLE aurixa.signals
+      ADD COLUMN IF NOT EXISTS symbol_verified BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+
+  await dbQuery(`
+    CREATE INDEX IF NOT EXISTS idx_aurixa_signals_symbol_verified_time
+    ON aurixa.signals(symbol, timeframe, symbol_verified, candle_time DESC)
+  `);
+
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS aurixa.signal_evaluations (
       id BIGSERIAL PRIMARY KEY,
@@ -276,12 +297,40 @@ async function recordSignal(signalData) {
 
   const candleDate = signalData.candleDate;
 
+  const marketState =
+    typeof getMarketState === "function"
+      ? (getMarketState() || {})
+      : {};
+
+  const symbol =
+    String(
+      signalData.symbol ||
+      marketState.symbol ||
+      marketState.symbolName ||
+      "XAUUSD"
+    ).trim().toUpperCase();
+
+  const symbolId = cleanNumber(
+    signalData.symbolId ??
+    marketState.symbolId ??
+    null
+  );
+
+  const timeframe =
+    String(
+      signalData.timeframe ||
+      marketState.timeframe ||
+      "5m"
+    ).trim() || "5m";
+
   const result = await dbQuery(`
     INSERT INTO aurixa.signals
     (
       candle_time,
       symbol,
+      symbol_id,
       timeframe,
+      symbol_verified,
       direction,
       entry_price,
       confidence,
@@ -306,11 +355,10 @@ async function recordSignal(signalData) {
     VALUES
     (
       $1,
-      'XAUUSD',
-      '5m',
       $2,
       $3,
       $4,
+      TRUE,
       $5,
       $6,
       $7,
@@ -327,13 +375,17 @@ async function recordSignal(signalData) {
       $18,
       $19,
       $20,
-      $21
+      $21,
+      $22
     )
     ON CONFLICT (symbol, timeframe, candle_time)
     DO NOTHING
     RETURNING id
   `, [
     candleDate.toISOString(),
+    symbol,
+    symbolId,
+    timeframe,
     direction,
     entryPrice,
     cleanNumber(p.confidence),
@@ -358,6 +410,10 @@ async function recordSignal(signalData) {
       : null,
     p.reason || null,
     JSON.stringify({
+      symbol,
+      symbolId,
+      timeframe,
+      symbolVerified: true,
       signal: direction,
       confidence: cleanNumber(p.confidence),
       score: cleanNumber(p.score),
@@ -389,6 +445,10 @@ async function recordSignal(signalData) {
       id: null,
       direction,
       entryPrice,
+      symbol,
+      symbolId,
+      timeframe,
+      symbolVerified: true,
       candleTime: signalData.candleTime,
       duplicate: true
     };
@@ -434,6 +494,10 @@ async function recordSignal(signalData) {
     id: signalId,
     direction,
     entryPrice,
+    symbol,
+    symbolId,
+    timeframe,
+    symbolVerified: true,
     candleTime: signalData.candleTime,
     duplicate: false
   };
@@ -443,6 +507,20 @@ async function trackLatestClosedSignal() {
   if (!initialized) return null;
 
   const state = getMarketState();
+
+  const symbol =
+    String(
+      state?.symbol ||
+      state?.symbolName ||
+      "XAUUSD"
+    ).trim().toUpperCase();
+
+  const symbolId = cleanNumber(
+    state?.symbolId ?? null
+  );
+
+  const timeframe =
+    String(state?.timeframe || "5m").trim() || "5m";
 
   const candles = Array.isArray(state?.candles)
     ? state.candles
@@ -484,9 +562,10 @@ async function trackLatestClosedSignal() {
       0
     ) AS max_candle_time
     FROM aurixa.signals
-    WHERE symbol = 'XAUUSD'
-      AND timeframe = '5m'
-  `);
+    WHERE symbol = $1
+      AND timeframe = $2
+      AND symbol_verified = TRUE
+  `, [symbol, timeframe]);
 
   const lastStoredTime =
     Number(existing.rows[0]?.max_candle_time) || 0;
@@ -549,7 +628,10 @@ async function trackLatestClosedSignal() {
       candleTime,
       candleDate: new Date(candleTime),
       candle: targetCandle,
-      prediction
+      prediction,
+      symbol,
+      symbolId,
+      timeframe
     };
 
     const saved = await recordSignal(signalData);
@@ -590,6 +672,16 @@ async function evaluatePending() {
 
   const state = getMarketState();
 
+  const symbol =
+    String(
+      state?.symbol ||
+      state?.symbolName ||
+      "XAUUSD"
+    ).trim().toUpperCase();
+
+  const timeframe =
+    String(state?.timeframe || "5m").trim() || "5m";
+
   const price =
     cleanNumber(state?.currentCandle?.close) ??
     cleanNumber(state?.price);
@@ -611,9 +703,12 @@ async function evaluatePending() {
     WHERE e.result = 'PENDING'
       AND e.due_at <= $1
       AND s.direction IN ('BUY','SELL')
+      AND s.symbol = $2
+      AND s.timeframe = $3
+      AND s.symbol_verified = TRUE
     ORDER BY e.due_at ASC
     LIMIT 100
-  `, [now]);
+  `, [now, symbol, timeframe]);
 
   for (const row of pending.rows) {
     const entry = Number(row.entry_price);
@@ -657,7 +752,9 @@ async function evaluatePending() {
   }
 }
 
-async function getStats() {
+async function getStats(symbol = "XAUUSD", timeframe = "5m") {
+  symbol = String(symbol || "XAUUSD").trim().toUpperCase();
+  timeframe = String(timeframe || "5m").trim() || "5m";
   if (typeof dbQuery !== "function") {
     return {
       ok: true,
@@ -735,10 +832,13 @@ async function getStats() {
       ON s.id = e.signal_id
 
     WHERE s.direction IN ('BUY','SELL')
+      AND s.symbol = $1
+      AND s.timeframe = $2
+      AND s.symbol_verified = TRUE
 
     GROUP BY e.horizon_minutes
     ORDER BY e.horizon_minutes
-  `);
+  `, [symbol, timeframe]);
 
   const byHorizon = {};
 
@@ -788,7 +888,10 @@ async function getStats() {
       ) AS wait
 
     FROM aurixa.signals
-  `);
+    WHERE symbol = $1
+      AND timeframe = $2
+      AND symbol_verified = TRUE
+  `, [symbol, timeframe]);
 
   const t = totals.rows[0] || {};
 
@@ -805,7 +908,9 @@ async function getStats() {
   };
 }
 
-async function getRecent(limit = 20) {
+async function getRecent(limit = 20, symbol = "XAUUSD", timeframe = "5m") {
+  symbol = String(symbol || "XAUUSD").trim().toUpperCase();
+  timeframe = String(timeframe || "5m").trim() || "5m";
   if (typeof dbQuery !== "function") {
     return {
       ok: true,
@@ -828,6 +933,10 @@ async function getRecent(limit = 20) {
       s.direction,
       s.entry_price,
       s.confidence,
+      s.symbol,
+      s.symbol_id,
+      s.timeframe,
+      s.symbol_verified,
 
       jsonb_object_agg(
         e.horizon_minutes::text,
@@ -843,16 +952,24 @@ async function getRecent(limit = 20) {
     LEFT JOIN aurixa.signal_evaluations e
       ON e.signal_id = s.id
 
+    WHERE s.symbol = $2
+      AND s.timeframe = $3
+      AND s.symbol_verified = TRUE
+
     GROUP BY
       s.id,
       s.candle_time,
       s.direction,
       s.entry_price,
-      s.confidence
+      s.confidence,
+      s.symbol,
+      s.symbol_id,
+      s.timeframe,
+      s.symbol_verified
 
     ORDER BY s.candle_time DESC
     LIMIT $1
-  `, [safeLimit]);
+  `, [safeLimit, symbol, timeframe]);
 
   return {
     ok: true,
@@ -861,7 +978,10 @@ async function getRecent(limit = 20) {
 }
 
 
-async function getV2Stats() {
+async function getV2Stats(symbol = "XAUUSD", timeframe = "5m") {
+  symbol = String(symbol || "XAUUSD").trim().toUpperCase();
+  timeframe = String(timeframe || "5m").trim() || "5m";
+
   if (typeof dbQuery !== "function") {
     return {
       ok: true,
@@ -881,9 +1001,10 @@ async function getV2Stats() {
       COUNT(*) FILTER (WHERE direction = 'SELL') AS sell,
       COUNT(*) FILTER (WHERE direction = 'WAIT') AS wait
     FROM aurixa.signals
-    WHERE symbol = 'XAUUSD'
-      AND timeframe = '5m'
-  `);
+    WHERE symbol = $1
+      AND timeframe = $2
+      AND symbol_verified = TRUE
+  `, [symbol, timeframe]);
 
   const totalRow = totalsResult.rows[0] || {};
 
@@ -933,10 +1054,13 @@ async function getV2Stats() {
       ON e.signal_id = s.id
 
     WHERE s.direction IN ('BUY','SELL')
+      AND s.symbol = $1
+      AND s.timeframe = $2
+      AND s.symbol_verified = TRUE
 
     GROUP BY s.direction, e.horizon_minutes
     ORDER BY s.direction, e.horizon_minutes
-  `);
+  `, [symbol, timeframe]);
 
   const directions = {
     BUY: {},
@@ -1026,6 +1150,9 @@ async function getV2Stats() {
         ON e.signal_id = s.id
       WHERE
         s.direction IN ('BUY','SELL')
+        AND s.symbol = $1
+        AND s.timeframe = $2
+        AND s.symbol_verified = TRUE
         AND s.confidence IS NOT NULL
         AND s.confidence >= 40
       GROUP BY
@@ -1047,7 +1174,7 @@ async function getV2Stats() {
         WHEN '80+' THEN 5
       END,
       horizon_minutes
-  `);
+  `, [symbol, timeframe]);
 
   const confidenceBands = {
     "40-49": {},
