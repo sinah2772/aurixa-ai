@@ -98,6 +98,22 @@ async function init() {
   `);
 
   await dbQuery(`
+    ALTER TABLE aurixa.signals
+      ADD COLUMN IF NOT EXISTS account_id BIGINT
+  `);
+
+  await dbQuery(`
+    ALTER TABLE aurixa.signals
+      DROP CONSTRAINT IF EXISTS signals_symbol_timeframe_candle_time_key
+  `);
+
+  await dbQuery(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_aurixa_signals_account_symbol_time
+    ON aurixa.signals(account_id, symbol_id, timeframe, candle_time)
+    WHERE account_id IS NOT NULL AND symbol_id IS NOT NULL
+  `);
+
+  await dbQuery(`
     CREATE INDEX IF NOT EXISTS idx_aurixa_signals_symbol_verified_time
     ON aurixa.signals(symbol, timeframe, symbol_verified, candle_time DESC)
   `);
@@ -316,6 +332,12 @@ async function recordSignal(signalData) {
     null
   );
 
+  const accountId = cleanNumber(
+    signalData.accountId ??
+    marketState.accountId ??
+    null
+  );
+
   const timeframe =
     String(
       signalData.timeframe ||
@@ -329,6 +351,7 @@ async function recordSignal(signalData) {
       candle_time,
       symbol,
       symbol_id,
+      account_id,
       timeframe,
       symbol_verified,
       direction,
@@ -358,7 +381,7 @@ async function recordSignal(signalData) {
       $2,
       $3,
       $4,
-      (CASE WHEN $3 > 0 THEN TRUE ELSE FALSE END),
+      (CASE WHEN $3 > 0 AND $4 > 0 THEN TRUE ELSE FALSE END),
       $5,
       $6,
       $7,
@@ -385,6 +408,7 @@ async function recordSignal(signalData) {
     candleDate.toISOString(),
     symbol,
     symbolId,
+    accountId,
     timeframe,
     direction,
     entryPrice,
