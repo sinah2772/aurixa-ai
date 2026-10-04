@@ -974,3 +974,71 @@ main { display:block; }
 @media (max-width:520px) {
   .tracking-host .card { padding:14px; }
 }
+
+
+/* ============================================================
+   AURIXA MULTI-MARKET DESKTOP LAYOUT
+   Real cTrader market selection and chart presentation
+   ============================================================ */
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.dashboard-grid > .panel {
+  margin-bottom: 14px;
+  min-width: 0;
+}
+
+.signal-panel,
+.chart-panel {
+  min-width: 0;
+}
+
+.signal-panel .signal-card {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.chart-panel .chart-wrap {
+  height: 360px;
+}
+
+.tracking-host {
+  width: 100%;
+  margin: 0 0 14px;
+}
+
+.tracking-host > section {
+  width: 100%;
+  margin: 0 0 14px;
+}
+
+@media (max-width: 850px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .signal-panel .signal-card {
+    min-height: auto;
+  }
+
+  .chart-panel .chart-wrap {
+    height: 320px;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard-grid {
+    gap: 10px;
+  }
+
+  .chart-panel .chart-wrap {
+    height: 270px;
+  }
+}
