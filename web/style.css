@@ -1070,3 +1070,60 @@ main { display:block; }
   .auto-status-grid { grid-template-columns: repeat(2, 1fr); }
   .auto-trade-row { grid-template-columns: 1fr; }
 }
+
+
+.command-center {
+  margin-bottom: 14px;
+}
+.command-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 15px;
+}
+.command-card {
+  min-height: 92px;
+  padding: 14px;
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.command-card span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .11em;
+}
+.command-card strong {
+  margin-top: 10px;
+  font-size: 20px;
+  font-weight: 950;
+}
+.command-card small {
+  color: var(--muted);
+  margin-top: 5px;
+  font-size: 10px;
+}
+.command-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+.command-foot strong {
+  color: var(--text);
+  letter-spacing: normal;
+  font-size: 11px;
+}
+@media (max-width: 720px) {
+  .command-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
