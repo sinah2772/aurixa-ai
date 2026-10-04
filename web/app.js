@@ -18,6 +18,7 @@
   };
 
   let chart = null;
+  let selectedSymbol = "XAUUSD";
 
   async function getJSON(url) {
     try {
@@ -97,6 +98,14 @@
 
   function updateConnection(status) {
     if (!status) return;
+
+    const liveSymbol = first(status.symbol, status.symbolName, selectedSymbol, "XAUUSD");
+    selectedSymbol = String(liveSymbol).toUpperCase();
+    text("instrument", selectedSymbol);
+    text("chartTitle", selectedSymbol + " / 5 MINUTE");
+
+    const selector = $("pairSelector");
+    if (selector && selector.value !== selectedSymbol) selector.value = selectedSymbol;
 
     const connected =
       status.connected === true &&
@@ -634,6 +643,7 @@
     if (chart) {
       chart.data.labels = labels;
       chart.data.datasets[0].data = values;
+      chart.data.datasets[0].label = selectedSymbol || "XAUUSD";
       chart.update("none");
       return;
     }
@@ -643,7 +653,7 @@
       data: {
         labels,
         datasets: [{
-          label: ctrader?.symbol || "XAUUSD",
+          label: selectedSymbol || "XAUUSD",
           data: values,
           tension: 0.25,
           pointRadius: 0,
@@ -1542,6 +1552,12 @@ async function refresh() {
 
       </div>
     `;
+
+    const host = document.getElementById("trackingHost");
+    if (host) {
+      host.appendChild(panel);
+      return panel;
+    }
 
     const target =
       document.querySelector(".database-card") ||
