@@ -17,6 +17,7 @@ const signalTracker = require("./signal-tracker");
 const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const { backtest } = require("./validation");
+const openingRangeStrategy = require("./opening-range-strategy");
 setMarketEngine(marketEngine);
 
 signalTracker.configure({
@@ -76,6 +77,16 @@ app.get('/api/strategies/of1', (req, res) => {
       strategy: 'AURIXA_OF1',
       error: error.message
     });
+  }
+});
+
+app.get('/api/strategies/or-fvg', (req, res) => {
+  try {
+    const result = openingRangeStrategy.getPrediction();
+    res.json({ ok: true, strategy: 'NY_OPENING_RANGE_FVG', ...result, timestamp: new Date().toISOString() });
+  } catch (error) {
+    console.error('AURIXA OR/FVG endpoint error:', error);
+    res.status(500).json({ ok: false, strategy: 'NY_OPENING_RANGE_FVG', error: error.message });
   }
 });
 
