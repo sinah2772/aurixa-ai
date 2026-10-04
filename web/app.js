@@ -457,6 +457,55 @@
     text("dashRefresh", new Date().toLocaleTimeString());
   }
 
+  function updateMarketSession(market, ctrader) {
+    const state = market || {};
+    const lastUpdate = first(
+      state.timestamp,
+      state.lastUpdate,
+      ctrader?.lastUpdate
+    );
+
+    const price = first(
+      state.price,
+      state.mid,
+      state.currentPrice,
+      state.last,
+      ctrader?.mid
+    );
+
+    const now = Date.now();
+    const updatedAt = lastUpdate ? new Date(lastUpdate).getTime() : NaN;
+    const stale = Number.isFinite(updatedAt) && (now - updatedAt) > 30000;
+    const noPrice = !Number.isFinite(Number(price));
+
+    // cTrader remains the source of truth. If its feed is stale or absent,
+    // show CLOSED/STALE rather than presenting an old price as live.
+    const connected = ctrader?.connected === true && ctrader?.authorized === true;
+    const open = connected && !stale && !noPrice;
+
+    text("marketSession", open ? "MARKET OPEN" : "MARKET CLOSED");
+    text("dataStatus", open ? "LIVE" : "CLOSED");
+
+    const session = $("marketSession");
+    if (session) {
+      session.classList.toggle("market-open", open);
+      session.classList.toggle("market-closed", !open);
+    }
+
+    const badge = $("dataStatus");
+    if (badge) {
+      badge.classList.toggle("live", open);
+      badge.classList.toggle("offline", !open);
+    }
+
+    if (!open) {
+      text("engineStatus", "MARKET CLOSED");
+      setSignal("WAIT");
+      text("confidence", "0%");
+      text("reason", "Market feed is closed or stale. Waiting for live cTrader data.");
+    }
+  }
+
   function updateAutoTrader(status, positions, trades) {
     if (!status) return;
     const enabled = status.enabled === true;
@@ -982,13 +1031,13 @@ async function refresh() {
       getJSON(API.autoTrades)
     ]);
 
-    updateMarket(
-      {
-        ...(marketState || {}),
-        ...(market || {})
-      },
-      ctrader
-    );
+    const mergedMarket = {
+      ...(marketState || {}),
+      ...(market || {})
+    };
+
+    updateMarket(mergedMarket, ctrader);
+    updateMarketSession(mergedMarket, ctrader);
 
     // =========================================================
     // LIVE PREDICTION V2
