@@ -1042,3 +1042,31 @@ main { display:block; }
     height: 270px;
   }
 }
+
+
+.auto-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 15px;
+}
+.auto-history-title { margin-top: 18px; margin-bottom: 8px; }
+.auto-trade-history { display: grid; gap: 8px; }
+.auto-trade-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 11px;
+}
+.auto-trade-row > div { display: flex; flex-direction: column; gap: 4px; }
+.auto-trade-row small { color: var(--muted); }
+.trade-status { font-weight: 800; }
+@media (max-width: 720px) {
+  .auto-status-grid { grid-template-columns: repeat(2, 1fr); }
+  .auto-trade-row { grid-template-columns: 1fr; }
+}
