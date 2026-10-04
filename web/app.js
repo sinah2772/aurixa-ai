@@ -523,6 +523,40 @@
     }
   }
 
+  function updateFinalTradeGate(marketState, prediction, orFvg, positions) {
+    const marketOpen = String(first(marketState?.marketStatus, "")).toUpperCase() === "MARKET_OPEN";
+    const direction = String(first(prediction?.direction, prediction?.signal, "WAIT")).toUpperCase();
+    const fvgDirection = String(first(orFvg?.signal, "WAIT")).toUpperCase();
+    const triggered = String(first(orFvg?.phase, "")).toUpperCase() === "TRIGGERED";
+    const hasPosition = Number(first(positions?.count, 0)) > 0;
+    const ready = marketOpen && direction !== "WAIT" && direction === fvgDirection && triggered && !hasPosition;
+
+    text("gateMarket", marketOpen ? "OPEN" : "BLOCKED");
+    text("gateSignal", direction);
+    text("gateFvg", triggered ? fvgDirection : String(first(orFvg?.phase, "WAIT")).replaceAll("_", " "));
+    text("gatePosition", hasPosition ? "OPEN" : "FLAT");
+    text("gateEntry", number(orFvg?.entryPrice, 2));
+    text("gateSL", number(orFvg?.stopLoss, 2));
+    text("gateTP", number(orFvg?.takeProfit, 2));
+    text("gateRR", orFvg?.rewardRisk ? number(orFvg.rewardRisk, 1) + "R" : "2R PLAN");
+
+    const decision = $("gateDecision");
+    if (decision) {
+      decision.classList.remove("buy", "sell", "wait");
+      decision.classList.add(ready ? direction.toLowerCase() : "wait");
+      decision.textContent = ready ? "TRADE " + direction : "WAIT";
+    }
+
+    let reason = "Waiting for confirmation.";
+    if (!marketOpen) reason = "Market/feed is not open. No trade.";
+    else if (hasPosition) reason = "One XAUUSD position is already open.";
+    else if (direction === "WAIT") reason = "AURIXA M5 has no confirmed direction.";
+    else if (!triggered) reason = "Waiting for opening-range breakout + FVG retest + engulfing.";
+    else if (direction !== fvgDirection) reason = "M5 direction and OR/FVG direction disagree.";
+    else if (ready) reason = direction + " confirmed by both strategy layers.";
+    text("gateReason", reason);
+  }
+
   function updateAutoTrader(status, positions, trades) {
     if (!status) return;
     const enabled = status.enabled === true;
