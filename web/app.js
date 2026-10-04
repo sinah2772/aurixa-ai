@@ -1165,17 +1165,16 @@ async function refresh() {
       </div>
     `;
 
-    const candidates = [
-      document.querySelector(".database-card"),
-      document.querySelector("#database"),
-      document.querySelector(".dashboard"),
-      document.querySelector("main"),
-      document.body
-    ];
+    const host = document.getElementById("trackingHost");
 
-    const target = candidates.find(Boolean);
-    if (target && target !== document.body) {
-      target.parentNode.insertBefore(panel, target);
+    if (host) {
+      host.appendChild(panel);
+      return panel;
+    }
+
+    const main = document.querySelector("main");
+    if (main) {
+      main.appendChild(panel);
     } else {
       document.body.appendChild(panel);
     }
