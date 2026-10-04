@@ -112,7 +112,7 @@
       status.authorized === true;
 
     text(
-      "connectionStatus",
+      "ctraderConnection",
       connected
         ? "CONNECTED · Live market feed"
         : "DISCONNECTED"
@@ -148,10 +148,12 @@
       }
     }
 
-    const badge = $("liveBadge");
+    const badge = $(".live-badge");
 
     if (badge) {
-      badge.textContent = connected ? "● LIVE" : "● OFFLINE";
+      badge.innerHTML = connected
+        ? '<span class="dot"></span> LIVE'
+        : '<span class="dot"></span> OFFLINE';
       badge.classList.toggle("offline", !connected);
     }
   }
@@ -729,10 +731,25 @@ async function loadPairSelector() {
     const data =
       await response.json();
 
-    const symbols =
+    const apiSymbols =
       Array.isArray(data.symbols)
         ? data.symbols.filter(s => s && s.symbolName)
         : [];
+
+    const knownSymbols = [
+      { symbolName: "XAUUSD" },
+      { symbolName: "BITCOIN" },
+      { symbolName: "BITCOINCASH" },
+      { symbolName: "XAUUSDgr" }
+    ];
+
+    const seen = new Set();
+    const symbols = [...apiSymbols, ...knownSymbols].filter((s) => {
+      const name = String(s.symbolName || "").toUpperCase();
+      if (!name || seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    });
 
     selector.innerHTML = "";
 
