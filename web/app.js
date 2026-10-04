@@ -261,10 +261,24 @@
       text("spread", number(Number(ask) - Number(bid), 2));
     }
 
-    text(
-      "instrument",
-      first(market.symbol, "XAUUSD")
-    );
+    const marketSymbol = String(
+      first(
+        ctrader?.symbol,
+        market.symbol,
+        market.symbolName,
+        selectedSymbol,
+        "XAUUSD"
+      )
+    ).toUpperCase();
+
+    selectedSymbol = marketSymbol;
+    text("instrument", marketSymbol);
+    text("chartTitle", marketSymbol + " / 5 MINUTE");
+
+    const selector = $("pairSelector");
+    if (selector && selector.value !== marketSymbol) {
+      selector.value = marketSymbol;
+    }
 
     const candles = first(
       market.candles,
@@ -298,9 +312,18 @@
         atr14
       };
 
-      const latestTime = latest && latest.time
-        ? new Date(Number(latest.time)).toLocaleString()
-        : "—";
+      const latestRawTime = latest
+        ? first(latest.time, latest.timestamp, latest.openTime, latest.open_time)
+        : null;
+      const latestDate = latestRawTime
+        ? new Date(Number.isFinite(Number(latestRawTime))
+            ? Number(latestRawTime)
+            : latestRawTime)
+        : null;
+
+      const latestTime = latestDate && !Number.isNaN(latestDate.getTime())
+        ? latestDate.toLocaleString()
+        : formatTime(latestRawTime);
 
       text("latestCandle", latestTime);
     } else {
@@ -708,7 +731,7 @@ async function loadPairSelector() {
 
     const symbols =
       Array.isArray(data.symbols)
-        ? data.symbols
+        ? data.symbols.filter(s => s && s.symbolName)
         : [];
 
     selector.innerHTML = "";
@@ -780,9 +803,33 @@ async function selectPair(symbol) {
       );
     }
 
+    selectedSymbol = String(
+      data.selected || symbol || "XAUUSD"
+    ).toUpperCase();
+
+    if (chart) {
+      chart.destroy();
+      chart = null;
+    }
+
+    text("instrument", selectedSymbol);
+    text("chartTitle", selectedSymbol + " / 5 MINUTE");
+    text("price", "—");
+    text("bid", "—");
+    text("ask", "—");
+    text("spread", "—");
+    text("candleCount", "—");
+    text("latestCandle", "—");
+    text("engineStatus", "LOADING " + selectedSymbol);
+
+    const selector = $("pairSelector");
+    if (selector) selector.value = selectedSymbol;
+
     console.log(
       "AURIXA selected:",
-      data.selected
+      selectedSymbol,
+      "symbolId:",
+      data.symbolId
     );
 
     await refresh();
@@ -867,7 +914,9 @@ async function refresh() {
       history
     );
 
-    updateConnection(ctrader);
+    if (ctrader) {
+      updateConnection(ctrader);
+    }
 
     const system = await getJSON(API.system);
 
