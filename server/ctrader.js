@@ -1796,13 +1796,18 @@ function registerCTrader(app) {
       /*
        * Opening Range is XAUUSD-specific.
        * Do NOT feed M1 Opening Range data to BTC.
+       *
+       * Use the same per-connection subscription registry
+       * as M5 so selecting XAUUSD again cannot duplicate
+       * the existing M1 trendbar subscription.
        */
       if (normalizeSymbolName(symbol.symbolName).includes("XAUUSD")) {
-        send(state.ws, 2135, {
-          ctidTraderAccountId: accountId,
-          symbolId: symbolId,
-          period: 1
-        });
+        subscribeLiveTrendbar(
+          state.ws,
+          accountId,
+          symbolId,
+          1
+        );
       }
 
       console.log(
