@@ -459,50 +459,45 @@
 
   function updateMarketSession(market, ctrader) {
     const state = market || {};
-    const lastUpdate = first(
-      state.timestamp,
-      state.lastUpdate,
-      ctrader?.lastUpdate
+    const status = String(
+      state.marketStatus ||
+      (ctrader?.connected && ctrader?.authorized ? "MARKET_OPEN" : "CTRADER_DISCONNECTED")
     );
 
-    const price = first(
-      state.price,
-      state.mid,
-      state.currentPrice,
-      state.last,
-      ctrader?.mid
-    );
+    const open = status === "MARKET_OPEN";
+    const label =
+      status === "MARKET_OPEN" ? "MARKET OPEN" :
+      status === "FEED_STALE" ? "FEED STALE" :
+      "CTRADER DISCONNECTED";
 
-    const now = Date.now();
-    const updatedAt = lastUpdate ? new Date(lastUpdate).getTime() : NaN;
-    const stale = Number.isFinite(updatedAt) && (now - updatedAt) > 30000;
-    const noPrice = !Number.isFinite(Number(price));
-
-    // cTrader remains the source of truth. If its feed is stale or absent,
-    // show CLOSED/STALE rather than presenting an old price as live.
-    const connected = ctrader?.connected === true && ctrader?.authorized === true;
-    const open = connected && !stale && !noPrice;
-
-    text("marketSession", open ? "MARKET OPEN" : "MARKET CLOSED");
-    text("dataStatus", open ? "LIVE" : "CLOSED");
+    text("marketSession", label);
+    text("dataStatus", open ? "LIVE" : "NOT LIVE");
 
     const session = $("marketSession");
     if (session) {
-      session.classList.toggle("market-open", open);
-      session.classList.toggle("market-closed", !open);
+      session.classList.remove("market-open", "market-closed", "market-stale", "market-disconnected");
+      session.classList.add(
+        open ? "market-open" :
+        status === "FEED_STALE" ? "market-stale" :
+        "market-disconnected"
+      );
     }
 
     const badge = $("dataStatus");
     if (badge) {
-      badge.classList.toggle("live", open);
-      badge.classList.toggle("offline", !open);
+      badge.classList.remove("live", "offline");
+      badge.classList.add(open ? "live" : "offline");
     }
 
     if (!open) {
-      text("engineStatus", "MARKET CLOSED");
+      text("engineStatus", label);
       setSignal("WAIT");
       text("confidence", "0%");
-      text("reason", "Market feed is closed or stale. Waiting for live cTrader data.");
+      text(
+        "reason",
+        state.marketStatusDetail ||
+        "Live market data is unavailable. Waiting for a fresh cTrader feed."
+      );
     }
   }
 
