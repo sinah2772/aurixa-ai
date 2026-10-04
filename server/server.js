@@ -802,13 +802,13 @@ app.get("/api/market",(req,res)=>{
     lastUpdate: ct.lastUpdate ?? null,
     error: ct.error ?? null,
 
-    autoTrading: false,
+    autoTrading: autoTrader.getStatus().enabled,
     paperTrading: true,
 
     aurixa: {
       engine: "AURIXA",
       mode: "LIVE_MARKET_ANALYSIS",
-      tradingEnabled: false,
+      tradingEnabled: autoTrader.getStatus().enabled,
       candleCount: state.candleCount || 0
     }
   });
