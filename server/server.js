@@ -490,7 +490,9 @@ app.get("/api/signals/history", async (req, res) => {
 
     const symbol = String(req.query.symbol || "XAUUSD").trim().toUpperCase();
     const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
-    const history = await signalTracker.getRecent(limit, symbol, timeframe);
+    const from = String(req.query.from || "").trim() || null;
+    const to = String(req.query.to || "").trim() || null;
+    const history = await signalTracker.getRecent(limit, symbol, timeframe, from, to);
 
     res.json(history);
   } catch (err) {
@@ -723,7 +725,9 @@ app.get("/api/signals/recent", async (req, res) => {
     const recent = await signalTracker.getRecent(
       req.query.limit,
       symbol,
-      timeframe
+      timeframe,
+      String(req.query.from || "").trim() || null,
+      String(req.query.to || "").trim() || null
     );
 
     res.json(recent);
