@@ -2142,7 +2142,8 @@ function getCTraderStatus() {
     mid: state.bid !== null && state.ask !== null ? (state.bid + state.ask) / 2 : null,
     lastUpdate: state.lastUpdate,
     error: state.error,
-    autoTrading: false,
+    autoTrading:
+      String(process.env.AUTO_TRADING || "false").toLowerCase() === "true",
     paperTrading: true
   };
 }
