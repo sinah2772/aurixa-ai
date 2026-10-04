@@ -1067,7 +1067,8 @@ async function refresh() {
       ctrader,
       autoStatus,
       autoPositions,
-      autoTrades
+      autoTrades,
+      openingRange
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
@@ -1079,7 +1080,8 @@ async function refresh() {
       getJSON(API.ctrader),
       getJSON(API.autoStatus),
       getJSON(API.autoPositions),
-      getJSON(API.autoTrades)
+      getJSON(API.autoTrades),
+      getJSON(API.openingRange)
     ]);
 
     const mergedMarket = {
@@ -1134,6 +1136,7 @@ async function refresh() {
 
     updateCommandCenter(livePrediction, autoStatus, ctrader);
     updateAutoTrader(autoStatus, autoPositions, autoTrades);
+    updateFinalTradeGate(mergedMarket, livePrediction, openingRange?.result || openingRange, autoPositions);
 
     const system = await getJSON(API.system);
 
