@@ -506,6 +506,41 @@ app.get("/api/signals/history", async (req, res) => {
 });
 
 
+function getMarketSessionStatus(ct = getCTraderStatus()) {
+  const connected = Boolean(ct?.connected && ct?.authorized);
+  const last = ct?.lastUpdate ? Date.parse(ct.lastUpdate) : NaN;
+  const ageMs = Number.isFinite(last) ? Math.max(0, Date.now() - last) : null;
+  const stale = ageMs === null || ageMs > 30000;
+
+  if (!connected) {
+    return {
+      status: "CTRADER_DISCONNECTED",
+      open: false,
+      stale: true,
+      ageMs,
+      reason: "cTrader is disconnected or unauthorized"
+    };
+  }
+
+  if (stale) {
+    return {
+      status: "FEED_STALE",
+      open: false,
+      stale: true,
+      ageMs,
+      reason: "No fresh cTrader price update for more than 30 seconds"
+    };
+  }
+
+  return {
+    status: "MARKET_OPEN",
+    open: true,
+    stale: false,
+    ageMs,
+    reason: "Fresh cTrader market data is available"
+  };
+}
+
 app.post("/api/auto-trader/test-sell", async (req, res) => {
   try {
     const cfg = { enabled: String(process.env.AUTO_TRADING || "false").toLowerCase() === "true", demoOnly: String(process.env.AUTO_TRADING_DEMO_ONLY || "true").toLowerCase() !== "false", volume: Math.max(1, Number(process.env.AUTO_TRADING_VOLUME || 100)), sl: Number(process.env.AUTO_TRADING_SL || 2), tp: Number(process.env.AUTO_TRADING_TP || 0) };
@@ -527,6 +562,16 @@ app.post("/api/auto-trader/test-sell", async (req, res) => {
     }
 
     const status = getCTraderStatus();
+    const market = getMarketSessionStatus(status);
+
+    if (!market.open) {
+      return res.status(403).json({
+        ok: false,
+        orderSubmitted: false,
+        reason: market.status,
+        marketStatus: market
+      });
+    }
 
     if (status?.account?.isLive === true || status?.isLive === true) {
       return res.status(403).json({
@@ -762,6 +807,7 @@ app.get("/api/market/state", (req, res) => {
 
 app.get("/api/market",(req,res)=>{
   const ct = getCTraderStatus();
+  const marketStatus = getMarketSessionStatus(ct);
   const state = marketEngine.getState();
   const prediction = state.prediction || {};
 
@@ -805,6 +851,11 @@ app.get("/api/market",(req,res)=>{
     symbolId: ct.symbolId ?? null,
     lastUpdate: ct.lastUpdate ?? null,
     error: ct.error ?? null,
+    marketStatus: marketStatus.status,
+    marketOpen: marketStatus.open,
+    marketStale: marketStatus.stale,
+    marketStatusDetail: marketStatus.reason,
+    marketDataAgeMs: marketStatus.ageMs,
 
     autoTrading: autoTrader.getStatus().enabled,
     paperTrading: true,
