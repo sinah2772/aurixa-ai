@@ -430,6 +430,33 @@
     );
   }
 
+  function updateCommandCenter(signal, autoStatus, ctrader) {
+    const s = signal || {};
+    const direction = String(first(s.direction, s.signal, "WAIT")).toUpperCase();
+    const confidence = first(s.confidence);
+    text("dashSignal", direction);
+    text("dashConfidence", confidence === undefined || confidence === null ? "—" : String(number(confidence, 0)) + "%");
+
+    if (autoStatus) {
+      const enabled = autoStatus.enabled === true;
+      const demo = autoStatus.demoOnly === true && autoStatus.demoAccount === true;
+      const connected = autoStatus.connected === true && autoStatus.authorized === true;
+      const state = autoStatus.blocked === true ? "BLOCKED" : (enabled && demo && connected ? "READY" : (enabled ? "WAITING" : "OFF"));
+      text("dashAutoStatus", state);
+      text("dashAutoMode", demo ? "DEMO ONLY" : "GUARDED");
+      text("dashRisk", autoStatus.blocked === true ? "BLOCKED" : "ACTIVE");
+      text("dashRiskDetail", "MAX " + String(first(autoStatus.maxPositions, 1)) + " POSITION");
+    }
+
+    if (ctrader) {
+      const connected = ctrader.connected === true && ctrader.authorized === true;
+      text("dashConnection", connected ? "CONNECTED" : "OFFLINE");
+      text("dashAccount", first(ctrader.accountId, "—"));
+    }
+
+    text("dashRefresh", new Date().toLocaleTimeString());
+  }
+
   function updateAutoTrader(status, positions, trades) {
     if (!status) return;
     const enabled = status.enabled === true;
@@ -1005,6 +1032,7 @@ async function refresh() {
       updateConnection(ctrader);
     }
 
+    updateCommandCenter(livePrediction, autoStatus, ctrader);
     updateAutoTrader(autoStatus, autoPositions, autoTrades);
 
     const system = await getJSON(API.system);
