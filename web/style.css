@@ -1127,3 +1127,22 @@ main { display:block; }
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+/* AURIXA HISTORY BOARD DATE FILTER */
+.history-filter{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:10px 0 14px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#080a0d}
+.history-filter-field{display:flex;flex-direction:column;gap:5px}
+.history-filter-field label{color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.1em}
+.history-filter-field input{min-height:36px;padding:7px 9px;border:1px solid #303842;border-radius:8px;background:#0c0f13;color:var(--text);font:inherit;font-size:12px}
+.history-filter-actions{display:flex;gap:7px;flex-wrap:wrap}
+.history-filter-actions button{min-height:36px;padding:7px 11px;border:1px solid #303842;border-radius:8px;background:#11151a;color:var(--text);font-size:10px;font-weight:850;cursor:pointer}
+.history-filter-actions button:hover{border-color:#59636e}
+.history-board-title{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#historyFilterSummary{color:var(--muted);font-size:9px;font-weight:700;letter-spacing:.06em}
+@media(max-width:520px){
+ .history-filter{align-items:stretch}
+ .history-filter-field,.history-filter-field input{width:100%}
+ .history-filter-actions{width:100%}
+ .history-filter-actions button{flex:1}
+ .history-board-title{align-items:flex-start;flex-direction:column}
+}
