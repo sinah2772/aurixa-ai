@@ -381,9 +381,10 @@ async function recordSignal(signalData) {
       $2,
       $3,
       $4,
-      (CASE WHEN $3 > 0 AND $4 > 0 THEN TRUE ELSE FALSE END),
       $5,
+      (CASE WHEN $3 > 0 AND $4 > 0 THEN TRUE ELSE FALSE END),
       $6,
+      $7,
       $7,
       $8,
       $9,
@@ -401,8 +402,7 @@ async function recordSignal(signalData) {
       $21,
       $22, $23, $24
     )
-    ON CONFLICT (symbol, timeframe, candle_time)
-    DO NOTHING
+    ON CONFLICT DO NOTHING
     RETURNING id
   `, [
     candleDate.toISOString(),
