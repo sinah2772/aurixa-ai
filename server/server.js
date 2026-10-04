@@ -30,6 +30,7 @@ signalTracker.configure({
       symbol: ctrader.symbol,
       symbolId: ctrader.symbolId,
       symbolDigits: ctrader.symbolDigits,
+      tradingAccount: ctrader.accountId,
       predictionEngine: marketEngine.calculatePrediction
     };
   }
