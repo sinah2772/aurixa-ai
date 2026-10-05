@@ -90,7 +90,29 @@ app.get('/api/strategies/or-fvg', (req, res) => {
   }
 });
 
-app.use(express.static(path.join(__dirname, "..", "web")));
+const WEB_DIR = path.join(__dirname, "..", "web");
+
+// Serve the frontend explicitly before the API fallback. This avoids a blank page
+// when a browser/CDN requests an asset with a stale or ambiguous route.
+app.use("/style.css", express.static(path.join(WEB_DIR, "style.css"), {
+  etag: true,
+  maxAge: 0,
+  setHeaders: (res) => res.setHeader("Cache-Control", "no-store")
+}));
+app.use("/app.js", express.static(path.join(WEB_DIR, "app.js"), {
+  etag: true,
+  maxAge: 0,
+  setHeaders: (res) => res.setHeader("Cache-Control", "no-store")
+}));
+app.get(["/", "/index.html"], (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(WEB_DIR, "index.html"));
+});
+app.use(express.static(WEB_DIR, {
+  etag: true,
+  maxAge: 0,
+  setHeaders: (res) => res.setHeader("Cache-Control", "no-store")
+}));
 
 let candles = [];
 let lastPrice = null;
