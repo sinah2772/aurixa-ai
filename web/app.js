@@ -1208,29 +1208,35 @@ async function refresh() {
 
   async function refreshLiveChart() {
     try {
-      const market = await getJSON(API.market);
-      if (!market) return;
+      // /api/market/state is the authoritative live M5 source.
+      // /api/market can contain spot/summary data without the 300-candle
+      // history, which previously caused the frontend chart to stay blank
+      // or stop updating even while the live API was healthy.
+      const marketState = await getJSON(API.marketState);
+      const stateCandles =
+        Array.isArray(marketState?.candles) ? marketState.candles : [];
 
-      const liveCandles = Array.isArray(market.candles) ? market.candles : [];
-
-      // Prefer the live market-engine candles. If the live engine has not
-      // populated its in-memory history yet, fall back to the persisted
-      // cTrader M5 history endpoint so the chart never remains blank.
-      if (liveCandles.length >= 2) {
-        updateMarket(market, null);
+      if (stateCandles.length >= 2) {
+        updateMarket(marketState, null);
         return;
       }
 
+      // Only use persisted history when the authoritative live state has
+      // not populated enough candles yet.
       const history = await getJSON(API.marketHistory);
       const historyCandles =
         Array.isArray(history?.candles) ? history.candles : [];
 
-      updateMarket(
-        historyCandles.length >= 2
-          ? { ...market, candles: historyCandles }
-          : market,
-        null
-      );
+      if (historyCandles.length >= 2) {
+        updateMarket(
+          { ...(marketState || {}), candles: historyCandles },
+          null
+        );
+        return;
+      }
+
+      // Keep the chart/UI state visible while waiting for candle data.
+      if (marketState) updateMarket(marketState, null);
     } catch (error) {
       console.error("AURIXA live chart refresh:", error);
     }
