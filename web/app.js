@@ -839,115 +839,102 @@
       .replaceAll("'", "&#039;");
   }
 
-  function drawChart(candles) {
-    const canvas = $("marketChart");
-    if (!canvas || !Array.isArray(candles)) return;
+  let ctraderChart = null;
+  let ctraderCandleSeries = null;
 
-    // Render the actual OHLC candles from cTrader instead of a close-price line.
-    // The latest candle is the live/incomplete candle and is updated on each refresh.
+  function drawChart(candles) {
+    const container = $("marketChart");
+    if (!container || !Array.isArray(candles)) return;
+
     const source = candles
       .filter(c => c && [c.open, c.high, c.low, c.close].every(v => Number.isFinite(Number(v))))
-      .slice(-80);
+      .slice(-120);
 
     if (source.length < 2) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const width = Math.max(320, Math.floor(rect.width || canvas.clientWidth || 640));
-    const height = Math.max(260, Math.floor(rect.height || canvas.clientHeight || 320));
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const highs = source.map(c => Number(c.high));
-    const lows = source.map(c => Number(c.low));
-    const max = Math.max(...highs);
-    const min = Math.min(...lows);
-    const range = Math.max(max - min, 0.01);
-
-    const pad = { left: 10, right: 58, top: 18, bottom: 28 };
-    const plotW = width - pad.left - pad.right;
-    const plotH = height - pad.top - pad.bottom;
-    const y = price => pad.top + (1 - (price - min) / range) * plotH;
-    const xStep = plotW / Math.max(source.length, 1);
-    const bodyW = Math.max(2, Math.min(10, xStep * 0.62));
-
-    // Background grid.
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    ctx.lineWidth = 1;
-    ctx.font = "10px Arial, sans-serif";
-    ctx.fillStyle = "#8b949e";
-    ctx.textAlign = "left";
-
-    for (let i = 0; i <= 4; i++) {
-      const gy = pad.top + (plotH * i / 4);
-      const value = max - (range * i / 4);
-      ctx.beginPath();
-      ctx.moveTo(pad.left, gy);
-      ctx.lineTo(width - pad.right, gy);
-      ctx.stroke();
-      ctx.fillText(number(value, 2), width - pad.right + 7, gy + 3);
+    // Render cTrader's OHLC data with a real interactive candlestick chart.
+    // The data itself still comes directly from /api/market/state, which is
+    // populated by the cTrader Open API trendbar/spot feed.
+    if (!window.LightweightCharts) {
+      console.error("cTrader chart library did not load");
+      return;
     }
 
-    // Candlesticks: wick = high/low, body = open/close.
-    source.forEach((c, i) => {
-      const open = Number(c.open);
-      const high = Number(c.high);
-      const low = Number(c.low);
-      const close = Number(c.close);
-      const cx = pad.left + xStep * (i + 0.5);
-      const rising = close >= open;
-      const top = y(Math.max(open, close));
-      const bottom = y(Math.min(open, close));
-      const bodyH = Math.max(1, bottom - top);
+    const rect = container.getBoundingClientRect();
+    const width = Math.max(320, Math.floor(rect.width || container.clientWidth || 640));
+    const height = Math.max(260, Math.floor(rect.height || container.clientHeight || 320));
 
-      ctx.beginPath();
-      ctx.moveTo(cx, y(high));
-      ctx.lineTo(cx, y(low));
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = rising ? "#35d07f" : "#ff5b65";
-      ctx.stroke();
+    if (!ctraderChart) {
+      ctraderChart = LightweightCharts.createChart(container, {
+        width,
+        height,
+        layout: {
+          background: { color: "#080a0d" },
+          textColor: "#89919d"
+        },
+        grid: {
+          vertLines: { color: "rgba(255,255,255,0.045)" },
+          horzLines: { color: "rgba(255,255,255,0.045)" }
+        },
+        rightPriceScale: {
+          borderColor: "#20262e"
+        },
+        timeScale: {
+          borderColor: "#20262e",
+          timeVisible: true,
+          secondsVisible: false
+        },
+        crosshair: {
+          mode: LightweightCharts.CrosshairMode.Normal
+        }
+      });
 
-      ctx.fillStyle = rising ? "#35d07f" : "#ff5b65";
-      ctx.fillRect(cx - bodyW / 2, top, bodyW, bodyH);
-    });
+      ctraderCandleSeries = ctraderChart.addCandlestickSeries({
+        upColor: "#30d68a",
+        downColor: "#ff5b65",
+        borderUpColor: "#30d68a",
+        borderDownColor: "#ff5b65",
+        wickUpColor: "#30d68a",
+        wickDownColor: "#ff5b65"
+      });
+
+      const resize = () => {
+        const r = container.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          ctraderChart.applyOptions({
+            width: Math.floor(r.width),
+            height: Math.floor(r.height)
+          });
+        }
+      };
+      window.addEventListener("resize", resize);
+    }
+
+    const data = source.map(c => ({
+      time: Math.floor(Number(first(c.time, c.timestamp, c.openTime)) / 1000),
+      open: Number(c.open),
+      high: Number(c.high),
+      low: Number(c.low),
+      close: Number(c.close)
+    })).filter(c => Number.isFinite(c.time));
+
+    // cTrader can occasionally resend the current candle. Lightweight Charts
+    // expects unique, ascending timestamps, so de-duplicate by candle time.
+    const unique = [];
+    const seen = new Set();
+    for (const candle of data) {
+      if (seen.has(candle.time)) continue;
+      seen.add(candle.time);
+      unique.push(candle);
+    }
+
+    ctraderCandleSeries.setData(unique);
+    ctraderChart.timeScale().fitContent();
 
     const latest = source[source.length - 1];
-    const latestClose = Number(latest.close);
-
-    // Current-price guide.
-    const currentY = y(latestClose);
-    ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = "rgba(255,255,255,0.45)";
-    ctx.beginPath();
-    ctx.moveTo(pad.left, currentY);
-    ctx.lineTo(width - pad.right, currentY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "700 12px Arial, sans-serif";
-    ctx.textAlign = "right";
-    ctx.fillText(number(latestClose, 2), width - pad.right, Math.max(12, currentY - 5));
-
-    // Time labels for the first/middle/latest candles.
-    ctx.fillStyle = "#8b949e";
-    ctx.font = "10px Arial, sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText(formatTime(source[0].time), pad.left, height - 8);
-    ctx.textAlign = "center";
-    ctx.fillText(formatTime(source[Math.floor(source.length / 2)].time), width / 2, height - 8);
-    ctx.textAlign = "right";
-    ctx.fillText(formatTime(latest.time), width - pad.right, height - 8);
-
     text("candleCount", String(source.length));
     text("latestCandle", formatTime(first(latest.time, latest.timestamp, latest.openTime)));
   }
-
 
 async function loadPairSelector() {
   const selector =
