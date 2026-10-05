@@ -1,6 +1,15 @@
 (() => {
   "use strict";
 
+  // Frontend boot marker: makes browser-side startup visible even when API calls fail.
+  try {
+    const boot = document.getElementById("frontendBoot");
+    if (boot) boot.textContent = "AURIXA DIAGNOSTIC: JS EXECUTING";
+    window.__AURIXA_JS_STARTED = Date.now();
+  } catch (e) {
+    console.error("AURIXA frontend boot marker failed:", e);
+  }
+
   const $ = (id) => document.getElementById(id);
 
   const API = {
@@ -2088,3 +2097,10 @@ async function refresh() {
 
 })();
 
+try {
+  const boot = document.getElementById("frontendBoot");
+  if (boot) boot.textContent = "AURIXA DIAGNOSTIC: JS RUNNING · UI INITIALIZING";
+  window.__AURIXA_JS_READY = Date.now();
+} catch (e) {
+  console.error("AURIXA frontend ready marker failed:", e);
+}
