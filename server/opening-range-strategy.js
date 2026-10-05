@@ -80,8 +80,15 @@ function nyParts(timestamp) {
 function cleanCandle(candle) {
   if (!candle) return null;
 
-  const time = Number(candle.time);
+  let time = Number(candle.time);
   const open = Number(candle.open);
+
+  // cTrader trendbars provide UTC time in minutes.
+  // Convert minute timestamps to milliseconds before New York
+  // timezone/session calculations. Without this, dates resolve to 1970.
+  if (Number.isFinite(time) && time < 100000000000) {
+    time *= 60000;
+  }
   const high = Number(candle.high);
   const low = Number(candle.low);
   const close = Number(candle.close);
