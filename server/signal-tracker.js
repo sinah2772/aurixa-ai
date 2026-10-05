@@ -318,6 +318,12 @@ async function recordSignal(signalData) {
       ? p.signal
       : "WAIT";
 
+  // Only actionable BUY/SELL signals are persisted.
+  // WAIT is an analysis state, not a recorded trading signal.
+  if (direction === "WAIT") {
+    return null;
+  }
+
   const entryPrice = cleanNumber(candle.close);
 
   if (entryPrice === null || entryPrice <= 0) {
