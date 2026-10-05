@@ -21,7 +21,7 @@ const MAX_M1 = 2000;
 const MAX_M5 = 400;
 
 const SESSION_START_MINUTE = 9 * 60 + 30;
-// OR/FVG remains active for the full trading day after the 09:30 New York opening range.\n// The opening range is still anchored to the 09:30 M5 candle; only the old\n// 90-minute cutoff has been removed.\nconst SESSION_END_MINUTE = null;
+// OR/FVG remains active for the full trading day after the 09:30 New York opening range.\n// The opening range is still anchored to the 09:30 M5 candle; the old 90-minute\n// setup cutoff has been removed.
 
 const TICK_SIZE = 0.01;
 const TARGET_RR = 3;
