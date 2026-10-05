@@ -119,6 +119,19 @@ async function executeSignal(signal) {
     return { executed: false, reason: "XAUUSD_NOT_READY" };
   }
 
+  if (typeof dbQuery === "function" && signal.id) {
+    const duplicate = await dbQuery(`
+      SELECT id
+      FROM aurixa.auto_trades
+      WHERE signal_id = $1
+      LIMIT 1
+    `, [signal.id]);
+
+    if (duplicate.rows.length) {
+      return { executed: false, reason: "SIGNAL_ALREADY_TRADED" };
+    }
+  }
+
   // ------------------------------------------------------------
   // ONE-POSITION REVERSE MODE
   //
@@ -230,19 +243,6 @@ async function executeSignal(signal) {
     }
   }
 
-  if (typeof dbQuery === "function" && signal.id) {
-    const duplicate = await dbQuery(`
-      SELECT id
-      FROM aurixa.auto_trades
-      WHERE signal_id = $1
-      LIMIT 1
-    `, [signal.id]);
-
-    if (duplicate.rows.length) {
-      return { executed: false, reason: "SIGNAL_ALREADY_TRADED" };
-    }
-  }
-
   let result;
 
   try {
@@ -335,7 +335,7 @@ async function executeSignal(signal) {
   }
 
   return {
-    executed: ["OPEN", "ACCEPTED"].includes(result.status),
+    executed: ["OPEN", "PARTIAL"].includes(result.status),
     signalId: signal.id,
     direction: signal.direction,
     ...result
