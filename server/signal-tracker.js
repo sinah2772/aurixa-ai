@@ -113,6 +113,19 @@ async function init() {
     WHERE account_id IS NOT NULL AND symbol_id IS NOT NULL
   `);
 
+  /*
+   * Backfill records created before account-aware verification was added.
+   * Existing XAUUSD symbol ID 41 records are trusted for the connected
+   * cTrader account and remain visible to history/stats.
+   */
+  await dbQuery(`
+    UPDATE aurixa.signals
+    SET symbol_verified = TRUE
+    WHERE symbol = 'XAUUSD'
+      AND symbol_id = 41
+      AND symbol_verified = FALSE
+  `);
+
   await dbQuery(`
     CREATE INDEX IF NOT EXISTS idx_aurixa_signals_symbol_verified_time
     ON aurixa.signals(symbol, timeframe, symbol_verified, candle_time DESC)
@@ -556,6 +569,12 @@ async function trackLatestClosedSignal() {
     state?.symbolId ?? null
   );
 
+  const accountId = cleanNumber(
+    state?.accountId ??
+    state?.tradingAccount ??
+    null
+  );
+
   const timeframe =
     String(state?.timeframe || "5m").trim() || "5m";
 
@@ -679,6 +698,7 @@ async function trackLatestClosedSignal() {
       prediction,
       symbol,
       symbolId,
+      accountId,
       timeframe
     };
 
