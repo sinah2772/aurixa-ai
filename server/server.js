@@ -47,6 +47,16 @@ const PORT = Number(process.env.PORT || 8787);
 app.use(cors());
 app.use(express.json());
 
+// Keep a dependency-free liveness endpoint for Render and external probes.
+// It must never wait on PostgreSQL or cTrader.
+app.get("/health", (req, res) => {
+  res.status(200).type("application/json").send(JSON.stringify({
+    ok: true,
+    service: "aurixa-ai",
+    timestamp: new Date().toISOString()
+  }));
+});
+
 registerCTrader(app);
 app.get('/api/strategies/of1', (req, res) => {
   try {
@@ -986,7 +996,7 @@ app.use((req,res)=>{
 
 
 
-app.listen(PORT,"0.0.0.0",async()=>{
+const server = app.listen(PORT,"0.0.0.0",async()=>{
   console.log("");
   console.log("======================================");
   console.log("      XAUUSD AI 5M PREDICTOR");
@@ -997,6 +1007,10 @@ app.listen(PORT,"0.0.0.0",async()=>{
   console.log("Paper trading: ENABLED");
   console.log("Signal tracking: ENABLED");
   console.log("======================================");
+
+  server.keepAliveTimeout = 120000;
+  server.headersTimeout = 125000;
+  server.requestTimeout = 30000;
 
   try {
     await signalTracker.init();
