@@ -378,12 +378,17 @@ async function recordSignal(signalData) {
     )
     VALUES
     (
-      $1,
-      $2,
-      $3,
-      $4,
-      $5,
-      (CASE WHEN $3 > 0 AND $4 > 0 THEN TRUE ELSE FALSE END),
+      $1::TIMESTAMPTZ,
+      $2::TEXT,
+      $3::BIGINT,
+      $4::BIGINT,
+      $5::TEXT,
+      (CASE
+        WHEN COALESCE($3::BIGINT, 0) > 0
+         AND COALESCE($4::BIGINT, 0) > 0
+        THEN TRUE
+        ELSE FALSE
+      END),
       $6,
       $7,
       $8,
