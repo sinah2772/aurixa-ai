@@ -840,72 +840,67 @@
 
   function drawChart(candles) {
     const canvas = $("marketChart");
-
-    if (!canvas || !window.Chart || !Array.isArray(candles)) {
-      return;
-    }
+    if (!canvas || !Array.isArray(candles)) return;
 
     const latest = candles.slice(-100);
+    const values = latest.map((c) => Number(first(c.close, c.price, c.mid)));
+    const valid = values.filter(Number.isFinite);
+    if (valid.length < 2) return;
 
-    const labels = latest.map((c) =>
-      formatTime(first(
-        c.time,
-        c.timestamp,
-        c.openTime
-      ))
-    );
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(320, Math.floor(rect.width || canvas.clientWidth || 640));
+    const height = Math.max(260, Math.floor(rect.height || canvas.clientHeight || 320));
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
 
-    const values = latest.map((c) =>
-      Number(first(
-        c.close,
-        c.price,
-        c.mid
-      ))
-    );
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
 
-    if (!values.some(Number.isFinite)) return;
+    const min = Math.min(...valid);
+    const max = Math.max(...valid);
+    const range = Math.max(max - min, 0.01);
+    const pad = { left: 12, right: 12, top: 18, bottom: 28 };
+    const plotW = width - pad.left - pad.right;
+    const plotH = height - pad.top - pad.bottom;
 
-    if (chart) {
-      chart.data.labels = labels;
-      chart.data.datasets[0].data = values;
-      chart.data.datasets[0].label = selectedSymbol || "XAUUSD";
-      chart.update("none");
-      return;
-    }
+    ctx.beginPath();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#e5e7eb";
 
-    chart = new Chart(canvas.getContext("2d"), {
-      type: "line",
-      data: {
-        labels,
-        datasets: [{
-          label: selectedSymbol || "XAUUSD",
-          data: values,
-          tension: 0.25,
-          pointRadius: 0,
-          borderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        plugins: {
-          legend: {
-            display: false
-          }
-        },
-        scales: {
-          x: {
-            display: false
-          },
-          y: {
-            ticks: {
-              maxTicksLimit: 6
-            }
-          }
-        }
-      }
+    let plotted = 0;
+    values.forEach((value, i) => {
+      if (!Number.isFinite(value)) return;
+      const x = pad.left + (i / Math.max(values.length - 1, 1)) * plotW;
+      const y = pad.top + (1 - (value - min) / range) * plotH;
+      if (plotted === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      plotted++;
     });
+    ctx.stroke();
+
+    ctx.fillStyle = "#9ca3af";
+    ctx.font = "12px Arial, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(number(max, 2), pad.left, 13);
+    ctx.textAlign = "right";
+    ctx.fillText(number(min, 2), width - pad.right, height - 6);
+
+    const last = valid[valid.length - 1];
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 13px Arial, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(number(last, 2), width - pad.right, 13);
+
+    text("candleCount", String(latest.length));
+    const latestCandle = latest[latest.length - 1];
+    text("latestCandle", formatTime(first(
+      latestCandle?.time,
+      latestCandle?.timestamp,
+      latestCandle?.openTime
+    )));
   }
 
 
