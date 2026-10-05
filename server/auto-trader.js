@@ -7,7 +7,7 @@
  * - Disabled unless AUTO_TRADING=true
  * - Demo accounts only
  * - Never trades WAIT
- * - Maximum configured open positions
+ * - No application-level maximum open-position limit
  * - Mandatory SL
  * - Uses closed-candle AURIXA signals
  */
@@ -27,7 +27,6 @@ function config() {
     volume: Math.max(1, Number(process.env.AUTO_TRADING_VOLUME || 100)),
     sl: Number(process.env.AUTO_TRADING_SL || 0),
     tp: Number(process.env.AUTO_TRADING_TP || 0),
-    maxPositions: Math.max(1, Number(process.env.AUTO_TRADING_MAX_POSITIONS || 1)),
     maxSignalAgeMinutes: Math.max(
       1,
       Number(process.env.AUTO_TRADING_MAX_SIGNAL_AGE_MINUTES || 7)
@@ -52,7 +51,6 @@ function getStatus() {
     volume: cfg.volume,
     sl: cfg.sl,
     tp: cfg.tp,
-    maxPositions: cfg.maxPositions,
     symbol: symbolName,
     connected: Boolean(ct?.connected),
     authorized: Boolean(ct?.authorized)
@@ -133,11 +131,11 @@ async function executeSignal(signal) {
   }
 
   // ------------------------------------------------------------
-  // ONE-POSITION REVERSE MODE
+  // MULTI-POSITION MODE
   //
-  // BUY  + existing SELL -> close SELL, then open BUY
-  // SELL + existing BUY  -> close BUY, then open SELL
-  // Same direction        -> do not add another position
+  // No application-level position-count limit is enforced here.
+  // Each new directional signal may open another demo position.
+  // Duplicate protection remains per signal ID.
   // ------------------------------------------------------------
   if (
     typeof cTrader.getOpenXAUUSDPositions !== "function" ||
@@ -151,97 +149,8 @@ async function executeSignal(signal) {
 
   let openPositions = await cTrader.getOpenXAUUSDPositions();
 
-  if (openPositions.length > cfg.maxPositions) {
-    return {
-      executed: false,
-      reason: "POSITION_LIMIT_EXCEEDED",
-      openPositions: openPositions.length
-    };
-  }
-
-  if (openPositions.length > 0) {
-    const current = openPositions[0];
-
-    const currentSide =
-      Number(current?.tradeData?.tradeSide) === 1
-        ? "BUY"
-        : Number(current?.tradeData?.tradeSide) === 2
-          ? "SELL"
-          : null;
-
-    const positionId =
-      current?.positionId ||
-      current?.tradeData?.positionId ||
-      null;
-
-    const positionVolume =
-      Number(current?.tradeData?.volume) ||
-      Number(current?.volume) ||
-      0;
-
-    if (!currentSide || !positionId || !Number.isInteger(positionVolume) || positionVolume <= 0) {
-      return {
-        executed: false,
-        reason: "OPEN_POSITION_DATA_INVALID"
-      };
-    }
-
-    // Same direction: never stack another position.
-    if (currentSide === signal.direction) {
-      return {
-        executed: false,
-        reason: "SAME_DIRECTION_POSITION_OPEN",
-        openPositions: openPositions.length,
-        currentDirection: currentSide,
-        positionId
-      };
-    }
-
-    // Opposite direction: close existing position first.
-    console.log(
-      `AURIXA Auto-Trader: reversing ${currentSide} -> ${signal.direction}; ` +
-      `closing position ${positionId}`
-    );
-
-    try {
-      const closeResult =
-        await cTrader.closeXAUUSDPosition(
-          positionId,
-          positionVolume
-        );
-
-      console.log(
-        "AURIXA Auto-Trader: position closed for reversal:",
-        JSON.stringify(closeResult)
-      );
-    } catch (err) {
-      console.error(
-        "AURIXA Auto-Trader: reversal close failed:",
-        err.message
-      );
-
-      return {
-        executed: false,
-        reason: "REVERSE_CLOSE_FAILED",
-        error: err.message,
-        currentDirection: currentSide,
-        requestedDirection: signal.direction,
-        positionId
-      };
-    }
-
-    // Confirm the old position is actually gone before opening
-    // the new one. This prevents accidental double exposure.
-    openPositions = await cTrader.getOpenXAUUSDPositions();
-
-    if (openPositions.length > 0) {
-      return {
-        executed: false,
-        reason: "REVERSE_CLOSE_NOT_CONFIRMED",
-        openPositions: openPositions.length
-      };
-    }
-  }
+  // No application-level maximum-position check.
+  // cTrader/broker account limits, margin, and risk controls still apply.
 
   let result;
 
@@ -356,7 +265,7 @@ async function dryRunSignal(signal) {
     volume: cfg.volume,
     stopLossDistance: cfg.sl,
     takeProfitDistance: cfg.tp || 0,
-    maxPositions: cfg.maxPositions,
+    maxPositions: null,
     checks: {}
   };
 
@@ -422,13 +331,8 @@ async function dryRunSignal(signal) {
   const openPositions = await cTrader.getOpenXAUUSDPositions();
 
   result.checks.openPositions = openPositions.length;
-  result.checks.positionLimitAvailable =
-    openPositions.length < cfg.maxPositions;
-
-  if (openPositions.length >= cfg.maxPositions) {
-    result.reason = "MAX_OPEN_POSITIONS";
-    return result;
-  }
+  result.checks.positionLimitAvailable = true;
+  result.checks.maxPositions = null;
 
   if (typeof dbQuery === "function" && signal.id) {
     const duplicate = await dbQuery(`
