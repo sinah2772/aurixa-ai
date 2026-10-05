@@ -28,6 +28,7 @@
     autoPositions: "/api/auto-trader/positions",
     autoTrades: "/api/auto-trader/trades",
     openingRange: "/api/strategies/or-fvg",
+    orderflow: "/api/strategies/of1",
     marketHistory: "/api/market/history?limit=300"
   };
 
@@ -533,21 +534,56 @@
     }
   }
 
-  function updateFinalTradeGate(marketState, prediction, orFvg, positions) {
+  function updateOrderflow(of1) {
+    const data = of1?.result || of1 || {};
+    const signal = String(first(data.signal, data.direction, "WAIT")).toUpperCase();
+    const phase = String(first(data.phase, "WAIT")).toUpperCase();
+    const score = Number(data.score);
+    const confidence = Number(data.confidence);
+    const candles = first(data.candleCount, data.candles, data.bars);
+
+    text("of1Signal", signal);
+    text("of1Confidence", Number.isFinite(confidence) ? number(confidence, 0) + "%" : "—");
+    text("of1Score", Number.isFinite(score) ? number(score, 0) : "—");
+    text("of1Phase", phase.replaceAll("_", " "));
+    text("of1Entry", number(first(data.entry, data.entryPrice), 2));
+    text("of1Stop", number(first(data.stop, data.stopLoss, data.stopLossPrice), 2));
+    text("of1Target", number(first(data.target, data.takeProfit, data.takeProfitPrice), 2));
+    text("of1Candles", first(candles, "—"));
+
+    const decision = $("of1Decision");
+    if (decision) {
+      decision.classList.remove("buy", "sell", "wait");
+      decision.classList.add(signal === "BUY" || signal === "SELL" ? signal.toLowerCase() : "wait");
+      decision.textContent = signal;
+    }
+
+    let reason = first(data.reason, "Waiting for OF1 confirmation.");
+    if (signal !== "WAIT" && Number.isFinite(score) && Number.isFinite(confidence)) {
+      reason = signal + " OF1 · score " + number(score, 0) + " · confidence " + number(confidence, 0) + "%";
+    }
+    text("of1Reason", reason);
+  }
+
+  function updateFinalTradeGate(marketState, prediction, orFvg, of1, positions) {
     const marketOpen = String(first(marketState?.marketStatus, "")).toUpperCase() === "MARKET_OPEN";
     const direction = String(first(prediction?.direction, prediction?.signal, "WAIT")).toUpperCase();
     const fvgDirection = String(first(orFvg?.signal, "WAIT")).toUpperCase();
     const triggered = String(first(orFvg?.phase, "")).toUpperCase() === "TRIGGERED";
+    const of1Signal = String(first(of1?.signal, of1?.direction, "WAIT")).toUpperCase();
+    const of1Score = Number(of1?.score);
+    const of1Confidence = Number(of1?.confidence);
+    const of1Confirmed = of1Signal === direction && of1Signal !== "WAIT" && of1Score >= 8 && of1Confidence >= 75;
     const hasPosition = Number(first(positions?.count, 0)) > 0;
-    const ready = marketOpen && direction !== "WAIT" && direction === fvgDirection && triggered && !hasPosition;
+    const ready = marketOpen && direction !== "WAIT" && direction === fvgDirection && triggered && of1Confirmed && !hasPosition;
 
     text("gateMarket", marketOpen ? "OPEN" : "BLOCKED");
     text("gateSignal", direction);
     text("gateFvg", triggered ? fvgDirection : String(first(orFvg?.phase, "WAIT")).replaceAll("_", " "));
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
-    text("gateEntry", number(orFvg?.entryPrice, 2));
-    text("gateSL", number(orFvg?.stopLoss, 2));
-    text("gateTP", number(orFvg?.takeProfit, 2));
+    text("gateEntry", number(first(of1?.entry, orFvg?.entryPrice), 2));
+    text("gateSL", number(first(of1?.stop, orFvg?.stopLoss), 2));
+    text("gateTP", number(first(of1?.target, orFvg?.takeProfit), 2));
     text("gateRR", orFvg?.rewardRisk ? number(orFvg.rewardRisk, 1) + "R" : "2R PLAN");
 
     const decision = $("gateDecision");
@@ -563,7 +599,8 @@
     else if (direction === "WAIT") reason = "AURIXA M5 has no confirmed direction.";
     else if (!triggered) reason = "Waiting for opening-range breakout + FVG retest + engulfing.";
     else if (direction !== fvgDirection) reason = "M5 direction and OR/FVG direction disagree.";
-    else if (ready) reason = direction + " confirmed by both strategy layers.";
+    else if (!of1Confirmed) reason = "OF1 confirmation required: matching direction, score ≥ 8 and confidence ≥ 75%.";
+    else if (ready) reason = direction + " confirmed by M5 + OR/FVG + OF1.";
     text("gateReason", reason);
   }
 
@@ -620,10 +657,15 @@
       const direction = String(first(t.direction, "—")).toUpperCase();
       const statusText = String(first(t.status, "—")).toUpperCase();
       const profit = first(t.profit);
+      const trace = t.id ? '<a class="trade-trace-link" href="/api/auto-trader/trade-trace/' + encodeURIComponent(t.id) + '" target="_blank" rel="noopener">TRACE</a>' : '';
+      const lifecycle = [
+        t.partialTaken === true ? "PARTIAL 1R" : null,
+        t.breakevenApplied === true ? "BE APPLIED" : null
+      ].filter(Boolean).join(" · ");
       return '<div class="auto-trade-row">' +
         '<div><strong class="' + direction.toLowerCase() + '">' + escapeHTML(direction) + '</strong><span>' + escapeHTML(number(first(t.signalEntryPrice), 2)) + '</span></div>' +
-        '<div><small>' + escapeHTML(formatTime(first(t.createdAt, t.openedAt))) + '</small></div>' +
-        '<div><span class="trade-status">' + escapeHTML(statusText) + '</span><span>' + (profit === null || profit === undefined ? "P&L —" : "P&L " + escapeHTML(number(profit, 2))) + '</span></div>' +
+        '<div><small>' + escapeHTML(formatTime(first(t.createdAt, t.openedAt))) + '</small>' + (lifecycle ? '<small class="trade-lifecycle">' + escapeHTML(lifecycle) + '</small>' : '') + '</div>' +
+        '<div><span class="trade-status">' + escapeHTML(statusText) + '</span><span>' + (profit === null || profit === undefined ? "P&L —" : "P&L " + escapeHTML(number(profit, 2))) + '</span>' + trace + '</div>' +
       '</div>';
     }).join("");
   }
@@ -1024,7 +1066,8 @@ async function refresh() {
       autoStatus,
       autoPositions,
       autoTrades,
-      openingRange
+      openingRange,
+      orderflow
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
@@ -1037,7 +1080,8 @@ async function refresh() {
       getJSON(API.autoStatus),
       getJSON(API.autoPositions),
       getJSON(API.autoTrades),
-      getJSON(API.openingRange)
+      getJSON(API.openingRange),
+      getJSON(API.orderflow)
     ]);
 
     const mergedMarket = {
@@ -1092,7 +1136,9 @@ async function refresh() {
 
     updateCommandCenter(livePrediction, autoStatus, ctrader);
     updateAutoTrader(autoStatus, autoPositions, autoTrades);
-    updateFinalTradeGate(mergedMarket, livePrediction, openingRange?.result || openingRange, autoPositions);
+    const liveOrderflow = orderflow?.result || orderflow || {};
+    updateOrderflow(liveOrderflow);
+    updateFinalTradeGate(mergedMarket, livePrediction, openingRange?.result || openingRange, liveOrderflow, autoPositions);
 
     const system = await getJSON(API.system);
 
