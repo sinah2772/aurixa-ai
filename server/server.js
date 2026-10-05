@@ -638,16 +638,8 @@ app.post("/api/auto-trader/test-sell", async (req, res) => {
       });
     }
 
-    const positions = await ctrader.getOpenXAUUSDPositions();
-
-    if (positions.length > 0) {
-      return res.status(409).json({
-        ok: false,
-        orderSubmitted: false,
-        reason: "POSITION_ALREADY_OPEN",
-        openPositions: positions.length
-      });
-    }
+    // No application-level maximum-position limit.
+    // cTrader/broker account limits and margin rules still apply.
 
     const result = await ctrader.placeDemoMarketOrder({
       direction: "SELL",
