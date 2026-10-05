@@ -839,113 +839,23 @@
       .replaceAll("'", "&#039;");
   }
 
-  let ctraderChartCanvas = null;
-
   function drawChart(candles) {
     const container = $("marketChart");
     if (!container || !Array.isArray(candles)) return;
-
-    const source = candles
-      .filter(c => c && [c.open, c.high, c.low, c.close].every(v => Number.isFinite(Number(v))))
-      .slice(-120);
-
+    const source = candles.filter(c => c && [c.open,c.high,c.low,c.close].every(v => Number.isFinite(Number(v)))).slice(-120);
     if (source.length < 2) return;
-
-    // Native cTrader-data chart: no external chart library/CDN.
-    // OHLC comes from /api/market/state, populated by the cTrader Open API feed.
-    if (!ctraderChartCanvas) {
-      ctraderChartCanvas = document.createElement("canvas");
-      ctraderChartCanvas.id = "ctraderLiveCanvas";
-      ctraderChartCanvas.setAttribute("aria-label", "cTrader live XAUUSD M5 candlestick chart");
-      container.innerHTML = "";
-      container.appendChild(ctraderChartCanvas);
-      ctraderChartCanvas.style.width = "100%";
-      ctraderChartCanvas.style.height = "100%";
-      ctraderChartCanvas.style.display = "block";
-      window.addEventListener("resize", () => drawChart(candles));
-    }
-
-    const rect = container.getBoundingClientRect();
-    const cssW = Math.max(320, Math.floor(rect.width || container.clientWidth || 640));
-    const cssH = Math.max(260, Math.floor(rect.height || container.clientHeight || 420));
-    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    ctraderChartCanvas.width = Math.floor(cssW * dpr);
-    ctraderChartCanvas.height = Math.floor(cssH * dpr);
-
-    const ctx = ctraderChartCanvas.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, cssW, cssH);
-
-    const left = 12, right = 64, top = 14, bottom = 30;
-    const plotW = Math.max(1, cssW - left - right);
-    const plotH = Math.max(1, cssH - top - bottom);
-
-    const values = source.flatMap(c => [Number(c.high), Number(c.low)]);
-    const hi = Math.max(...values);
-    const lo = Math.min(...values);
-    const pad = Math.max((hi - lo) * 0.08, 0.5);
-    const maxP = hi + pad, minP = lo - pad;
-
-    const y = p => top + ((maxP - p) / (maxP - minP)) * plotH;
-    const xStep = plotW / source.length;
-    const bodyW = Math.max(2, Math.min(10, xStep * 0.62));
-
-    ctx.fillStyle = "#080a0d";
-    ctx.fillRect(0, 0, cssW, cssH);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    ctx.lineWidth = 1;
-    ctx.font = "11px sans-serif";
-    ctx.fillStyle = "#89919d";
-    for (let i = 0; i <= 5; i++) {
-      const gy = top + (plotH * i / 5);
-      const price = maxP - ((maxP - minP) * i / 5);
-      ctx.beginPath();
-      ctx.moveTo(left, gy);
-      ctx.lineTo(left + plotW, gy);
-      ctx.stroke();
-      ctx.fillText(price.toFixed(2), left + plotW + 7, gy + 4);
-    }
-
-    source.forEach((c, i) => {
-      const open = Number(c.open), high = Number(c.high), low = Number(c.low), close = Number(c.close);
-      const cx = left + i * xStep + xStep / 2;
-      const up = close >= open;
-      const bodyTop = y(Math.max(open, close));
-      const bodyBottom = y(Math.min(open, close));
-      const bodyH = Math.max(1, bodyBottom - bodyTop);
-
-      ctx.strokeStyle = up ? "#30d68a" : "#ff5b65";
-      ctx.fillStyle = up ? "#30d68a" : "#ff5b65";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(cx, y(high));
-      ctx.lineTo(cx, y(low));
-      ctx.stroke();
-      ctx.fillRect(cx - bodyW / 2, bodyTop, bodyW, bodyH);
-    });
-
-    const latest = source[source.length - 1];
-    const lastPrice = Number(latest.close);
-    const ly = y(lastPrice);
-    ctx.strokeStyle = "#f5c451";
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(left, ly);
-    ctx.lineTo(left + plotW, ly);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = "#f5c451";
-    ctx.fillText(lastPrice.toFixed(2), left + plotW + 7, ly + 4);
-
-    ctx.fillStyle = "#89919d";
-    const firstTime = first(source[0].time, source[0].timestamp, source[0].openTime);
-    const lastTime = first(latest.time, latest.timestamp, latest.openTime);
-    ctx.fillText(formatTime(firstTime), left, cssH - 8);
-    ctx.fillText(formatTime(lastTime), Math.max(left, left + plotW - 90), cssH - 8);
-
-    text("candleCount", String(source.length));
-    text("latestCandle", formatTime(lastTime));
+    let canvas = container.querySelector("canvas");
+    if (!canvas) { container.innerHTML=""; canvas=document.createElement("canvas"); canvas.setAttribute("aria-label","cTrader live XAUUSD M5 candlestick chart"); canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.display="block"; container.appendChild(canvas); }
+    const rect=container.getBoundingClientRect(), dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1)), width=Math.max(320,Math.floor(rect.width||640)), height=Math.max(260,Math.floor(rect.height||420));
+    canvas.width=Math.floor(width*dpr); canvas.height=Math.floor(height*dpr);
+    const ctx=canvas.getContext("2d"); if(!ctx)return; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle="#080a0d"; ctx.fillRect(0,0,width,height);
+    const left=12,right=64,top=14,bottom=30,plotW=width-left-right,plotH=height-top-bottom,prices=source.flatMap(c=>[Number(c.high),Number(c.low)]),hi=Math.max(...prices),lo=Math.min(...prices),pad=Math.max((hi-lo)*.08,.5),maxP=hi+pad,minP=lo-pad,y=p=>top+((maxP-p)/(maxP-minP))*plotH,step=plotW/source.length,bodyW=Math.max(2,Math.min(10,step*.62));
+    ctx.font="11px sans-serif"; ctx.fillStyle="#89919d"; ctx.strokeStyle="rgba(255,255,255,.08)";
+    for(let i=0;i<=5;i++){const gy=top+plotH*i/5,price=maxP-(maxP-minP)*i/5;ctx.beginPath();ctx.moveTo(left,gy);ctx.lineTo(left+plotW,gy);ctx.stroke();ctx.fillText(price.toFixed(2),left+plotW+7,gy+4);}
+    source.forEach((c,i)=>{const o=+c.open,h=+c.high,l=+c.low,cl=+c.close,x=left+i*step+step/2,up=cl>=o,bt=y(Math.max(o,cl)),bb=y(Math.min(o,cl));ctx.strokeStyle=up?"#30d68a":"#ff5b65";ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,y(h));ctx.lineTo(x,y(l));ctx.stroke();ctx.fillRect(x-bodyW/2,bt,bodyW,Math.max(1,bb-bt));});
+    const latest=source[source.length-1],price=+latest.close,py=y(price);ctx.strokeStyle="#f5c451";ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(left,py);ctx.lineTo(left+plotW,py);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="#f5c451";ctx.fillText(price.toFixed(2),left+plotW+7,py+4);
+    ctx.fillStyle="#89919d";ctx.fillText(formatTime(first(source[0].time,source[0].timestamp,source[0].openTime)),left,height-8);ctx.fillText(formatTime(first(latest.time,latest.timestamp,latest.openTime)),Math.max(left,left+plotW-90),height-8);
+    text("candleCount",String(source.length));text("latestCandle",formatTime(first(latest.time,latest.timestamp,latest.openTime)));
   }
 
 async function loadPairSelector() {
@@ -1207,35 +1117,29 @@ async function refresh() {
 
   async function refreshLiveChart() {
     try {
-      // /api/market/state is the authoritative live M5 source.
-      // /api/market can contain spot/summary data without the 300-candle
-      // history, which previously caused the frontend chart to stay blank
-      // or stop updating even while the live API was healthy.
-      const marketState = await getJSON(API.marketState);
-      const stateCandles =
-        Array.isArray(marketState?.candles) ? marketState.candles : [];
+      const market = await getJSON(API.market);
+      if (!market) return;
 
-      if (stateCandles.length >= 2) {
-        updateMarket(marketState, null);
+      const liveCandles = Array.isArray(market.candles) ? market.candles : [];
+
+      // Prefer the live market-engine candles. If the live engine has not
+      // populated its in-memory history yet, fall back to the persisted
+      // cTrader M5 history endpoint so the chart never remains blank.
+      if (liveCandles.length >= 2) {
+        updateMarket(market, null);
         return;
       }
 
-      // Only use persisted history when the authoritative live state has
-      // not populated enough candles yet.
       const history = await getJSON(API.marketHistory);
       const historyCandles =
         Array.isArray(history?.candles) ? history.candles : [];
 
-      if (historyCandles.length >= 2) {
-        updateMarket(
-          { ...(marketState || {}), candles: historyCandles },
-          null
-        );
-        return;
-      }
-
-      // Keep the chart/UI state visible while waiting for candle data.
-      if (marketState) updateMarket(marketState, null);
+      updateMarket(
+        historyCandles.length >= 2
+          ? { ...market, candles: historyCandles }
+          : market,
+        null
+      );
     } catch (error) {
       console.error("AURIXA live chart refresh:", error);
     }
@@ -1447,3 +1351,724 @@ async function refresh() {
           </div>
 
           <table class="tracking-history-table">
+            <thead>
+              <tr>
+                <th>TIME</th>
+                <th>SIGNAL</th>
+                <th>PRICE</th>
+                <th>5M</th>
+                <th>15M</th>
+                <th>30M</th>
+              </tr>
+            </thead>
+            <tbody id="aurixaTrackingHistoryBody">
+              <tr>
+                <td colspan="6">Loading signal history...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div id="aurixaTrackingUpdated" class="tracking-updated">
+          Tracking data loading...
+        </div>
+      </div>
+    `;
+
+    const host = document.getElementById("trackingHost");
+
+    if (host) {
+      host.appendChild(panel);
+      return panel;
+    }
+
+    const main = document.querySelector("main");
+    if (main) {
+      main.appendChild(panel);
+    } else {
+      document.body.appendChild(panel);
+    }
+
+    return panel;
+  }
+
+  function set(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function updateStats(data) {
+    if (!data || data.ok === false) return;
+
+    const h5 = horizon(data, "5");
+    const h15 = horizon(data, "15");
+    const h30 = horizon(data, "30");
+    const totals = data.totals || {};
+
+    set("tracking5Rate", percentValue(h5.winRate));
+    set("tracking5Eval", numberValue(h5.evaluated));
+    set("tracking5Wins", numberValue(h5.wins));
+    set("tracking5Losses", numberValue(h5.losses));
+
+    set("tracking15Rate", percentValue(h15.winRate));
+    set("tracking15Eval", numberValue(h15.evaluated));
+    set("tracking15Wins", numberValue(h15.wins));
+    set("tracking15Losses", numberValue(h15.losses));
+
+    set("tracking30Rate", percentValue(h30.winRate));
+    set("tracking30Eval", numberValue(h30.evaluated));
+    set("tracking30Wins", numberValue(h30.wins));
+    set("tracking30Losses", numberValue(h30.losses));
+
+    set("trackingTotal", numberValue(totals.directional));
+    set("trackingBuy", numberValue(totals.buy));
+    set("trackingSell", numberValue(totals.sell));
+    set("trackingWait", numberValue(totals.wait));
+
+    if (data.updatedAt) {
+      set(
+        "aurixaTrackingUpdated",
+        `Updated ${new Date(data.updatedAt).toLocaleString()}`
+      );
+    }
+  }
+
+  function extractHistory(data) {
+    if (Array.isArray(data)) return data;
+
+    if (!data || typeof data !== "object") return [];
+
+    const candidates = [
+      data.history,
+      data.signals,
+      data.rows,
+      data.data,
+      data.results
+    ];
+
+    for (const value of candidates) {
+      if (Array.isArray(value)) return value;
+    }
+
+    return [];
+  }
+
+  function pick(obj, keys) {
+    for (const key of keys) {
+      if (
+        obj &&
+        obj[key] !== undefined &&
+        obj[key] !== null &&
+        obj[key] !== ""
+      ) {
+        return obj[key];
+      }
+    }
+    return null;
+  }
+
+  function statusClass(value) {
+    const v = String(value || "").toLowerCase();
+
+    if (v.includes("win") || v === "won") return "win";
+    if (v.includes("loss") || v === "lost") return "loss";
+    if (v.includes("flat")) return "flat";
+    if (v.includes("wait") || v.includes("neutral")) return "wait";
+
+    return "";
+  }
+
+  function formatTime(value) {
+    if (!value) return "—";
+
+    const d = new Date(value);
+
+    if (Number.isNaN(d.getTime())) {
+      return esc(value);
+    }
+
+    return d.toLocaleString();
+  }
+
+  function renderHistory(data) {
+    const body = document.getElementById("aurixaTrackingHistoryBody");
+    if (!body) return;
+
+    const rows = extractHistory(data);
+
+    if (!rows.length) {
+      body.innerHTML = `
+        <tr>
+          <td colspan="6">No signal history returned yet.</td>
+        </tr>
+      `;
+      return;
+    }
+
+    body.innerHTML = rows.slice(0, 30).map(row => {
+      const time = pick(row, [
+        "candle_time",
+        "candleTime",
+        "createdAt",
+        "created_at",
+        "timestamp",
+        "time",
+        "signalTime",
+        "entryTime"
+      ]);
+
+      const signal = pick(row, [
+        "direction",
+        "signal",
+        "prediction",
+        "action",
+        "side"
+      ]);
+
+      const price = pick(row, [
+        "entryPrice",
+        "entry_price",
+        "price",
+        "close",
+        "entry"
+      ]);
+
+      const r5 = pick(row, [
+        "result5m",
+        "result_5m",
+        "status5m",
+        "status_5m",
+        "outcome5m",
+        "outcome_5m",
+        "evaluation5m"
+      ]);
+
+      const r15 = pick(row, [
+        "result15m",
+        "result_15m",
+        "status15m",
+        "status_15m",
+        "outcome15m",
+        "outcome_15m",
+        "evaluation15m"
+      ]);
+
+      const r30 = pick(row, [
+        "result30m",
+        "result_30m",
+        "status30m",
+        "status_30m",
+        "outcome30m",
+        "outcome_30m",
+        "evaluation30m"
+      ]);
+
+      return `
+        <tr>
+          <td>${formatTime(time)}</td>
+          <td><strong>${esc(signal)}</strong></td>
+          <td>${numberValue(price)}</td>
+          <td class="tracking-history-status ${statusClass(r5)}">${esc(r5 ?? "—")}</td>
+          <td class="tracking-history-status ${statusClass(r15)}">${esc(r15 ?? "—")}</td>
+          <td class="tracking-history-status ${statusClass(r30)}">${esc(r30 ?? "—")}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  function validDate(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+  }
+
+  function buildHistoryUrl() {
+    const from = document.getElementById("historyFrom")?.value || "";
+    const to = document.getElementById("historyTo")?.value || "";
+    const params = new URLSearchParams({
+      symbol: "XAUUSD",
+      timeframe: "5m",
+      limit: "100"
+    });
+
+    if (validDate(from)) params.set("from", from);
+    if (validDate(to)) params.set("to", to);
+
+    return HISTORY_URL + "?" + params.toString();
+  }
+
+  function setHistorySummary(rows) {
+    const from = document.getElementById("historyFrom")?.value || "";
+    const to = document.getElementById("historyTo")?.value || "";
+    const el = document.getElementById("historyFilterSummary");
+    if (!el) return;
+
+    const range = from || to
+      ? (from || "…") + " → " + (to || "…")
+      : "ALL DATES";
+
+    el.textContent = range + " · " + rows.length + " SIGNALS";
+  }
+
+  function setHistoryDefault7d() {
+    const to = new Date();
+    const from = new Date(to);
+    from.setDate(from.getDate() - 6);
+
+    const iso = d => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return y + "-" + m + "-" + day;
+    };
+
+    const fromEl = document.getElementById("historyFrom");
+    const toEl = document.getElementById("historyTo");
+    if (fromEl) fromEl.value = iso(from);
+    if (toEl) toEl.value = iso(to);
+  }
+
+  function setupHistoryFilters() {
+    const apply = document.getElementById("historyApply");
+    const quick = document.getElementById("history7d");
+    const clear = document.getElementById("historyClear");
+
+    if (apply && !apply.dataset.bound) {
+      apply.dataset.bound = "1";
+      apply.addEventListener("click", fetchTracking);
+    }
+
+    if (quick && !quick.dataset.bound) {
+      quick.dataset.bound = "1";
+      quick.addEventListener("click", () => {
+        setHistoryDefault7d();
+        fetchTracking();
+      });
+    }
+
+    if (clear && !clear.dataset.bound) {
+      clear.dataset.bound = "1";
+      clear.addEventListener("click", () => {
+        const from = document.getElementById("historyFrom");
+        const to = document.getElementById("historyTo");
+        if (from) from.value = "";
+        if (to) to.value = "";
+        fetchTracking();
+      });
+    }
+  }
+
+  async function fetchTracking() {
+    try {
+      ensureTrackingPanel();
+      setupHistoryFilters();
+
+      const [statsResponse, historyResponse] = await Promise.all([
+        fetch(STATS_URL, {
+          cache: "no-store",
+          headers: { "Accept": "application/json" }
+        }),
+        fetch(buildHistoryUrl(), {
+          cache: "no-store",
+          headers: { "Accept": "application/json" }
+        })
+      ]);
+
+      if (!statsResponse.ok) {
+        throw new Error(`Stats HTTP ${statsResponse.status}`);
+      }
+
+      const stats = await statsResponse.json();
+      updateStats(stats);
+
+      if (historyResponse.ok) {
+        const history = await historyResponse.json();
+        const rows = extractHistory(history);
+        renderHistory(history);
+        setHistorySummary(rows);
+      } else {
+        renderHistory([]);
+      }
+
+    } catch (error) {
+      console.error("AURIXA Signal Tracking V1:", error);
+
+      const body = document.getElementById("aurixaTrackingHistoryBody");
+
+      if (body) {
+        body.innerHTML = `
+          <tr>
+            <td colspan="6">
+              Signal tracking temporarily unavailable.
+            </td>
+          </tr>
+        `;
+      }
+
+      set(
+        "aurixaTrackingUpdated",
+        `Tracking error: ${error.message}`
+      );
+    }
+  }
+
+  function start() {
+    ensureTrackingPanel();
+    setupHistoryFilters();
+    fetchTracking();
+
+    // Refresh statistics/history without touching trading logic.
+    setInterval(fetchTracking, 30000);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
+
+})();
+
+/* ============================================================
+   AURIXA SIGNAL TRACKING V2.1 DASHBOARD
+   Analytics only. Does NOT modify trading logic.
+   ============================================================ */
+
+(function initAurixaSignalTrackingV21() {
+  "use strict";
+
+  const V2_URL = "/api/signals/v2-stats";
+
+  function esc(value) {
+    return String(value ?? "—")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function stat(obj) {
+    obj = obj || {};
+
+    const rate =
+      obj.winRate === null || obj.winRate === undefined
+        ? "—"
+        : `${Number(obj.winRate).toFixed(2)}%`;
+
+    return `
+      <div class="tracking-v2-cell">
+        <strong>${esc(rate)}</strong>
+        <span>
+          ${Number(obj.evaluated || 0)} eval /
+          ${Number(obj.wins || 0)}W /
+          ${Number(obj.losses || 0)}L
+        </span>
+      </div>
+    `;
+  }
+
+  function horizon(direction, h) {
+    return stat(
+      direction &&
+      (direction[String(h)] || direction[h])
+    );
+  }
+
+  function ensurePanel() {
+    let panel = document.getElementById("aurixaTrackingV2");
+
+    if (panel) return panel;
+
+    panel = document.createElement("section");
+    panel.id = "aurixaTrackingV2";
+    panel.className = "tracking-v2";
+
+    panel.innerHTML = `
+      <div class="card tracking-card">
+
+        <div class="section-title">
+          AURIXA SIGNAL TRACKING V2.1
+        </div>
+
+        <div class="tracking-v2-subtitle">
+          Historical signal performance from stored AURIXA signals
+        </div>
+
+        <div class="tracking-v21-summary">
+          <div class="tracking-v21-stat">
+            <span>Directional</span>
+            <strong id="v21Directional">—</strong>
+          </div>
+
+          <div class="tracking-v21-stat">
+            <span>BUY</span>
+            <strong id="v21BuyCount">—</strong>
+          </div>
+
+          <div class="tracking-v21-stat">
+            <span>SELL</span>
+            <strong id="v21SellCount">—</strong>
+          </div>
+
+          <div class="tracking-v21-stat">
+            <span>WAIT</span>
+            <strong id="v21WaitCount">—</strong>
+          </div>
+        </div>
+
+        <h3>BUY vs SELL</h3>
+
+        <div class="tracking-v2-table">
+          <div class="tracking-v2-row tracking-v2-header">
+            <div>Direction</div>
+            <div>5 MIN</div>
+            <div>15 MIN</div>
+            <div>30 MIN</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div class="tracking-v2-label">BUY</div>
+            <div id="v2Buy5">—</div>
+            <div id="v2Buy15">—</div>
+            <div id="v2Buy30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div class="tracking-v2-label">SELL</div>
+            <div id="v2Sell5">—</div>
+            <div id="v2Sell15">—</div>
+            <div id="v2Sell30">—</div>
+          </div>
+        </div>
+
+        <h3>CONFIDENCE BANDS</h3>
+
+        <div class="tracking-v2-table">
+          <div class="tracking-v2-row tracking-v2-header">
+            <div>CONFIDENCE</div>
+            <div>5 MIN</div>
+            <div>15 MIN</div>
+            <div>30 MIN</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>40–49</div>
+            <div id="v2C40_5">—</div>
+            <div id="v2C40_15">—</div>
+            <div id="v2C40_30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>50–59</div>
+            <div id="v2C50_5">—</div>
+            <div id="v2C50_15">—</div>
+            <div id="v2C50_30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>60–69</div>
+            <div id="v2C60_5">—</div>
+            <div id="v2C60_15">—</div>
+            <div id="v2C60_30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>70–79</div>
+            <div id="v2C70_5">—</div>
+            <div id="v2C70_15">—</div>
+            <div id="v2C70_30">—</div>
+          </div>
+
+          <div class="tracking-v2-row">
+            <div>80+</div>
+            <div id="v2C80_5">—</div>
+            <div id="v2C80_15">—</div>
+            <div id="v2C80_30">—</div>
+          </div>
+        </div>
+
+        <h3>HORIZON SUMMARY</h3>
+
+        <div class="tracking-v21-horizon">
+          <div>
+            <span>5 MIN</span>
+            <strong id="v21H5">—</strong>
+          </div>
+
+          <div>
+            <span>15 MIN</span>
+            <strong id="v21H15">—</strong>
+          </div>
+
+          <div>
+            <span>30 MIN</span>
+            <strong id="v21H30">—</strong>
+          </div>
+        </div>
+
+        <div id="trackingV2Updated" class="tracking-v2-updated">
+          Waiting for analytics…
+        </div>
+
+      </div>
+    `;
+
+    const host = document.getElementById("trackingHost");
+    if (host) {
+      host.appendChild(panel);
+      return panel;
+    }
+
+    const target =
+      document.querySelector(".database-card") ||
+      document.querySelector("#database") ||
+      document.querySelector(".dashboard") ||
+      document.querySelector("main");
+
+    if (target && target.parentNode) {
+      target.parentNode.insertBefore(panel, target);
+    } else {
+      document.body.appendChild(panel);
+    }
+
+    return panel;
+  }
+
+  function set(id, html) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  }
+
+  function combinedSummary(a, b) {
+    a = a || {};
+    b = b || {};
+
+    const evaluated =
+      Number(a.evaluated || 0) +
+      Number(b.evaluated || 0);
+
+    const wins =
+      Number(a.wins || 0) +
+      Number(b.wins || 0);
+
+    const losses =
+      Number(a.losses || 0) +
+      Number(b.losses || 0);
+
+    const flats =
+      Number(a.flats || 0) +
+      Number(b.flats || 0);
+
+    const rate =
+      wins + losses > 0
+        ? `${((wins / (wins + losses)) * 100).toFixed(2)}%`
+        : "—";
+
+    return `
+      <div class="tracking-v21-horizon-value">
+        <strong>${esc(rate)}</strong>
+        <span>${evaluated} eval · ${wins}W · ${losses}L · ${flats}F</span>
+      </div>
+    `;
+  }
+
+  async function refresh() {
+    ensurePanel();
+
+    try {
+      const response = await fetch(
+        `${V2_URL}?_=${Date.now()}`,
+        {
+          cache: "no-store"
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data || data.ok !== true) {
+        throw new Error("Invalid V2 response");
+      }
+
+      const buy = data.directions?.BUY || {};
+      const sell = data.directions?.SELL || {};
+      const confidence = data.confidenceBands || {};
+
+      // V2.2: use accurate totals from all stored signals.
+      const totals = data.totals || {};
+
+      set("v21Directional", totals.directional ?? "—");
+      set("v21BuyCount", totals.buy ?? "—");
+      set("v21SellCount", totals.sell ?? "—");
+      set("v21WaitCount", totals.wait ?? "—");
+
+      set("v2Buy5", horizon(buy, 5));
+      set("v2Buy15", horizon(buy, 15));
+      set("v2Buy30", horizon(buy, 30));
+
+      set("v2Sell5", horizon(sell, 5));
+      set("v2Sell15", horizon(sell, 15));
+      set("v2Sell30", horizon(sell, 30));
+
+      const bands = [
+        ["40-49", "40"],
+        ["50-59", "50"],
+        ["60-69", "60"],
+        ["70-79", "70"],
+        ["80+", "80"]
+      ];
+
+      for (const [band, id] of bands) {
+        const row = confidence[band] || {};
+
+        set(`v2C${id}_5`, stat(row["5"]));
+        set(`v2C${id}_15`, stat(row["15"]));
+        set(`v2C${id}_30`, stat(row["30"]));
+      }
+
+      set("v21H5", combinedSummary(buy["5"], sell["5"]));
+      set("v21H15", combinedSummary(buy["15"], sell["15"]));
+      set("v21H30", combinedSummary(buy["30"], sell["30"]));
+
+      const updated = data.updatedAt
+        ? new Date(data.updatedAt).toLocaleTimeString()
+        : new Date().toLocaleTimeString();
+
+      set(
+        "trackingV2Updated",
+        `Analytics updated ${esc(updated)} · refresh 30s`
+      );
+
+    } catch (err) {
+      console.error("AURIXA Signal Tracking V2.1:", err);
+
+      set(
+        "trackingV2Updated",
+        "V2.1 analytics temporarily unavailable"
+      );
+    }
+  }
+
+  function start() {
+    ensurePanel();
+    refresh();
+    setInterval(refresh, 30000);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
+
+})();
+
+try {
+  const boot = document.getElementById("frontendBoot");
+  if (boot) boot.textContent = "AURIXA DIAGNOSTIC: JS RUNNING · UI INITIALIZING";
+  window.__AURIXA_JS_READY = Date.now();
+} catch (e) {
+  console.error("AURIXA frontend ready marker failed:", e);
+}
