@@ -2043,6 +2043,17 @@ async function inspectOpenXAUUSDPositions() {
   });
 }
 
+async function getAccountBalance() {
+  if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
+  if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
+  const msg = await request(state.ws, 2127, { ctidTraderAccountId: Number(state.accountId) }, 10000);
+  const trader = msg?.payload?.trader || msg?.payload || {};
+  const rawBalance = Number(trader.balance);
+  const moneyDigits = Number(trader.moneyDigits ?? 2);
+  if (!Number.isFinite(rawBalance)) throw new Error("cTrader account balance is unavailable");
+  return { balance: rawBalance / Math.pow(10, Number.isFinite(moneyDigits) ? moneyDigits : 2), rawBalance, moneyDigits };
+}
+
 async function placeDemoMarketOrder({
   direction,
   volume,
@@ -2270,5 +2281,6 @@ module.exports = {
   getOpenXAUUSDPositions,
   inspectOpenXAUUSDPositions,
   closeXAUUSDPosition,
-  placeDemoMarketOrder
+  placeDemoMarketOrder,
+  getAccountBalance
 };
