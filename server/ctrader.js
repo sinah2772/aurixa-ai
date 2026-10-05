@@ -2054,6 +2054,17 @@ async function getAccountBalance() {
   return { balance: rawBalance / Math.pow(10, Number.isFinite(moneyDigits) ? moneyDigits : 2), rawBalance, moneyDigits };
 }
 
+async function modifyPositionProtection(positionId, stopLoss, takeProfit = null) {
+  if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
+  if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
+  if (state.account?.isLive !== false) throw new Error("DEMO ACCOUNT REQUIRED");
+  const payload={ctidTraderAccountId:Number(state.accountId),positionId:Number(positionId)};
+  if(Number.isFinite(Number(stopLoss))) payload.stopLoss=Number(stopLoss);
+  if(Number.isFinite(Number(takeProfit))) payload.takeProfit=Number(takeProfit);
+  await request(state.ws,2107,payload,20000,{waitForExecution:false});
+  return {ok:true,positionId:Number(positionId),stopLoss:payload.stopLoss??null,takeProfit:payload.takeProfit??null};
+}
+
 async function placeDemoMarketOrder({
   direction,
   volume,
@@ -2280,6 +2291,7 @@ module.exports = {
   queryDatabase,
   getOpenXAUUSDPositions,
   inspectOpenXAUUSDPositions,
+  modifyPositionProtection,
   closeXAUUSDPosition,
   placeDemoMarketOrder,
   getAccountBalance
