@@ -27,7 +27,8 @@
     autoStatus: "/api/auto-trader/status",
     autoPositions: "/api/auto-trader/positions",
     autoTrades: "/api/auto-trader/trades",
-    openingRange: "/api/strategies/or-fvg"
+    openingRange: "/api/strategies/or-fvg",
+    marketHistory: "/api/market/history?limit=300"
   };
 
   let chart = null;
@@ -1166,7 +1167,26 @@ async function refresh() {
       const market = await getJSON(API.market);
       if (!market) return;
 
-      updateMarket(market, null);
+      const liveCandles = Array.isArray(market.candles) ? market.candles : [];
+
+      // Prefer the live market-engine candles. If the live engine has not
+      // populated its in-memory history yet, fall back to the persisted
+      // cTrader M5 history endpoint so the chart never remains blank.
+      if (liveCandles.length >= 2) {
+        updateMarket(market, null);
+        return;
+      }
+
+      const history = await getJSON(API.marketHistory);
+      const historyCandles =
+        Array.isArray(history?.candles) ? history.candles : [];
+
+      updateMarket(
+        historyCandles.length >= 2
+          ? { ...market, candles: historyCandles }
+          : market,
+        null
+      );
     } catch (error) {
       console.error("AURIXA live chart refresh:", error);
     }
