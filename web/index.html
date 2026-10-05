@@ -170,7 +170,7 @@
     <!-- CHART -->
     <section class="panel chart-panel">
       <div class="section-title">MARKET ENGINE</div>
-      <div class="section-heading"><span id="chartTitle">XAUUSD / 5 MINUTE</span></div>
+      <div class="section-heading"><span id="chartTitle">cTRADER LIVE · XAUUSD / M5</span></div>
 
       <div class="chart-header">
         <div>
@@ -184,7 +184,7 @@
       </div>
 
       <div class="chart-wrap">
-        <canvas id="marketChart"></canvas>
+        <div id="marketChart" aria-label="cTrader live XAUUSD M5 chart"></div>
       </div>
     </section>
     </div>
@@ -354,6 +354,7 @@
   </main>
 </div>
 
-<script defer src="/app.js?v=20261005-frontfix6"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script defer src="/app.js?v=20261005-ctrader-chart1"></script>
 </body>
 </html>
