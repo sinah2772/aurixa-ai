@@ -843,10 +843,13 @@
     const canvas = $("marketChart");
     if (!canvas || !Array.isArray(candles)) return;
 
-    const latest = candles.slice(-100);
-    const values = latest.map((c) => Number(first(c.close, c.price, c.mid)));
-    const valid = values.filter(Number.isFinite);
-    if (valid.length < 2) return;
+    // Render the actual OHLC candles from cTrader instead of a close-price line.
+    // The latest candle is the live/incomplete candle and is updated on each refresh.
+    const source = candles
+      .filter(c => c && [c.open, c.high, c.low, c.close].every(v => Number.isFinite(Number(v))))
+      .slice(-80);
+
+    if (source.length < 2) return;
 
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -860,48 +863,89 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    const min = Math.min(...valid);
-    const max = Math.max(...valid);
+    const highs = source.map(c => Number(c.high));
+    const lows = source.map(c => Number(c.low));
+    const max = Math.max(...highs);
+    const min = Math.min(...lows);
     const range = Math.max(max - min, 0.01);
-    const pad = { left: 12, right: 12, top: 18, bottom: 28 };
+
+    const pad = { left: 10, right: 58, top: 18, bottom: 28 };
     const plotW = width - pad.left - pad.right;
     const plotH = height - pad.top - pad.bottom;
+    const y = price => pad.top + (1 - (price - min) / range) * plotH;
+    const xStep = plotW / Math.max(source.length, 1);
+    const bodyW = Math.max(2, Math.min(10, xStep * 0.62));
 
-    ctx.beginPath();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#e5e7eb";
-
-    let plotted = 0;
-    values.forEach((value, i) => {
-      if (!Number.isFinite(value)) return;
-      const x = pad.left + (i / Math.max(values.length - 1, 1)) * plotW;
-      const y = pad.top + (1 - (value - min) / range) * plotH;
-      if (plotted === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-      plotted++;
-    });
-    ctx.stroke();
-
-    ctx.fillStyle = "#9ca3af";
-    ctx.font = "12px Arial, sans-serif";
+    // Background grid.
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    ctx.font = "10px Arial, sans-serif";
+    ctx.fillStyle = "#8b949e";
     ctx.textAlign = "left";
-    ctx.fillText(number(max, 2), pad.left, 13);
-    ctx.textAlign = "right";
-    ctx.fillText(number(min, 2), width - pad.right, height - 6);
 
-    const last = valid[valid.length - 1];
+    for (let i = 0; i <= 4; i++) {
+      const gy = pad.top + (plotH * i / 4);
+      const value = max - (range * i / 4);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, gy);
+      ctx.lineTo(width - pad.right, gy);
+      ctx.stroke();
+      ctx.fillText(number(value, 2), width - pad.right + 7, gy + 3);
+    }
+
+    // Candlesticks: wick = high/low, body = open/close.
+    source.forEach((c, i) => {
+      const open = Number(c.open);
+      const high = Number(c.high);
+      const low = Number(c.low);
+      const close = Number(c.close);
+      const cx = pad.left + xStep * (i + 0.5);
+      const rising = close >= open;
+      const top = y(Math.max(open, close));
+      const bottom = y(Math.min(open, close));
+      const bodyH = Math.max(1, bottom - top);
+
+      ctx.beginPath();
+      ctx.moveTo(cx, y(high));
+      ctx.lineTo(cx, y(low));
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rising ? "#35d07f" : "#ff5b65";
+      ctx.stroke();
+
+      ctx.fillStyle = rising ? "#35d07f" : "#ff5b65";
+      ctx.fillRect(cx - bodyW / 2, top, bodyW, bodyH);
+    });
+
+    const latest = source[source.length - 1];
+    const latestClose = Number(latest.close);
+
+    // Current-price guide.
+    const currentY = y(latestClose);
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.beginPath();
+    ctx.moveTo(pad.left, currentY);
+    ctx.lineTo(width - pad.right, currentY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
     ctx.fillStyle = "#ffffff";
-    ctx.font = "700 13px Arial, sans-serif";
+    ctx.font = "700 12px Arial, sans-serif";
     ctx.textAlign = "right";
-    ctx.fillText(number(last, 2), width - pad.right, 13);
+    ctx.fillText(number(latestClose, 2), width - pad.right, Math.max(12, currentY - 5));
 
-    text("candleCount", String(latest.length));
-    const latestCandle = latest[latest.length - 1];
-    text("latestCandle", formatTime(first(
-      latestCandle?.time,
-      latestCandle?.timestamp,
-      latestCandle?.openTime
-    )));
+    // Time labels for the first/middle/latest candles.
+    ctx.fillStyle = "#8b949e";
+    ctx.font = "10px Arial, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(formatTime(source[0].time), pad.left, height - 8);
+    ctx.textAlign = "center";
+    ctx.fillText(formatTime(source[Math.floor(source.length / 2)].time), width / 2, height - 8);
+    ctx.textAlign = "right";
+    ctx.fillText(formatTime(latest.time), width - pad.right, height - 8);
+
+    text("candleCount", String(source.length));
+    text("latestCandle", formatTime(first(latest.time, latest.timestamp, latest.openTime)));
   }
 
 
@@ -1398,724 +1442,3 @@ async function refresh() {
           </div>
 
           <table class="tracking-history-table">
-            <thead>
-              <tr>
-                <th>TIME</th>
-                <th>SIGNAL</th>
-                <th>PRICE</th>
-                <th>5M</th>
-                <th>15M</th>
-                <th>30M</th>
-              </tr>
-            </thead>
-            <tbody id="aurixaTrackingHistoryBody">
-              <tr>
-                <td colspan="6">Loading signal history...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div id="aurixaTrackingUpdated" class="tracking-updated">
-          Tracking data loading...
-        </div>
-      </div>
-    `;
-
-    const host = document.getElementById("trackingHost");
-
-    if (host) {
-      host.appendChild(panel);
-      return panel;
-    }
-
-    const main = document.querySelector("main");
-    if (main) {
-      main.appendChild(panel);
-    } else {
-      document.body.appendChild(panel);
-    }
-
-    return panel;
-  }
-
-  function set(id, value) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = value;
-  }
-
-  function updateStats(data) {
-    if (!data || data.ok === false) return;
-
-    const h5 = horizon(data, "5");
-    const h15 = horizon(data, "15");
-    const h30 = horizon(data, "30");
-    const totals = data.totals || {};
-
-    set("tracking5Rate", percentValue(h5.winRate));
-    set("tracking5Eval", numberValue(h5.evaluated));
-    set("tracking5Wins", numberValue(h5.wins));
-    set("tracking5Losses", numberValue(h5.losses));
-
-    set("tracking15Rate", percentValue(h15.winRate));
-    set("tracking15Eval", numberValue(h15.evaluated));
-    set("tracking15Wins", numberValue(h15.wins));
-    set("tracking15Losses", numberValue(h15.losses));
-
-    set("tracking30Rate", percentValue(h30.winRate));
-    set("tracking30Eval", numberValue(h30.evaluated));
-    set("tracking30Wins", numberValue(h30.wins));
-    set("tracking30Losses", numberValue(h30.losses));
-
-    set("trackingTotal", numberValue(totals.directional));
-    set("trackingBuy", numberValue(totals.buy));
-    set("trackingSell", numberValue(totals.sell));
-    set("trackingWait", numberValue(totals.wait));
-
-    if (data.updatedAt) {
-      set(
-        "aurixaTrackingUpdated",
-        `Updated ${new Date(data.updatedAt).toLocaleString()}`
-      );
-    }
-  }
-
-  function extractHistory(data) {
-    if (Array.isArray(data)) return data;
-
-    if (!data || typeof data !== "object") return [];
-
-    const candidates = [
-      data.history,
-      data.signals,
-      data.rows,
-      data.data,
-      data.results
-    ];
-
-    for (const value of candidates) {
-      if (Array.isArray(value)) return value;
-    }
-
-    return [];
-  }
-
-  function pick(obj, keys) {
-    for (const key of keys) {
-      if (
-        obj &&
-        obj[key] !== undefined &&
-        obj[key] !== null &&
-        obj[key] !== ""
-      ) {
-        return obj[key];
-      }
-    }
-    return null;
-  }
-
-  function statusClass(value) {
-    const v = String(value || "").toLowerCase();
-
-    if (v.includes("win") || v === "won") return "win";
-    if (v.includes("loss") || v === "lost") return "loss";
-    if (v.includes("flat")) return "flat";
-    if (v.includes("wait") || v.includes("neutral")) return "wait";
-
-    return "";
-  }
-
-  function formatTime(value) {
-    if (!value) return "—";
-
-    const d = new Date(value);
-
-    if (Number.isNaN(d.getTime())) {
-      return esc(value);
-    }
-
-    return d.toLocaleString();
-  }
-
-  function renderHistory(data) {
-    const body = document.getElementById("aurixaTrackingHistoryBody");
-    if (!body) return;
-
-    const rows = extractHistory(data);
-
-    if (!rows.length) {
-      body.innerHTML = `
-        <tr>
-          <td colspan="6">No signal history returned yet.</td>
-        </tr>
-      `;
-      return;
-    }
-
-    body.innerHTML = rows.slice(0, 30).map(row => {
-      const time = pick(row, [
-        "candle_time",
-        "candleTime",
-        "createdAt",
-        "created_at",
-        "timestamp",
-        "time",
-        "signalTime",
-        "entryTime"
-      ]);
-
-      const signal = pick(row, [
-        "direction",
-        "signal",
-        "prediction",
-        "action",
-        "side"
-      ]);
-
-      const price = pick(row, [
-        "entryPrice",
-        "entry_price",
-        "price",
-        "close",
-        "entry"
-      ]);
-
-      const r5 = pick(row, [
-        "result5m",
-        "result_5m",
-        "status5m",
-        "status_5m",
-        "outcome5m",
-        "outcome_5m",
-        "evaluation5m"
-      ]);
-
-      const r15 = pick(row, [
-        "result15m",
-        "result_15m",
-        "status15m",
-        "status_15m",
-        "outcome15m",
-        "outcome_15m",
-        "evaluation15m"
-      ]);
-
-      const r30 = pick(row, [
-        "result30m",
-        "result_30m",
-        "status30m",
-        "status_30m",
-        "outcome30m",
-        "outcome_30m",
-        "evaluation30m"
-      ]);
-
-      return `
-        <tr>
-          <td>${formatTime(time)}</td>
-          <td><strong>${esc(signal)}</strong></td>
-          <td>${numberValue(price)}</td>
-          <td class="tracking-history-status ${statusClass(r5)}">${esc(r5 ?? "—")}</td>
-          <td class="tracking-history-status ${statusClass(r15)}">${esc(r15 ?? "—")}</td>
-          <td class="tracking-history-status ${statusClass(r30)}">${esc(r30 ?? "—")}</td>
-        </tr>
-      `;
-    }).join("");
-  }
-
-  function validDate(value) {
-    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
-  }
-
-  function buildHistoryUrl() {
-    const from = document.getElementById("historyFrom")?.value || "";
-    const to = document.getElementById("historyTo")?.value || "";
-    const params = new URLSearchParams({
-      symbol: "XAUUSD",
-      timeframe: "5m",
-      limit: "100"
-    });
-
-    if (validDate(from)) params.set("from", from);
-    if (validDate(to)) params.set("to", to);
-
-    return HISTORY_URL + "?" + params.toString();
-  }
-
-  function setHistorySummary(rows) {
-    const from = document.getElementById("historyFrom")?.value || "";
-    const to = document.getElementById("historyTo")?.value || "";
-    const el = document.getElementById("historyFilterSummary");
-    if (!el) return;
-
-    const range = from || to
-      ? (from || "…") + " → " + (to || "…")
-      : "ALL DATES";
-
-    el.textContent = range + " · " + rows.length + " SIGNALS";
-  }
-
-  function setHistoryDefault7d() {
-    const to = new Date();
-    const from = new Date(to);
-    from.setDate(from.getDate() - 6);
-
-    const iso = d => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      return y + "-" + m + "-" + day;
-    };
-
-    const fromEl = document.getElementById("historyFrom");
-    const toEl = document.getElementById("historyTo");
-    if (fromEl) fromEl.value = iso(from);
-    if (toEl) toEl.value = iso(to);
-  }
-
-  function setupHistoryFilters() {
-    const apply = document.getElementById("historyApply");
-    const quick = document.getElementById("history7d");
-    const clear = document.getElementById("historyClear");
-
-    if (apply && !apply.dataset.bound) {
-      apply.dataset.bound = "1";
-      apply.addEventListener("click", fetchTracking);
-    }
-
-    if (quick && !quick.dataset.bound) {
-      quick.dataset.bound = "1";
-      quick.addEventListener("click", () => {
-        setHistoryDefault7d();
-        fetchTracking();
-      });
-    }
-
-    if (clear && !clear.dataset.bound) {
-      clear.dataset.bound = "1";
-      clear.addEventListener("click", () => {
-        const from = document.getElementById("historyFrom");
-        const to = document.getElementById("historyTo");
-        if (from) from.value = "";
-        if (to) to.value = "";
-        fetchTracking();
-      });
-    }
-  }
-
-  async function fetchTracking() {
-    try {
-      ensureTrackingPanel();
-      setupHistoryFilters();
-
-      const [statsResponse, historyResponse] = await Promise.all([
-        fetch(STATS_URL, {
-          cache: "no-store",
-          headers: { "Accept": "application/json" }
-        }),
-        fetch(buildHistoryUrl(), {
-          cache: "no-store",
-          headers: { "Accept": "application/json" }
-        })
-      ]);
-
-      if (!statsResponse.ok) {
-        throw new Error(`Stats HTTP ${statsResponse.status}`);
-      }
-
-      const stats = await statsResponse.json();
-      updateStats(stats);
-
-      if (historyResponse.ok) {
-        const history = await historyResponse.json();
-        const rows = extractHistory(history);
-        renderHistory(history);
-        setHistorySummary(rows);
-      } else {
-        renderHistory([]);
-      }
-
-    } catch (error) {
-      console.error("AURIXA Signal Tracking V1:", error);
-
-      const body = document.getElementById("aurixaTrackingHistoryBody");
-
-      if (body) {
-        body.innerHTML = `
-          <tr>
-            <td colspan="6">
-              Signal tracking temporarily unavailable.
-            </td>
-          </tr>
-        `;
-      }
-
-      set(
-        "aurixaTrackingUpdated",
-        `Tracking error: ${error.message}`
-      );
-    }
-  }
-
-  function start() {
-    ensureTrackingPanel();
-    setupHistoryFilters();
-    fetchTracking();
-
-    // Refresh statistics/history without touching trading logic.
-    setInterval(fetchTracking, 30000);
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start);
-  } else {
-    start();
-  }
-
-})();
-
-/* ============================================================
-   AURIXA SIGNAL TRACKING V2.1 DASHBOARD
-   Analytics only. Does NOT modify trading logic.
-   ============================================================ */
-
-(function initAurixaSignalTrackingV21() {
-  "use strict";
-
-  const V2_URL = "/api/signals/v2-stats";
-
-  function esc(value) {
-    return String(value ?? "—")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  function stat(obj) {
-    obj = obj || {};
-
-    const rate =
-      obj.winRate === null || obj.winRate === undefined
-        ? "—"
-        : `${Number(obj.winRate).toFixed(2)}%`;
-
-    return `
-      <div class="tracking-v2-cell">
-        <strong>${esc(rate)}</strong>
-        <span>
-          ${Number(obj.evaluated || 0)} eval /
-          ${Number(obj.wins || 0)}W /
-          ${Number(obj.losses || 0)}L
-        </span>
-      </div>
-    `;
-  }
-
-  function horizon(direction, h) {
-    return stat(
-      direction &&
-      (direction[String(h)] || direction[h])
-    );
-  }
-
-  function ensurePanel() {
-    let panel = document.getElementById("aurixaTrackingV2");
-
-    if (panel) return panel;
-
-    panel = document.createElement("section");
-    panel.id = "aurixaTrackingV2";
-    panel.className = "tracking-v2";
-
-    panel.innerHTML = `
-      <div class="card tracking-card">
-
-        <div class="section-title">
-          AURIXA SIGNAL TRACKING V2.1
-        </div>
-
-        <div class="tracking-v2-subtitle">
-          Historical signal performance from stored AURIXA signals
-        </div>
-
-        <div class="tracking-v21-summary">
-          <div class="tracking-v21-stat">
-            <span>Directional</span>
-            <strong id="v21Directional">—</strong>
-          </div>
-
-          <div class="tracking-v21-stat">
-            <span>BUY</span>
-            <strong id="v21BuyCount">—</strong>
-          </div>
-
-          <div class="tracking-v21-stat">
-            <span>SELL</span>
-            <strong id="v21SellCount">—</strong>
-          </div>
-
-          <div class="tracking-v21-stat">
-            <span>WAIT</span>
-            <strong id="v21WaitCount">—</strong>
-          </div>
-        </div>
-
-        <h3>BUY vs SELL</h3>
-
-        <div class="tracking-v2-table">
-          <div class="tracking-v2-row tracking-v2-header">
-            <div>Direction</div>
-            <div>5 MIN</div>
-            <div>15 MIN</div>
-            <div>30 MIN</div>
-          </div>
-
-          <div class="tracking-v2-row">
-            <div class="tracking-v2-label">BUY</div>
-            <div id="v2Buy5">—</div>
-            <div id="v2Buy15">—</div>
-            <div id="v2Buy30">—</div>
-          </div>
-
-          <div class="tracking-v2-row">
-            <div class="tracking-v2-label">SELL</div>
-            <div id="v2Sell5">—</div>
-            <div id="v2Sell15">—</div>
-            <div id="v2Sell30">—</div>
-          </div>
-        </div>
-
-        <h3>CONFIDENCE BANDS</h3>
-
-        <div class="tracking-v2-table">
-          <div class="tracking-v2-row tracking-v2-header">
-            <div>CONFIDENCE</div>
-            <div>5 MIN</div>
-            <div>15 MIN</div>
-            <div>30 MIN</div>
-          </div>
-
-          <div class="tracking-v2-row">
-            <div>40–49</div>
-            <div id="v2C40_5">—</div>
-            <div id="v2C40_15">—</div>
-            <div id="v2C40_30">—</div>
-          </div>
-
-          <div class="tracking-v2-row">
-            <div>50–59</div>
-            <div id="v2C50_5">—</div>
-            <div id="v2C50_15">—</div>
-            <div id="v2C50_30">—</div>
-          </div>
-
-          <div class="tracking-v2-row">
-            <div>60–69</div>
-            <div id="v2C60_5">—</div>
-            <div id="v2C60_15">—</div>
-            <div id="v2C60_30">—</div>
-          </div>
-
-          <div class="tracking-v2-row">
-            <div>70–79</div>
-            <div id="v2C70_5">—</div>
-            <div id="v2C70_15">—</div>
-            <div id="v2C70_30">—</div>
-          </div>
-
-          <div class="tracking-v2-row">
-            <div>80+</div>
-            <div id="v2C80_5">—</div>
-            <div id="v2C80_15">—</div>
-            <div id="v2C80_30">—</div>
-          </div>
-        </div>
-
-        <h3>HORIZON SUMMARY</h3>
-
-        <div class="tracking-v21-horizon">
-          <div>
-            <span>5 MIN</span>
-            <strong id="v21H5">—</strong>
-          </div>
-
-          <div>
-            <span>15 MIN</span>
-            <strong id="v21H15">—</strong>
-          </div>
-
-          <div>
-            <span>30 MIN</span>
-            <strong id="v21H30">—</strong>
-          </div>
-        </div>
-
-        <div id="trackingV2Updated" class="tracking-v2-updated">
-          Waiting for analytics…
-        </div>
-
-      </div>
-    `;
-
-    const host = document.getElementById("trackingHost");
-    if (host) {
-      host.appendChild(panel);
-      return panel;
-    }
-
-    const target =
-      document.querySelector(".database-card") ||
-      document.querySelector("#database") ||
-      document.querySelector(".dashboard") ||
-      document.querySelector("main");
-
-    if (target && target.parentNode) {
-      target.parentNode.insertBefore(panel, target);
-    } else {
-      document.body.appendChild(panel);
-    }
-
-    return panel;
-  }
-
-  function set(id, html) {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = html;
-  }
-
-  function combinedSummary(a, b) {
-    a = a || {};
-    b = b || {};
-
-    const evaluated =
-      Number(a.evaluated || 0) +
-      Number(b.evaluated || 0);
-
-    const wins =
-      Number(a.wins || 0) +
-      Number(b.wins || 0);
-
-    const losses =
-      Number(a.losses || 0) +
-      Number(b.losses || 0);
-
-    const flats =
-      Number(a.flats || 0) +
-      Number(b.flats || 0);
-
-    const rate =
-      wins + losses > 0
-        ? `${((wins / (wins + losses)) * 100).toFixed(2)}%`
-        : "—";
-
-    return `
-      <div class="tracking-v21-horizon-value">
-        <strong>${esc(rate)}</strong>
-        <span>${evaluated} eval · ${wins}W · ${losses}L · ${flats}F</span>
-      </div>
-    `;
-  }
-
-  async function refresh() {
-    ensurePanel();
-
-    try {
-      const response = await fetch(
-        `${V2_URL}?_=${Date.now()}`,
-        {
-          cache: "no-store"
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (!data || data.ok !== true) {
-        throw new Error("Invalid V2 response");
-      }
-
-      const buy = data.directions?.BUY || {};
-      const sell = data.directions?.SELL || {};
-      const confidence = data.confidenceBands || {};
-
-      // V2.2: use accurate totals from all stored signals.
-      const totals = data.totals || {};
-
-      set("v21Directional", totals.directional ?? "—");
-      set("v21BuyCount", totals.buy ?? "—");
-      set("v21SellCount", totals.sell ?? "—");
-      set("v21WaitCount", totals.wait ?? "—");
-
-      set("v2Buy5", horizon(buy, 5));
-      set("v2Buy15", horizon(buy, 15));
-      set("v2Buy30", horizon(buy, 30));
-
-      set("v2Sell5", horizon(sell, 5));
-      set("v2Sell15", horizon(sell, 15));
-      set("v2Sell30", horizon(sell, 30));
-
-      const bands = [
-        ["40-49", "40"],
-        ["50-59", "50"],
-        ["60-69", "60"],
-        ["70-79", "70"],
-        ["80+", "80"]
-      ];
-
-      for (const [band, id] of bands) {
-        const row = confidence[band] || {};
-
-        set(`v2C${id}_5`, stat(row["5"]));
-        set(`v2C${id}_15`, stat(row["15"]));
-        set(`v2C${id}_30`, stat(row["30"]));
-      }
-
-      set("v21H5", combinedSummary(buy["5"], sell["5"]));
-      set("v21H15", combinedSummary(buy["15"], sell["15"]));
-      set("v21H30", combinedSummary(buy["30"], sell["30"]));
-
-      const updated = data.updatedAt
-        ? new Date(data.updatedAt).toLocaleTimeString()
-        : new Date().toLocaleTimeString();
-
-      set(
-        "trackingV2Updated",
-        `Analytics updated ${esc(updated)} · refresh 30s`
-      );
-
-    } catch (err) {
-      console.error("AURIXA Signal Tracking V2.1:", err);
-
-      set(
-        "trackingV2Updated",
-        "V2.1 analytics temporarily unavailable"
-      );
-    }
-  }
-
-  function start() {
-    ensurePanel();
-    refresh();
-    setInterval(refresh, 30000);
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start);
-  } else {
-    start();
-  }
-
-})();
-
-try {
-  const boot = document.getElementById("frontendBoot");
-  if (boot) boot.textContent = "AURIXA DIAGNOSTIC: JS RUNNING · UI INITIALIZING";
-  window.__AURIXA_JS_READY = Date.now();
-} catch (e) {
-  console.error("AURIXA frontend ready marker failed:", e);
-}
