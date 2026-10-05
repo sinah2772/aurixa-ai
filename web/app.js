@@ -972,11 +972,9 @@ async function selectPair(symbol) {
     selectedSymbol = String(
       data.selected || symbol || "XAUUSD"
     ).toUpperCase();
-
-    if (chart) {
-      chart.destroy();
-      chart = null;
-    }
+    // Native canvas chart: clear the container instead of calling a library destroy() method.
+    const chartContainer = $("marketChart");
+    if (chartContainer) chartContainer.innerHTML = "";
 
     text("instrument", selectedSymbol);
     text("chartTitle", selectedSymbol + " / 5 MINUTE");
