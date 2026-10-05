@@ -38,8 +38,12 @@ signalTracker.configure({
 });
 
 autoTrader.configure({
-  ctrader: require("./ctrader"),
-  query: queryDatabase
+  ctrader: {
+    ...require("./ctrader"),
+    getMarketCandles: () => marketEngine.getState()?.candles || []
+  },
+  query: queryDatabase,
+  orderflow: analyzeOrderflowV1
 });
 
 const PORT = Number(process.env.PORT || 8787);
@@ -1055,6 +1059,12 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
           "Signal tracking error:",
           err.message
         );
+      }
+
+      try {
+        await autoTrader.manageOpenPositions();
+      } catch (err) {
+        console.error("AURIXA position management error:", err.message);
       }
 
       try {
