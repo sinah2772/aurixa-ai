@@ -59,6 +59,7 @@ const state = {
   expiresAt: 0,
   accountId: null,
   account: null,
+  permissionScope: null,
   symbolId: null,
   symbolName: null,
   symbolDigits: 5,
@@ -862,6 +863,12 @@ function connectOpenApi() {
 
         // ProtoOAGetAccountListByAccessTokenRes
         if (msg.payloadType === 2150) {
+          // 0 = view, 1 = trade. Keep this visible in status so
+          // permission failures are distinguishable from order bugs.
+          state.permissionScope =
+            payload.permissionScope == null
+              ? null
+              : Number(payload.permissionScope);
           const accounts = payload.ctidTraderAccount || [];
 
           if (!accounts.length) {
@@ -2224,6 +2231,8 @@ function getCTraderStatus() {
     authorized: state.authorized,
     accountId: state.accountId,
     account: state.account ? { ctidTraderAccountId: state.account.ctidTraderAccountId, traderLogin: state.account.traderLogin, brokerTitleShort: state.account.brokerTitleShort, isLive: state.account.isLive } : null,
+    permissionScope: state.permissionScope,
+    tradingPermission: state.permissionScope === 1,
     symbol: state.symbolName,
     symbolId: state.symbolId,
     symbolDigits: state.symbolDigits,
