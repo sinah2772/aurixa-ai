@@ -183,7 +183,7 @@ async function reconcileTradeExecution(payload) {
 
   if (executionType === 3) {
     tradeStatus = "OPEN";
-  } else if (executionType === 4) {
+  } else if (executionType === 11) {
     tradeStatus = "PARTIAL";
   }
 
@@ -1040,8 +1040,8 @@ function connectOpenApi() {
               )
             ) {
               // 3 = ORDER_FILLED
-              // 4 = PARTIAL_FILL
-              if (executionType === 3 || executionType === 4) {
+              // 11 = ORDER_PARTIAL_FILL
+              if (executionType === 3 || executionType === 11) {
                 clearTimeout(pending.timer);
                 pendingRequests.delete(responseClientMsgId);
                 pending.resolve(msg);
@@ -2194,6 +2194,9 @@ async function closeXAUUSDPosition(positionId, volume) {
     throw new Error("Invalid cTrader close volume");
   }
 
+  // Closing is asynchronous too. Wait for the real execution
+  // event (2126) instead of treating an intermediate response as
+  // "closed". cTrader reports the realized result on the closing deal.
   const response = await request(
     state.ws,
     2111,
@@ -2202,7 +2205,8 @@ async function closeXAUUSDPosition(positionId, volume) {
       positionId: pid,
       volume: vol
     },
-    15000
+    20000,
+    { waitForExecution: true }
   );
 
   const payload = response?.payload || {};
