@@ -202,6 +202,7 @@ async function reconcileTradeExecution(payload) {
         order_id = COALESCE($2, order_id),
         position_id = COALESCE($3, position_id),
         signal_entry_price = COALESCE(signal_entry_price, $4),
+        execution_entry_price = COALESCE(execution_entry_price, $4),
         status = $5,
         opened_at = CASE
           WHEN $5 IN ('OPEN', 'PARTIAL')
