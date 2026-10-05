@@ -799,41 +799,64 @@ app.get("/api/auto-trader/trades", async (req, res) => {
 
 app.get("/api/market/history", async (req, res) => {
   try {
-    const accountId = Number(req.query.accountId || getCTraderStatus()?.accountId);
-    const symbolId = Number(req.query.symbolId || getCTraderStatus()?.symbolId);
+    const ct = getCTraderStatus() || {};
+    const accountId = Number(req.query.accountId || ct.accountId);
+    const symbolId = Number(req.query.symbolId || ct.symbolId);
     const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
-    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 1000);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 300, 1), 1000);
 
-    if (!Number.isFinite(accountId) || !Number.isFinite(symbolId)) {
-      return res.status(400).json({
-        ok: false,
-        error: "ACCOUNT_AND_SYMBOL_REQUIRED"
-      });
+    // Always prefer persisted candles, but never let a DB problem make the
+    // frontend chart blank when the live market engine already has candles.
+    if (Number.isFinite(accountId) && Number.isFinite(symbolId)) {
+      try {
+        const result = await queryDatabase(`
+          SELECT
+            ctid_trader_account_id AS "accountId",
+            symbol_id AS "symbolId",
+            symbol,
+            timeframe,
+            EXTRACT(EPOCH FROM candle_time) * 1000 AS time,
+            open, high, low, close, volume
+          FROM aurixa.market_candles
+          WHERE ctid_trader_account_id = $1
+            AND symbol_id = $2
+            AND timeframe = $3
+          ORDER BY candle_time DESC
+          LIMIT $4
+        `, [accountId, symbolId, timeframe, limit]);
+
+        const candles = result.rows.reverse();
+
+        if (candles.length >= 2) {
+          return res.json({
+            ok: true,
+            source: "database",
+            accountId,
+            symbolId,
+            timeframe,
+            count: candles.length,
+            candles
+          });
+        }
+      } catch (dbError) {
+        console.warn("Market history DB fallback:", dbError.message);
+      }
     }
 
-    const result = await queryDatabase(`
-      SELECT
-        ctid_trader_account_id AS "accountId",
-        symbol_id AS "symbolId",
-        symbol,
-        timeframe,
-        EXTRACT(EPOCH FROM candle_time) * 1000 AS time,
-        open, high, low, close, volume
-      FROM aurixa.market_candles
-      WHERE ctid_trader_account_id = $1
-        AND symbol_id = $2
-        AND timeframe = $3
-      ORDER BY candle_time DESC
-      LIMIT $4
-    `, [accountId, symbolId, timeframe, limit]);
+    // Final fallback: live in-memory market-engine candles.
+    const state = marketEngine.getState();
+    const liveCandles = Array.isArray(state?.candles)
+      ? state.candles.slice(-limit)
+      : [];
 
-    res.json({
+    return res.json({
       ok: true,
-      accountId,
-      symbolId,
+      source: "market-engine",
+      accountId: Number.isFinite(accountId) ? accountId : null,
+      symbolId: Number.isFinite(symbolId) ? symbolId : null,
       timeframe,
-      count: result.rows.length,
-      candles: result.rows.reverse()
+      count: liveCandles.length,
+      candles: liveCandles
     });
   } catch (err) {
     console.error("Market history error:", err);
