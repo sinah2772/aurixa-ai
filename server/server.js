@@ -1067,3 +1067,96 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
       }
     }, signalTracker.getHorizonIntervalMs());
 });
+app.get("/api/auto-trader/trade-trace/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid trade trace ID"
+      });
+    }
+
+    const result = await queryDatabase(`
+      SELECT
+        t.id,
+        t.signal_id AS "signalId",
+        t.created_at AS "createdAt",
+        t.symbol,
+        t.timeframe,
+        t.direction,
+        t.signal_entry_price AS "signalEntryPrice",
+        t.execution_entry_price AS "executionEntryPrice",
+        t.order_id AS "orderId",
+        t.position_id AS "positionId",
+        t.client_msg_id AS "clientMsgId",
+        t.volume,
+        t.stop_loss_distance AS "stopLossDistance",
+        t.take_profit_distance AS "takeProfitDistance",
+        t.status,
+        t.opened_at AS "openedAt",
+        t.closed_at AS "closedAt",
+        t.close_price AS "closePrice",
+        t.profit,
+        t.error,
+        s.candle_time AS "signalCandleTime",
+        s.confidence AS "signalConfidence",
+        s.score AS "signalScore",
+        s.reason AS "signalReason"
+      FROM aurixa.auto_trades t
+      LEFT JOIN aurixa.signals s ON s.id = t.signal_id
+      WHERE t.id = $1
+      LIMIT 1
+    `, [id]);
+
+    if (!result.rows.length) {
+      return res.status(404).json({
+        ok: false,
+        error: "Trade trace not found"
+      });
+    }
+
+    const trade = result.rows[0];
+
+    res.json({
+      ok: true,
+      trace: {
+        signal: {
+          id: trade.signalId,
+          candleTime: trade.signalCandleTime,
+          direction: trade.direction,
+          entryPrice: trade.signalEntryPrice,
+          confidence: trade.signalConfidence,
+          score: trade.signalScore,
+          reason: trade.signalReason
+        },
+        execution: {
+          status: trade.status,
+          orderId: trade.orderId,
+          positionId: trade.positionId,
+          clientMsgId: trade.clientMsgId,
+          entryPrice: trade.executionEntryPrice,
+          openedAt: trade.openedAt
+        },
+        protection: {
+          stopLossDistance: trade.stopLossDistance,
+          takeProfitDistance: trade.takeProfitDistance
+        },
+        close: {
+          closedAt: trade.closedAt,
+          closePrice: trade.closePrice,
+          profit: trade.profit
+        },
+        error: trade.error
+      }
+    });
+  } catch (err) {
+    console.error("Auto-Trader trade trace error:", err);
+    res.status(500).json({
+      ok: false,
+      error: "Trade trace unavailable"
+    });
+  }
+});
+
