@@ -630,10 +630,21 @@ async function trackLatestClosedSignal() {
     return null;
   }
 
+  /*
+   * Execution must operate on the newest closed candle only.
+   * If Render was offline for a while, do not replay an old
+   * backlog of BUY/SELL signals: those signals will be stale
+   * before the auto-trader sees them. Historical performance
+   * recovery is handled separately by the database.
+   */
+  const targetCandles = [
+    missingCandles[missingCandles.length - 1]
+  ];
+
   let lastSaved = null;
   const newSignals = [];
 
-  for (const targetCandle of missingCandles) {
+  for (const targetCandle of targetCandles) {
     const candleTime = Number(targetCandle.time);
 
     /*
