@@ -1185,3 +1185,17 @@ main { display:block; }
   height: 100%;
   min-height: 300px;
 }
+
+
+/* AURIXA latest strategy/execution UI */
+.of1-panel { margin-top: 0; }
+.of1-head { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; margin-top:14px; }
+.of1-decision { font-size:30px; font-weight:950; }
+.of1-decision.wait { color:var(--yellow); }
+.of1-decision.buy { color:var(--green); }
+.of1-decision.sell { color:var(--red); }
+.of1-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-top:14px; }
+.trade-trace-link { color:var(--blue); font-size:10px; font-weight:900; text-decoration:none; margin-left:8px; }
+.trade-trace-link:hover { text-decoration:underline; }
+.trade-lifecycle { display:block; color:var(--blue); font-size:9px; margin-top:3px; }
+@media (max-width:800px) { .of1-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
