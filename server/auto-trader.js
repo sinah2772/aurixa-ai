@@ -24,16 +24,17 @@ function config() {
   return {
     enabled: String(process.env.AUTO_TRADING || "false").toLowerCase() === "true",
     demoOnly: String(process.env.AUTO_TRADING_DEMO_ONLY || "true").toLowerCase() !== "false",
-    volume: Math.max(1, Number(process.env.AUTO_TRADING_VOLUME || 100)),
-    sl: Number(process.env.AUTO_TRADING_SL || 0),
-    tp: Number(process.env.AUTO_TRADING_TP || 0),
-    maxSignalAgeMinutes: Math.max(
-      1,
-      Number(process.env.AUTO_TRADING_MAX_SIGNAL_AGE_MINUTES || 7)
-    )
+    riskPercent: Math.max(0.1, Math.min(1, Number(process.env.AUTO_TRADING_RISK_PERCENT || 0.5))),
+    rr: Math.max(1.5, Math.min(3, Number(process.env.AUTO_TRADING_RR || 2))),
+    minConfidence: Math.max(50, Math.min(79, Number(process.env.AUTO_TRADING_MIN_CONFIDENCE || 60))),
+    minScore: Math.max(6, Number(process.env.AUTO_TRADING_MIN_SCORE || 6)),
+    maxSpread: Math.max(0.05, Number(process.env.AUTO_TRADING_MAX_SPREAD || 0.60)),
+    cooldownMinutes: Math.max(5, Number(process.env.AUTO_TRADING_COOLDOWN_MINUTES || 30)),
+    maxTradesPerDay: Math.max(1, Math.floor(Number(process.env.AUTO_TRADING_MAX_TRADES_PER_DAY || 2))),
+    maxSignalAgeMinutes: Math.max(1, Number(process.env.AUTO_TRADING_MAX_SIGNAL_AGE_MINUTES || 7)),
+    maxVolume: Math.max(100, Math.floor(Number(process.env.AUTO_TRADING_MAX_VOLUME || 1000)))
   };
 }
-
 function getStatus() {
   const cfg = config();
   const ct = typeof cTrader?.getCTraderStatus === "function"
@@ -59,198 +60,113 @@ function getStatus() {
 
 async function executeSignal(signal) {
   const cfg = config();
-
-  if (!cfg.enabled) {
-    return { executed: false, reason: "AUTO_TRADING_DISABLED" };
-  }
-
-  if (!signal || !["BUY", "SELL"].includes(signal.direction)) {
-    return { executed: false, reason: "NON_DIRECTIONAL_SIGNAL" };
-  }
-
-  const signalTime = new Date(signal.candleTime).getTime();
-  const signalAgeMs = Date.now() - signalTime;
-
-  if (
-    !Number.isFinite(signalTime) ||
-    signalAgeMs < 0 ||
-    signalAgeMs > cfg.maxSignalAgeMinutes * 60 * 1000
-  ) {
-    return {
-      executed: false,
-      reason: "STALE_SIGNAL",
-      signalAgeMinutes: Number.isFinite(signalAgeMs)
-        ? Number((signalAgeMs / 60000).toFixed(2))
-        : null,
-      maxSignalAgeMinutes: cfg.maxSignalAgeMinutes
-    };
-  }
-
-  if (!cfg.sl || cfg.sl <= 0) {
-    return { executed: false, reason: "INVALID_STOP_LOSS" };
-  }
-
-  if (!cTrader || typeof cTrader.placeDemoMarketOrder !== "function") {
-    return { executed: false, reason: "CTRADER_EXECUTOR_NOT_CONFIGURED" };
-  }
-
-  const status = cTrader.getCTraderStatus();
-
-  if (!status.connected || !status.authorized) {
-    return { executed: false, reason: "CTRADER_NOT_READY" };
-  }
-
-  if (cfg.demoOnly && status.account?.isLive === true) {
-    console.error("AURIXA AUTO TRADE BLOCKED: live account detected");
-    return { executed: false, reason: "LIVE_ACCOUNT_BLOCKED" };
-  }
-
-  if (cfg.demoOnly && status.account?.isLive !== false) {
-    return { executed: false, reason: "ACCOUNT_ENVIRONMENT_UNKNOWN" };
-  }
-
-  const symbolName = String(
-    status.symbolName || status.symbol || ""
-  ).toUpperCase();
-
-  if (!status.symbolId || symbolName !== "XAUUSD") {
-    return { executed: false, reason: "XAUUSD_NOT_READY" };
-  }
-
-  if (typeof dbQuery === "function" && signal.id) {
-    const duplicate = await dbQuery(`
-      SELECT id
-      FROM aurixa.auto_trades
-      WHERE signal_id = $1
-      LIMIT 1
-    `, [signal.id]);
-
-    if (duplicate.rows.length) {
-      return { executed: false, reason: "SIGNAL_ALREADY_TRADED" };
-    }
-  }
-
-  // ------------------------------------------------------------
-  // MULTI-POSITION MODE
-  //
-  // No application-level position-count limit is enforced here.
-  // Each new directional signal may open another demo position.
-  // Duplicate protection remains per signal ID.
-  // ------------------------------------------------------------
-  if (
-    typeof cTrader.getOpenXAUUSDPositions !== "function" ||
-    typeof cTrader.closeXAUUSDPosition !== "function"
-  ) {
-    return {
-      executed: false,
-      reason: "POSITION_EXECUTOR_NOT_CONFIGURED"
-    };
-  }
-
-  let openPositions = await cTrader.getOpenXAUUSDPositions();
-
-  // No application-level maximum-position check.
-  // cTrader/broker account limits, margin, and risk controls still apply.
-
-  let result;
-
-  try {
-    result = await cTrader.placeDemoMarketOrder({
-      direction: signal.direction,
-      volume: cfg.volume,
-      stopLossDistance: cfg.sl,
-      takeProfitDistance: cfg.tp
-    });
-  } catch (err) {
-    console.error(
-      "AURIXA Auto-Trader: cTrader order was not accepted:",
-      err.message
-    );
-
-    if (typeof dbQuery === "function" && signal.id) {
+  const reject = async (reason, extra = {}) => {
+    if (typeof dbQuery === "function" && signal?.id) {
       await dbQuery(`
         INSERT INTO aurixa.auto_trades
-        (
-          signal_id,
-          symbol,
-          timeframe,
-          direction,
-          signal_entry_price,
-          volume,
-          stop_loss_distance,
-          take_profit_distance,
-          status,
-          error
-        )
-        VALUES
-        ($1,$2,$3,$4,$5,$6,$7,$8,'ERROR',$9)
-        ON CONFLICT (signal_id) DO NOTHING
-      `, [
-        signal.id,
-        "XAUUSD",
-        "5m",
-        signal.direction,
-        signal.entryPrice,
-        cfg.volume,
-        cfg.sl,
-        cfg.tp || null,
-        err.message
-      ]);
+        (signal_id,symbol,timeframe,direction,signal_entry_price,volume,status,gate_reason,error)
+        VALUES ($1,'XAUUSD','5m',$2,$3,0,'REJECTED',$4,$5)
+        ON CONFLICT (signal_id) DO UPDATE SET status='REJECTED',gate_reason=EXCLUDED.gate_reason,error=EXCLUDED.error
+      `, [signal.id, signal.direction || "BUY", signal.entryPrice ?? null, reason, extra.error || null]);
     }
+    return { executed:false, signalId:signal?.id || null, direction:signal?.direction || null, reason, ...extra };
+  };
 
-    return {
-      executed: false,
-      signalId: signal.id,
-      direction: signal.direction,
-      reason: "CTRADER_ORDER_REJECTED",
-      error: err.message
-    };
+  if (!cfg.enabled) return reject("AUTO_TRADING_DISABLED");
+  if (!signal || !["BUY","SELL"].includes(signal.direction)) return reject("NON_DIRECTIONAL_SIGNAL");
+
+  const signalTime = new Date(signal.candleTime).getTime();
+  const age = Date.now() - signalTime;
+  if (!Number.isFinite(signalTime) || age < 0 || age > cfg.maxSignalAgeMinutes * 60000)
+    return reject("STALE_SIGNAL");
+
+  const status = cTrader?.getCTraderStatus?.();
+  if (!status?.connected || !status?.authorized) return reject("CTRADER_NOT_READY");
+  if (cfg.demoOnly && status.account?.isLive !== false)
+    return reject(status.account?.isLive === true ? "LIVE_ACCOUNT_BLOCKED" : "ACCOUNT_ENVIRONMENT_UNKNOWN");
+  if (!status.tradingPermission) return reject("TRADE_PERMISSION_REQUIRED");
+  if (String(status.symbolName || status.symbol || "").toUpperCase() !== "XAUUSD") return reject("XAUUSD_NOT_READY");
+
+  const bid = Number(status.bid), ask = Number(status.ask);
+  if (!Number.isFinite(bid) || !Number.isFinite(ask) || ask <= bid) return reject("LIVE_PRICE_UNAVAILABLE");
+  const spread = ask - bid;
+  if (spread > cfg.maxSpread) return reject("SPREAD_TOO_HIGH",{spread,maxSpread:cfg.maxSpread});
+
+  let orFvg;
+  try { orFvg = require("./opening-range-strategy").getPrediction(); }
+  catch (err) { return reject("OR_FVG_STRATEGY_UNAVAILABLE",{error:err.message}); }
+
+  if (orFvg?.signal !== signal.direction || orFvg?.phase !== "TRIGGERED")
+    return reject("OR_FVG_GATE_FAILED",{orFvgSignal:orFvg?.signal || "WAIT",orFvgPhase:orFvg?.phase || null});
+
+  const confidence=Number(signal.confidence), score=Number(signal.score);
+  if (!Number.isFinite(confidence) || confidence < cfg.minConfidence) return reject("M5_CONFIDENCE_TOO_LOW",{confidence});
+  if (!Number.isFinite(score) || Math.abs(score) < cfg.minScore) return reject("M5_SCORE_TOO_LOW",{score});
+
+  const ema9=Number(signal.ema9), ema21=Number(signal.ema21), ema50=Number(signal.ema50);
+  const trendOk=signal.direction==="BUY" ? ema9>ema21 && ema21>ema50 : ema9<ema21 && ema21<ema50;
+  if (!trendOk) return reject("M5_TREND_CONFLICT",{ema9,ema21,ema50});
+  if (String(signal.volatility||"").toLowerCase()==="high") return reject("HIGH_VOLATILITY_BLOCK");
+  const rsi=Number(signal.rsi);
+  if ((signal.direction==="BUY"&&rsi>76)||(signal.direction==="SELL"&&rsi<24)) return reject("EXTREME_RSI_BLOCK",{rsi});
+
+  const positions=await cTrader.getOpenXAUUSDPositions();
+  if (positions.length >= 1) return reject("XAUUSD_POSITION_ALREADY_OPEN",{openPositions:positions.length});
+
+  if (typeof dbQuery === "function" && signal.id) {
+    const dup=await dbQuery("SELECT id,status FROM aurixa.auto_trades WHERE signal_id=$1 LIMIT 1",[signal.id]);
+    if (dup.rows.length) return {executed:false,signalId:signal.id,direction:signal.direction,reason:"SIGNAL_ALREADY_GATED"};
+    const limits=await dbQuery(`
+      SELECT COUNT(*) FILTER(WHERE created_at>=CURRENT_DATE AND status IN ('OPEN','PARTIAL','CLOSED','SUBMITTED'))::int AS today,
+             MAX(created_at) FILTER(WHERE status IN ('OPEN','PARTIAL','CLOSED','SUBMITTED')) AS last_trade
+      FROM aurixa.auto_trades`);
+    const today=Number(limits.rows[0]?.today||0);
+    if (today>=cfg.maxTradesPerDay) return reject("MAX_DAILY_TRADES_REACHED",{tradesToday:today});
+    const last=limits.rows[0]?.last_trade;
+    if (last && Date.now()-new Date(last).getTime()<cfg.cooldownMinutes*60000)
+      return reject("TRADE_COOLDOWN_ACTIVE");
+  }
+
+  const entry=signal.direction==="BUY"?ask:bid;
+  const stop=Number(orFvg.stopLoss);
+  if (!Number.isFinite(stop)||stop<=0) return reject("OR_FVG_STOP_MISSING");
+  if (signal.direction==="BUY" && stop>=entry) return reject("BUY_STOP_INVALID",{entry,stop});
+  if (signal.direction==="SELL" && stop<=entry) return reject("SELL_STOP_INVALID",{entry,stop});
+
+  const riskDistance=Math.abs(entry-stop);
+  if (typeof cTrader.getAccountBalance !== "function") return reject("ACCOUNT_BALANCE_NOT_AVAILABLE");
+  const account=await cTrader.getAccountBalance();
+  const balance=Number(account.balance);
+  if (!Number.isFinite(balance)||balance<=0) return reject("INVALID_ACCOUNT_BALANCE");
+
+  const riskAmount=balance*cfg.riskPercent/100;
+  const volume=Math.min(cfg.maxVolume,Math.floor((riskAmount/riskDistance)/100)*100);
+  if (volume<100) return reject("RISK_BUDGET_TOO_SMALL_FOR_VOLUME_STEP",{balance,riskAmount,riskDistance});
+
+  const tp=signal.direction==="BUY"?entry+riskDistance*cfg.rr:entry-riskDistance*cfg.rr;
+  let result;
+  try {
+    result=await cTrader.placeDemoMarketOrder({
+      direction:signal.direction,
+      volume,
+      stopLossDistance:riskDistance,
+      takeProfitDistance:riskDistance*cfg.rr
+    });
+  } catch(err) {
+    return reject("CTRADER_ORDER_REJECTED",{error:err.message});
   }
 
   if (typeof dbQuery === "function" && signal.id) {
     await dbQuery(`
       INSERT INTO aurixa.auto_trades
-      (
-        signal_id,
-        symbol,
-        timeframe,
-        direction,
-        signal_entry_price,
-        order_id,
-        position_id,
-        client_msg_id,
-        volume,
-        stop_loss_distance,
-        take_profit_distance,
-        status
-      )
-      VALUES
-      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      ON CONFLICT (signal_id) DO NOTHING
-    `, [
-      signal.id,
-      "XAUUSD",
-      "5m",
-      signal.direction,
-      signal.entryPrice,
-      result.orderId || null,
-      result.positionId || null,
-      result.clientMsgId || null,
-      cfg.volume,
-      cfg.sl,
-      cfg.tp || null,
-      result.status || "SUBMITTED"
-    ]);
+      (signal_id,symbol,timeframe,direction,signal_entry_price,order_id,position_id,client_msg_id,volume,stop_loss_distance,take_profit_distance,status,opened_at,execution_entry_price,gate_reason,risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price)
+      VALUES ($1,'XAUUSD','5m',$2,$3,$4,$5,$6,$7,$8,$9,$10,CASE WHEN $10 IN ('OPEN','PARTIAL') THEN NOW() ELSE NULL END,$11,'PASSED',$12,$13,$14,$15,$16)
+      ON CONFLICT(signal_id) DO UPDATE SET order_id=EXCLUDED.order_id,position_id=EXCLUDED.position_id,client_msg_id=EXCLUDED.client_msg_id,volume=EXCLUDED.volume,stop_loss_distance=EXCLUDED.stop_loss_distance,take_profit_distance=EXCLUDED.take_profit_distance,status=EXCLUDED.status,opened_at=EXCLUDED.opened_at,execution_entry_price=EXCLUDED.execution_entry_price,gate_reason='PASSED',risk_percent=EXCLUDED.risk_percent,risk_amount=EXCLUDED.risk_amount,planned_entry_price=EXCLUDED.planned_entry_price,planned_stop_price=EXCLUDED.planned_stop_price,planned_take_profit_price=EXCLUDED.planned_take_profit_price
+    `,[signal.id,signal.direction,signal.entryPrice??null,result.orderId||null,result.positionId||null,result.clientMsgId||null,volume,riskDistance,riskDistance*cfg.rr,result.status||"SUBMITTED",result.executionPrice||entry,cfg.riskPercent,riskAmount,entry,stop,tp]);
   }
 
-  return {
-    executed: ["OPEN", "PARTIAL"].includes(result.status),
-    signalId: signal.id,
-    direction: signal.direction,
-    ...result
-  };
+  return {executed:["OPEN","PARTIAL"].includes(result.status),signalId:signal.id,direction:signal.direction,gate:"PASSED",riskPercent:cfg.riskPercent,riskAmount,volume,plannedEntryPrice:entry,plannedStopPrice:stop,plannedTakeProfitPrice:tp,stopLossDistance:riskDistance,takeProfitDistance:riskDistance*cfg.rr,...result};
 }
-
 
 async function dryRunSignal(signal) {
   const cfg = config();
