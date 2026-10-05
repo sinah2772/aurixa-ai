@@ -14,10 +14,12 @@
 
 let cTrader = null;
 let dbQuery = null;
+let analyzeOrderflow = null;
 
-function configure({ ctrader, query }) {
+function configure({ ctrader, query, orderflow }) {
   cTrader = ctrader;
   dbQuery = query;
+  analyzeOrderflow = orderflow || null;
 }
 
 function config() {
@@ -32,7 +34,10 @@ function config() {
     cooldownMinutes: Math.max(5, Number(process.env.AUTO_TRADING_COOLDOWN_MINUTES || 30)),
     maxTradesPerDay: Math.max(1, Math.floor(Number(process.env.AUTO_TRADING_MAX_TRADES_PER_DAY || 2))),
     maxSignalAgeMinutes: Math.max(1, Number(process.env.AUTO_TRADING_MAX_SIGNAL_AGE_MINUTES || 7)),
-    maxVolume: Math.max(100, Math.floor(Number(process.env.AUTO_TRADING_MAX_VOLUME || 1000)))
+    maxVolume: Math.max(100, Math.floor(Number(process.env.AUTO_TRADING_MAX_VOLUME || 1000))),
+    breakevenR: Math.max(0.75, Number(process.env.AUTO_TRADING_BREAKEVEN_R || 1)),
+    partialR: Math.max(0.75, Number(process.env.AUTO_TRADING_PARTIAL_R || 1)),
+    partialPercent: Math.max(0, Math.min(75, Number(process.env.AUTO_TRADING_PARTIAL_PERCENT || 50)))
   };
 }
 function getStatus() {
@@ -49,9 +54,17 @@ function getStatus() {
     demoOnly: cfg.demoOnly,
     demoAccount: isDemo,
     blocked: cfg.demoOnly && !isDemo,
-    volume: cfg.volume,
-    sl: cfg.sl,
-    tp: cfg.tp,
+    riskPercent: cfg.riskPercent,
+    rewardRisk: cfg.rr,
+    minConfidence: cfg.minConfidence,
+    minScore: cfg.minScore,
+    maxSpread: cfg.maxSpread,
+    maxTradesPerDay: cfg.maxTradesPerDay,
+    cooldownMinutes: cfg.cooldownMinutes,
+    maxVolume: cfg.maxVolume,
+    breakevenR: cfg.breakevenR,
+    partialR: cfg.partialR,
+    partialPercent: cfg.partialPercent,
     symbol: symbolName,
     connected: Boolean(ct?.connected),
     authorized: Boolean(ct?.authorized)
@@ -98,6 +111,15 @@ async function executeSignal(signal) {
 
   if (orFvg?.signal !== signal.direction || orFvg?.phase !== "TRIGGERED")
     return reject("OR_FVG_GATE_FAILED",{orFvgSignal:orFvg?.signal || "WAIT",orFvgPhase:orFvg?.phase || null});
+
+
+  if (typeof analyzeOrderflow === "function") {
+    let of1 = null;
+    try { of1 = analyzeOrderflow(cTrader.getMarketCandles ? cTrader.getMarketCandles() : []); }
+    catch (err) { return reject("OF1_UNAVAILABLE",{error:err.message}); }
+    if (!of1 || of1.signal !== signal.direction) return reject("OF1_CONFIRMATION_FAILED",{of1Signal:of1?.signal || "WAIT",of1Score:of1?.score ?? null});
+    if (Number(of1.score) < 8 || Number(of1.confidence) < 75) return reject("OF1_CONFIRMATION_TOO_WEAK",{of1Score:of1?.score ?? null,of1Confidence:of1?.confidence ?? null});
+  }
 
   const confidence=Number(signal.confidence), score=Number(signal.score);
   if (!Number.isFinite(confidence) || confidence < cfg.minConfidence) return reject("M5_CONFIDENCE_TOO_LOW",{confidence});
@@ -166,6 +188,24 @@ async function executeSignal(signal) {
   }
 
   return {executed:["OPEN","PARTIAL"].includes(result.status),signalId:signal.id,direction:signal.direction,gate:"PASSED",riskPercent:cfg.riskPercent,riskAmount,volume,plannedEntryPrice:entry,plannedStopPrice:stop,plannedTakeProfitPrice:tp,stopLossDistance:riskDistance,takeProfitDistance:riskDistance*cfg.rr,...result};
+}
+
+async function manageOpenPositions() {
+  const cfg=config();
+  if (!cfg.enabled || !cTrader?.getOpenXAUUSDPositions || !dbQuery) return {managed:0};
+  const positions=await cTrader.getOpenXAUUSDPositions(); if (!positions.length) return {managed:0};
+  const ct=cTrader.getCTraderStatus?.()||{}; const bid=Number(ct.bid), ask=Number(ct.ask);
+  if (!Number.isFinite(bid)||!Number.isFinite(ask)) return {managed:0};
+  let managed=0;
+  for(const p of positions){
+    const positionId=String(p?.positionId||p?.tradeData?.positionId||""); if(!positionId) continue;
+    const q=await dbQuery(`SELECT id,signal_id AS "signalId",direction,volume,execution_entry_price AS "entry",stop_loss_distance AS "risk",planned_take_profit_price AS "tp",COALESCE(partial_taken,false) AS "partialTaken" FROM aurixa.auto_trades WHERE position_id=$1 AND status IN ('OPEN','PARTIAL') LIMIT 1`,[positionId]);
+    if(!q.rows.length) continue; const t=q.rows[0]; const entry=Number(t.entry), risk=Number(t.risk); if(!Number.isFinite(entry)||!Number.isFinite(risk)||risk<=0) continue;
+    const current=t.direction==="BUY"?bid:ask; const rNow=t.direction==="BUY"?(current-entry)/risk:(entry-current)/risk;
+    if(rNow>=cfg.partialR&&!t.partialTaken){const total=Math.floor(Number(t.volume));const closeVol=Math.floor((total*cfg.partialPercent/100)/100)*100;if(closeVol>=100&&closeVol<total){try{await cTrader.closeXAUUSDPosition(positionId,closeVol);await dbQuery("UPDATE aurixa.auto_trades SET partial_taken=true,status='PARTIAL' WHERE id=$1",[t.id]);}catch(err){console.error("AURIXA partial TP failed:",err.message);continue;}}else{await dbQuery("UPDATE aurixa.auto_trades SET partial_taken=true WHERE id=$1",[t.id]);}}
+    if(rNow>=cfg.breakevenR){try{await cTrader.modifyPositionProtection(positionId,entry,Number.isFinite(Number(t.tp))?Number(t.tp):null);await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true WHERE id=$1",[t.id]);managed++;}catch(err){console.error("AURIXA breakeven update failed:",err.message);}}
+  }
+  return {managed};
 }
 
 async function dryRunSignal(signal) {
@@ -306,7 +346,9 @@ async function init() {
       closed_at TIMESTAMPTZ,
       close_price NUMERIC(18,5),
       profit NUMERIC(18,5),
-      error TEXT
+      error TEXT,
+      partial_taken BOOLEAN NOT NULL DEFAULT false,
+      breakeven_applied BOOLEAN NOT NULL DEFAULT false
     )
   `);
 
@@ -319,6 +361,9 @@ async function init() {
     CREATE INDEX IF NOT EXISTS idx_auto_trades_client_msg_id
     ON aurixa.auto_trades(client_msg_id)
   `);
+
+  await dbQuery(`ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS partial_taken BOOLEAN NOT NULL DEFAULT false`);
+  await dbQuery(`ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS breakeven_applied BOOLEAN NOT NULL DEFAULT false`);
 
   await dbQuery(`
     CREATE INDEX IF NOT EXISTS idx_auto_trades_status
@@ -333,5 +378,6 @@ module.exports = {
   init,
   executeSignal,
   dryRunSignal,
+  manageOpenPositions,
   getStatus
 };
