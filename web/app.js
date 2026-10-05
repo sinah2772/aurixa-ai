@@ -839,8 +839,7 @@
       .replaceAll("'", "&#039;");
   }
 
-  let ctraderChart = null;
-  let ctraderCandleSeries = null;
+  let ctraderChartCanvas = null;
 
   function drawChart(candles) {
     const container = $("marketChart");
@@ -852,88 +851,101 @@
 
     if (source.length < 2) return;
 
-    // Render cTrader's OHLC data with a real interactive candlestick chart.
-    // The data itself still comes directly from /api/market/state, which is
-    // populated by the cTrader Open API trendbar/spot feed.
-    if (!window.LightweightCharts) {
-      console.error("cTrader chart library did not load");
-      return;
+    // Native cTrader-data chart: no external chart library/CDN.
+    // OHLC comes from /api/market/state, populated by the cTrader Open API feed.
+    if (!ctraderChartCanvas) {
+      ctraderChartCanvas = document.createElement("canvas");
+      ctraderChartCanvas.id = "ctraderLiveCanvas";
+      ctraderChartCanvas.setAttribute("aria-label", "cTrader live XAUUSD M5 candlestick chart");
+      container.innerHTML = "";
+      container.appendChild(ctraderChartCanvas);
+      ctraderChartCanvas.style.width = "100%";
+      ctraderChartCanvas.style.height = "100%";
+      ctraderChartCanvas.style.display = "block";
+      window.addEventListener("resize", () => drawChart(candles));
     }
 
     const rect = container.getBoundingClientRect();
-    const width = Math.max(320, Math.floor(rect.width || container.clientWidth || 640));
-    const height = Math.max(260, Math.floor(rect.height || container.clientHeight || 320));
+    const cssW = Math.max(320, Math.floor(rect.width || container.clientWidth || 640));
+    const cssH = Math.max(260, Math.floor(rect.height || container.clientHeight || 420));
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    ctraderChartCanvas.width = Math.floor(cssW * dpr);
+    ctraderChartCanvas.height = Math.floor(cssH * dpr);
 
-    if (!ctraderChart) {
-      ctraderChart = LightweightCharts.createChart(container, {
-        width,
-        height,
-        layout: {
-          background: { color: "#080a0d" },
-          textColor: "#89919d"
-        },
-        grid: {
-          vertLines: { color: "rgba(255,255,255,0.045)" },
-          horzLines: { color: "rgba(255,255,255,0.045)" }
-        },
-        rightPriceScale: {
-          borderColor: "#20262e"
-        },
-        timeScale: {
-          borderColor: "#20262e",
-          timeVisible: true,
-          secondsVisible: false
-        },
-        crosshair: {
-          mode: LightweightCharts.CrosshairMode.Normal
-        }
-      });
+    const ctx = ctraderChartCanvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
 
-      ctraderCandleSeries = ctraderChart.addCandlestickSeries({
-        upColor: "#30d68a",
-        downColor: "#ff5b65",
-        borderUpColor: "#30d68a",
-        borderDownColor: "#ff5b65",
-        wickUpColor: "#30d68a",
-        wickDownColor: "#ff5b65"
-      });
+    const left = 12, right = 64, top = 14, bottom = 30;
+    const plotW = Math.max(1, cssW - left - right);
+    const plotH = Math.max(1, cssH - top - bottom);
 
-      const resize = () => {
-        const r = container.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) {
-          ctraderChart.applyOptions({
-            width: Math.floor(r.width),
-            height: Math.floor(r.height)
-          });
-        }
-      };
-      window.addEventListener("resize", resize);
+    const values = source.flatMap(c => [Number(c.high), Number(c.low)]);
+    const hi = Math.max(...values);
+    const lo = Math.min(...values);
+    const pad = Math.max((hi - lo) * 0.08, 0.5);
+    const maxP = hi + pad, minP = lo - pad;
+
+    const y = p => top + ((maxP - p) / (maxP - minP)) * plotH;
+    const xStep = plotW / source.length;
+    const bodyW = Math.max(2, Math.min(10, xStep * 0.62));
+
+    ctx.fillStyle = "#080a0d";
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    ctx.font = "11px sans-serif";
+    ctx.fillStyle = "#89919d";
+    for (let i = 0; i <= 5; i++) {
+      const gy = top + (plotH * i / 5);
+      const price = maxP - ((maxP - minP) * i / 5);
+      ctx.beginPath();
+      ctx.moveTo(left, gy);
+      ctx.lineTo(left + plotW, gy);
+      ctx.stroke();
+      ctx.fillText(price.toFixed(2), left + plotW + 7, gy + 4);
     }
 
-    const data = source.map(c => ({
-      time: Math.floor(Number(first(c.time, c.timestamp, c.openTime)) / 1000),
-      open: Number(c.open),
-      high: Number(c.high),
-      low: Number(c.low),
-      close: Number(c.close)
-    })).filter(c => Number.isFinite(c.time));
+    source.forEach((c, i) => {
+      const open = Number(c.open), high = Number(c.high), low = Number(c.low), close = Number(c.close);
+      const cx = left + i * xStep + xStep / 2;
+      const up = close >= open;
+      const bodyTop = y(Math.max(open, close));
+      const bodyBottom = y(Math.min(open, close));
+      const bodyH = Math.max(1, bodyBottom - bodyTop);
 
-    // cTrader can occasionally resend the current candle. Lightweight Charts
-    // expects unique, ascending timestamps, so de-duplicate by candle time.
-    const unique = [];
-    const seen = new Set();
-    for (const candle of data) {
-      if (seen.has(candle.time)) continue;
-      seen.add(candle.time);
-      unique.push(candle);
-    }
-
-    ctraderCandleSeries.setData(unique);
-    ctraderChart.timeScale().fitContent();
+      ctx.strokeStyle = up ? "#30d68a" : "#ff5b65";
+      ctx.fillStyle = up ? "#30d68a" : "#ff5b65";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx, y(high));
+      ctx.lineTo(cx, y(low));
+      ctx.stroke();
+      ctx.fillRect(cx - bodyW / 2, bodyTop, bodyW, bodyH);
+    });
 
     const latest = source[source.length - 1];
+    const lastPrice = Number(latest.close);
+    const ly = y(lastPrice);
+    ctx.strokeStyle = "#f5c451";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(left, ly);
+    ctx.lineTo(left + plotW, ly);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#f5c451";
+    ctx.fillText(lastPrice.toFixed(2), left + plotW + 7, ly + 4);
+
+    ctx.fillStyle = "#89919d";
+    const firstTime = first(source[0].time, source[0].timestamp, source[0].openTime);
+    const lastTime = first(latest.time, latest.timestamp, latest.openTime);
+    ctx.fillText(formatTime(firstTime), left, cssH - 8);
+    ctx.fillText(formatTime(lastTime), Math.max(left, left + plotW - 90), cssH - 8);
+
     text("candleCount", String(source.length));
-    text("latestCandle", formatTime(first(latest.time, latest.timestamp, latest.openTime)));
+    text("latestCandle", formatTime(lastTime));
   }
 
 async function loadPairSelector() {
