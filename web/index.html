@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — Multi-Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261005-frontfix6">
+  <link rel="stylesheet" href="/style.css?v=20261006-frontfix7">
   <style>
     #frontendBoot {
       display:block !important; position:fixed !important; top:0 !important; left:0 !important;
@@ -199,6 +199,29 @@
       <div class="gate-rules"><span>RISK 0.5%</span><span>MAX 1 POSITION</span><span>NO MARTINGALE</span><span>WAIT = NO TRADE</span></div>
     </section>
 
+    <!-- ORDERFLOW CONFIRMATION -->
+    <section class="panel of1-panel">
+      <div class="section-title">ORDERFLOW CONFIRMATION</div>
+      <div class="section-heading">AURIXA OF1 · FINAL GATE INPUT</div>
+      <div class="of1-head">
+        <div>
+          <div id="of1Decision" class="of1-decision wait">WAIT</div>
+          <div id="of1Reason" class="gate-reason">Waiting for 80 candles and OF1 confirmation.</div>
+        </div>
+        <div class="gate-badge">LIVE ANALYSIS</div>
+      </div>
+      <div class="of1-grid">
+        <div class="metric"><span>SIGNAL</span><strong id="of1Signal">WAIT</strong></div>
+        <div class="metric"><span>CONFIDENCE</span><strong id="of1Confidence">—</strong></div>
+        <div class="metric"><span>SCORE</span><strong id="of1Score">—</strong></div>
+        <div class="metric"><span>PHASE</span><strong id="of1Phase">—</strong></div>
+        <div class="metric"><span>ENTRY</span><strong id="of1Entry">—</strong></div>
+        <div class="metric"><span>STOP</span><strong id="of1Stop">—</strong></div>
+        <div class="metric"><span>TARGET</span><strong id="of1Target">—</strong></div>
+        <div class="metric"><span>CANDLES</span><strong id="of1Candles">—</strong></div>
+      </div>
+    </section>
+
     <!-- INDICATORS -->
     <section class="panel">
       <div class="section-title">TECHNICAL INDICATORS</div>
@@ -353,6 +376,6 @@
 
   </main>
 </div>
-<script defer src="/app.js?v=20261005-ctrader-chart1"></script>
+<script defer src="/app.js?v=20261006-frontfix7"></script>
 </body>
 </html>
