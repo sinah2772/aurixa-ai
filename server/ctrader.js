@@ -1380,12 +1380,11 @@ subscribeLiveTrendbar(
           // Request the latest 300 XAUUSD M5 candles.
           // Using toTimestamp + count avoids an unnecessarily
           // wide historical time range.
+          // cTrader requires a valid bounded period. Align both ends to
+          // the minute boundary and keep the M1 request within 24 hours.
           const now = Date.now();
-
-          // Use a bounded historical window.
-          // Two days provides more than 300 M5 candles.
-          const fromTimestamp =
-            now - (2 * 24 * 60 * 60 * 1000);
+          const toTimestamp = Math.floor(now / 60000) * 60000;
+          const fromTimestamp = toTimestamp - (24 * 60 * 60 * 1000);
 
           const historicalRequest = {
             ctidTraderAccountId: Number(state.accountId),
@@ -1393,7 +1392,7 @@ subscribeLiveTrendbar(
             period: 5,
             count: 300,
             fromTimestamp,
-            toTimestamp: now
+            toTimestamp
           };
 
 // Opening Range strategy M1 history.
@@ -1403,7 +1402,7 @@ const m1HistoricalRequest = {
   period: 1,
   count: 2000,
   fromTimestamp,
-  toTimestamp: now
+  toTimestamp
 };
 
           console.log(
