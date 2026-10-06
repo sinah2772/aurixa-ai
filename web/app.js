@@ -784,21 +784,44 @@
       history.innerHTML = '<div class="empty-state">No demo trades recorded yet.</div>';
       return;
     }
-    history.innerHTML = rows.slice(0, 10).map((t) => {
-      const direction = String(first(t.direction, "—")).toUpperCase();
-      const statusText = String(first(t.status, "—")).toUpperCase();
-      const profit = first(t.profit);
-      const trace = t.id ? '<a class="trade-trace-link" href="/api/auto-trader/trade-trace/' + encodeURIComponent(t.id) + '" target="_blank" rel="noopener">TRACE</a>' : '';
-      const lifecycle = [
-        t.partialTaken === true ? "PARTIAL 1R" : null,
-        t.breakevenApplied === true ? "BE APPLIED" : null
-      ].filter(Boolean).join(" · ");
-      return '<div class="auto-trade-row">' +
-        '<div><strong class="' + direction.toLowerCase() + '">' + escapeHTML(direction) + '</strong><span>' + escapeHTML(number(first(t.signalEntryPrice), 2)) + '</span></div>' +
-        '<div><small>' + escapeHTML(formatTime(first(t.createdAt, t.openedAt))) + '</small>' + (lifecycle ? '<small class="trade-lifecycle">' + escapeHTML(lifecycle) + '</small>' : '') + '</div>' +
-        '<div><span class="trade-status">' + escapeHTML(statusText) + '</span><span>' + (profit === null || profit === undefined ? "P&L —" : "P&L " + escapeHTML(number(profit, 2))) + '</span>' + trace + '</div>' +
-      '</div>';
-    }).join("");
+
+    history.innerHTML =
+      '<div class="auto-trade-table-wrap"><table class="auto-trade-table">' +
+      '<thead><tr>' +
+      '<th>TIME</th><th>SIDE</th><th>ENTRY</th><th>SL</th><th>TP</th>' +
+      '<th>EXIT</th><th>STATUS</th><th>RESULT</th><th>EXIT REASON</th><th>P/L</th><th></th>' +
+      '</tr></thead><tbody>' +
+      rows.slice(0, 20).map((t) => {
+        const direction = String(first(t.direction, "—")).toUpperCase();
+        const status = String(first(t.status, "—")).toUpperCase();
+        const resultClass = status.includes("WIN") ? "win" : status.includes("LOSS") ? "loss" : "neutral";
+        const resultText = status === "CLOSED_WIN" ? "WIN" :
+          status === "CLOSED_LOSS" ? "LOSS" :
+          status === "CLOSED_FLAT" ? "FLAT" :
+          status === "OPEN" || status === "PARTIAL" ? "OPEN" : "—";
+        const profit = first(t.profit);
+        const pnlText = profit === null || profit === undefined ? "—" : number(profit, 2);
+        const exitReason = String(first(t.exitReason, status.includes("CLOSED") ? "MANUAL/OTHER" : "—"));
+        const trace = t.id
+          ? '<a class="trade-trace-link" href="/api/auto-trader/trade-trace/' + encodeURIComponent(t.id) + '" target="_blank" rel="noopener">TRACE</a>'
+          : "";
+
+        return '<tr>' +
+          '<td><small>' + escapeHTML(formatTime(first(t.createdAt, t.openedAt))) + '</small>' +
+            (t.closedAt ? '<small class="trade-lifecycle">CLOSED ' + escapeHTML(formatTime(t.closedAt)) + '</small>' : '') + '</td>' +
+          '<td><strong class="' + direction.toLowerCase() + '">' + escapeHTML(direction) + '</strong></td>' +
+          '<td>' + escapeHTML(number(first(t.executionEntryPrice, t.plannedEntryPrice, t.signalEntryPrice), 2)) + '</td>' +
+          '<td>' + escapeHTML(number(first(t.plannedStopPrice), 2)) + '</td>' +
+          '<td>' + escapeHTML(number(first(t.plannedTakeProfitPrice), 2)) + '</td>' +
+          '<td>' + escapeHTML(number(first(t.closePrice), 2)) + '</td>' +
+          '<td><span class="trade-status">' + escapeHTML(status) + '</span></td>' +
+          '<td><span class="trade-result ' + resultClass + '">' + escapeHTML(resultText) + '</span></td>' +
+          '<td>' + escapeHTML(exitReason.replace(/_/g, " ")) + '</td>' +
+          '<td class="trade-pnl ' + resultClass + '">' + escapeHTML(pnlText) + '</td>' +
+          '<td>' + trace + '</td>' +
+        '</tr>';
+      }).join("") +
+      '</tbody></table></div>';
   }
 
   function updateTrackingStats(data) {
