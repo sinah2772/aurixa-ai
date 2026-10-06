@@ -1395,41 +1395,7 @@ subscribeLiveTrendbar(
             toTimestamp: toTimestampM5
           };
 
-// Opening Range strategy M1 history.
-const m1HistoricalRequest = {
-  ctidTraderAccountId: Number(state.accountId),
-  symbolId: Number(state.symbolId),
-  period: 1,
-  count: 720,
-  toTimestamp: toTimestampM1
-};
-
-          console.log(
-            "AURIXA_HISTORICAL_REQUEST:",
-            JSON.stringify({
-              payloadType: 2137,
-              accountId: historicalRequest.ctidTraderAccountId,
-              symbolId: historicalRequest.symbolId,
-              period: historicalRequest.period,
-              count: historicalRequest.count,
-              toTimestamp: historicalRequest.toTimestamp,
-              boundary: new Date(historicalRequest.toTimestamp).toISOString()
-            })
-          );
-
-          send(ws, 2137, historicalRequest);
-
-console.log(
-  "AURIXA_M1_HISTORICAL_REQUEST:",
-  JSON.stringify({
-    period: m1HistoricalRequest.period,
-    count: m1HistoricalRequest.count
-  })
-);
-
-send(ws, 2137, m1HistoricalRequest);
-
-          // Resolve connection once the symbol and
+// Resolve connection once the symbol and
           // live spot stream are established.
           if (!settled) {
             settled = true;
@@ -1884,19 +1850,9 @@ function registerCTrader(app) {
       );
 
       /*
-       * M5 historical candles.
+       * Historical M5 candles are loaded by the authenticated connection.
+       * Avoid duplicate 2137 requests during symbol selection.
        */
-      const now = Date.now();
-      const toTimestamp = Math.floor(Date.now() / (5 * 60000)) * (5 * 60000);
-
-      send(state.ws, 2137, {
-        ctidTraderAccountId: accountId,
-        symbolId: symbolId,
-        period: 5,
-        count: 288,
-        toTimestamp
-      });
-
       /*
        * Opening Range is XAUUSD-specific.
        * Do NOT feed M1 Opening Range data to BTC.
