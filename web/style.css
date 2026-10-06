@@ -1199,3 +1199,50 @@ main { display:block; }
 .trade-trace-link:hover { text-decoration:underline; }
 .trade-lifecycle { display:block; color:var(--blue); font-size:9px; margin-top:3px; }
 @media (max-width:800px) { .of1-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+
+/* AURIXA demo trade outcome table */
+.auto-trade-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.auto-trade-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.auto-trade-table th,
+.auto-trade-table td {
+  padding: 9px 8px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.auto-trade-table th {
+  font-size: 10px;
+  letter-spacing: .08em;
+  opacity: .65;
+}
+.auto-trade-table .trade-result,
+.auto-trade-table .trade-pnl {
+  font-weight: 800;
+}
+.auto-trade-table .trade-result.win,
+.auto-trade-table .trade-pnl.win {
+  color: #46d98a;
+}
+.auto-trade-table .trade-result.loss,
+.auto-trade-table .trade-pnl.loss {
+  color: #ff6262;
+}
+.auto-trade-table .trade-result.neutral,
+.auto-trade-table .trade-pnl.neutral {
+  opacity: .7;
+}
+.auto-trade-table .trade-lifecycle {
+  display: block;
+  opacity: .55;
+  margin-top: 2px;
+}
