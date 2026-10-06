@@ -1392,7 +1392,7 @@ subscribeLiveTrendbar(
             symbolId: Number(state.symbolId),
             period: 5,
             count: 288,
-            toTimestamp
+            toTimestamp: toTimestampM5
           };
 
 // Opening Range strategy M1 history.
