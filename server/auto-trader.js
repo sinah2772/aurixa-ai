@@ -193,6 +193,13 @@ async function executeSignal(signal) {
 async function manageOpenPositions() {
   const cfg=config();
   if (!cfg.enabled || !cTrader?.getOpenXAUUSDPositions || !dbQuery) return {managed:0};
+
+  // Never poll cTrader position APIs while the session is disconnected
+  // or the account has not completed account authorization.
+  const status = cTrader?.getCTraderStatus?.();
+  if (!status?.connected || !status?.authorized || !status?.accountId) {
+    return {managed:0, skipped:"CTRADER_NOT_READY"};
+  }
   const positions=await cTrader.getOpenXAUUSDPositions(); if (!positions.length) return {managed:0};
   const ct=cTrader.getCTraderStatus?.()||{}; const bid=Number(ct.bid), ask=Number(ct.ask);
   if (!Number.isFinite(bid)||!Number.isFinite(ask)) return {managed:0};
@@ -318,30 +325,34 @@ async function init() {
   if (typeof dbQuery !== "function") return false;
 
   await dbQuery(`
+    CREATE SCHEMA IF NOT EXISTS aurixa
+  `);
+
+  await dbQuery(`
     CREATE TABLE IF NOT EXISTS aurixa.auto_trades (
       id BIGSERIAL PRIMARY KEY,
       signal_id BIGINT NOT NULL UNIQUE
         REFERENCES aurixa.signals(id)
         ON DELETE CASCADE,
-
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
       symbol TEXT NOT NULL DEFAULT 'XAUUSD',
       timeframe TEXT NOT NULL DEFAULT '5m',
-      direction TEXT NOT NULL
-        CHECK (direction IN ('BUY','SELL')),
-
+      direction TEXT NOT NULL CHECK (direction IN ('BUY','SELL')),
       signal_entry_price NUMERIC(18,5),
-
+      execution_entry_price NUMERIC(18,5),
       order_id TEXT,
       position_id TEXT,
-
-      volume BIGINT NOT NULL,
-      stop_loss_distance NUMERIC(18,5) NOT NULL,
+      client_msg_id TEXT,
+      volume BIGINT NOT NULL DEFAULT 0,
+      stop_loss_distance NUMERIC(18,5) NOT NULL DEFAULT 0,
       take_profit_distance NUMERIC(18,5),
-
+      planned_entry_price NUMERIC(18,5),
+      planned_stop_price NUMERIC(18,5),
+      planned_take_profit_price NUMERIC(18,5),
+      risk_percent NUMERIC(8,4),
+      risk_amount NUMERIC(18,5),
+      gate_reason TEXT,
       status TEXT NOT NULL DEFAULT 'SUBMITTED',
-
       opened_at TIMESTAMPTZ,
       closed_at TIMESTAMPTZ,
       close_price NUMERIC(18,5),
@@ -352,18 +363,30 @@ async function init() {
     )
   `);
 
-  await dbQuery(`
-    ALTER TABLE aurixa.auto_trades
-    ADD COLUMN IF NOT EXISTS client_msg_id TEXT
-  `);
+  // Backfill/repair older deployments without touching existing rows.
+  const columns = [
+    ["execution_entry_price", "NUMERIC(18,5)"],
+    ["client_msg_id", "TEXT"],
+    ["planned_entry_price", "NUMERIC(18,5)"],
+    ["planned_stop_price", "NUMERIC(18,5)"],
+    ["planned_take_profit_price", "NUMERIC(18,5)"],
+    ["gate_reason", "TEXT"],
+    ["risk_percent", "NUMERIC(8,4)"],
+    ["risk_amount", "NUMERIC(18,5)"],
+    ["partial_taken", "BOOLEAN NOT NULL DEFAULT false"],
+    ["breakeven_applied", "BOOLEAN NOT NULL DEFAULT false"]
+  ];
+
+  for (const [name, type] of columns) {
+    await dbQuery(
+      `ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS ${name} ${type}`
+    );
+  }
 
   await dbQuery(`
     CREATE INDEX IF NOT EXISTS idx_auto_trades_client_msg_id
     ON aurixa.auto_trades(client_msg_id)
   `);
-
-  await dbQuery(`ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS partial_taken BOOLEAN NOT NULL DEFAULT false`);
-  await dbQuery(`ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS breakeven_applied BOOLEAN NOT NULL DEFAULT false`);
 
   await dbQuery(`
     CREATE INDEX IF NOT EXISTS idx_auto_trades_status
