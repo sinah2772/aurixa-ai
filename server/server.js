@@ -691,44 +691,27 @@ app.get("/api/auto-trader/status", (req, res) => {
 
 app.get("/api/auto-trader/dry-run", async (req, res) => {
   try {
-    const result = await queryDatabase(`
-      SELECT
-        id,
-        direction,
-        entry_price AS "entryPrice",
-        candle_time AS "candleTime"
-      FROM aurixa.signals
-      WHERE direction IN ('BUY', 'SELL')
-      ORDER BY candle_time DESC
-      LIMIT 1
-    `);
-
-    const signal = result.rows[0] || null;
-
-    if (!signal) {
-      return res.json({
-        ok: true,
-        dryRun: true,
-        wouldExecute: false,
-        orderSubmitted: false,
-        reason: "NO_DIRECTIONAL_SIGNAL"
-      });
-    }
-
-    const dryRun = await autoTrader.dryRunSignal(signal);
+    const candles = marketEngine.getState()?.candles || [];
+    const of1 = analyzeOrderflowV1(candles);
+    const dryRun = await autoTrader.dryRunOrderflow();
 
     res.json({
       ok: true,
+      strategy: "AURIXA_OF1",
+      liveExecution: false,
+      paperTrading: true,
+      candleCount: candles.length,
+      of1,
       ...dryRun
     });
   } catch (err) {
-    console.error("Auto-Trader dry-run error:", err);
-
+    console.error("OF1 Auto-Trader dry-run error:", err);
     res.status(500).json({
       ok: false,
+      strategy: "AURIXA_OF1",
       dryRun: true,
       orderSubmitted: false,
-      error: "Auto-Trader dry-run unavailable"
+      error: "OF1 Auto-Trader dry-run unavailable"
     });
   }
 });
@@ -973,6 +956,7 @@ app.get("/api/market",(req,res)=>{
     marketDataAgeMs: marketStatus.ageMs,
 
     autoTrading: autoTrader.getStatus().enabled,
+    autoTradingStrategy: "AURIXA_OF1",
     paperTrading: true,
 
     aurixa: {
@@ -1000,11 +984,11 @@ app.use((req,res)=>{
 const server = app.listen(PORT,"0.0.0.0",async()=>{
   console.log("");
   console.log("======================================");
-  console.log("      XAUUSD AI 5M PREDICTOR");
+  console.log("      AURIXA OF1 ORDERFLOW AUTO-TRADER");
   console.log("======================================");
   console.log(`Phone: http://127.0.0.1:${PORT}`);
   console.log(`Symbol: ${process.env.SYMBOL}`);
-  console.log("Auto trading: DISABLED");
+  console.log("Auto trading strategy: AURIXA_OF1");
   console.log("Paper trading: ENABLED");
   console.log("Signal tracking: ENABLED");
   console.log("======================================");
@@ -1034,51 +1018,45 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
 
     setInterval(async () => {
       try {
-        const tracking = await signalTracker.trackLatestClosedSignal();
+        const candles = marketEngine.getState()?.candles || [];
+        const of1 = analyzeOrderflowV1(candles);
 
-        if (tracking?.signals?.length) {
-          for (const signal of tracking.signals) {
-            try {
-              const result = await autoTrader.executeSignal(signal);
+        if (of1?.signal === "BUY" || of1?.signal === "SELL") {
+          try {
+            const result = await autoTrader.executeOrderflowSignal(of1);
 
-              console.log(
-                "AURIXA Auto-Trader:",
-                JSON.stringify({
-                  signalId: signal.id,
-                  direction: signal.direction,
-                  entryPrice: signal.entryPrice,
-                  executed: result.executed,
-                  reason: result.reason || null
-                })
-              );
-            } catch (err) {
-              console.error(
-                "AURIXA Auto-Trader execution error:",
-                err.message
-              );
-            }
+            console.log(
+              "AURIXA OF1 Auto-Trader:",
+              JSON.stringify({
+                strategy: "AURIXA_OF1",
+                direction: of1.signal,
+                candleTime: of1.candleTime,
+                score: of1.score,
+                confidence: of1.confidence,
+                executed: result.executed,
+                reason: result.reason || null
+              })
+            );
+          } catch (err) {
+            console.error("AURIXA OF1 Auto-Trader execution error:", err.message);
           }
         }
       } catch (err) {
-        console.error(
-          "Signal tracking error:",
-          err.message
-        );
+        console.error("AURIXA OF1 strategy error:", err.message);
       }
 
       try {
         await autoTrader.manageOpenPositions();
       } catch (err) {
-        console.error("AURIXA position management error:", err.message);
+        console.error("AURIXA OF1 position management error:", err.message);
       }
 
+      // Keep M5 signal tracking/evaluation for analytics only.
       try {
+        await signalTracker.trackLatestClosedSignal();
         await signalTracker.evaluatePending();
       } catch (err) {
-        console.error(
-          "Signal evaluation error:",
-          err.message
-        );
+        console.error("Signal analytics error:", err.message);
       }
     }, signalTracker.getHorizonIntervalMs());
 });
