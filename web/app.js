@@ -95,6 +95,137 @@
     if (el) el.textContent = value ?? "—";
   }
 
+  // =========================================================
+  // SIGNAL ALERTS
+  // Browser notification + sound + vibration.
+  // Alerts are for NEW signals only; they do not mean a trade was opened.
+  // =========================================================
+  let alertInitialized = false;
+  let lastAlertKey = null;
+
+  function signalAlertKey(signal) {
+    const s = signal || {};
+    const direction = String(first(s.direction, s.signal, "WAIT")).toUpperCase();
+    if (direction !== "BUY" && direction !== "SELL") return null;
+
+    const candleTime = first(
+      s.candleTime,
+      s.candle_time,
+      s.timestamp,
+      s.createdAt,
+      s.created_at,
+      s.time
+    );
+
+    const entry = first(s.entryPrice, s.entry, s.price);
+    return direction + "|" + String(candleTime || entry || "");
+  }
+
+  function playSignalAlert(direction) {
+    try {
+      if (navigator.vibrate) navigator.vibrate([180, 90, 180]);
+    } catch (_) {}
+
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.value = direction === "BUY" ? 880 : 520;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+      osc.addEventListener("ended", () => ctx.close());
+    } catch (_) {}
+  }
+
+  function showSignalAlert(signal) {
+    const s = signal || {};
+    const direction = String(first(s.direction, s.signal, "WAIT")).toUpperCase();
+    if (direction !== "BUY" && direction !== "SELL") return;
+
+    const confidence = Number(first(s.confidence));
+    const entry = first(s.entryPrice, s.entry, s.price);
+    const score = first(s.score);
+
+    const title = "AURIXA SIGNAL · " + direction;
+    const body = [
+      "XAUUSD M5",
+      Number.isFinite(confidence) ? "Confidence " + number(confidence, 0) + "%" : null,
+      entry !== null ? "Entry " + number(entry, 2) : null,
+      score !== null ? "Score " + number(score, 1) : null,
+      "Signal only — trade not guaranteed"
+    ].filter(Boolean).join(" · ");
+
+    playSignalAlert(direction);
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        const n = new Notification(title, {
+          body,
+          tag: "aurixa-" + signalAlertKey(s),
+          renotify: true
+        });
+        setTimeout(() => n.close(), 10000);
+      } catch (_) {}
+    }
+
+    const banner = $("signalAlert");
+    if (banner) {
+      banner.textContent = title + " — " + body;
+      banner.classList.remove("buy", "sell", "show");
+      banner.classList.add(direction.toLowerCase(), "show");
+      window.clearTimeout(window.__aurixaAlertTimer);
+      window.__aurixaAlertTimer = window.setTimeout(() => {
+        banner.classList.remove("show");
+      }, 12000);
+    }
+  }
+
+  async function enableSignalAlerts() {
+    if (!("Notification" in window)) {
+      text("alertStatus", "Notifications not supported");
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      text(
+        "alertStatus",
+        permission === "granted"
+          ? "Alerts enabled"
+          : "Alerts blocked"
+      );
+    } catch (_) {
+      text("alertStatus", "Alert permission unavailable");
+    }
+  }
+
+  function checkForNewSignal(signal) {
+    const key = signalAlertKey(signal);
+    if (!key) return;
+
+    if (!alertInitialized) {
+      lastAlertKey = key;
+      alertInitialized = true;
+      return;
+    }
+
+    if (key !== lastAlertKey) {
+      lastAlertKey = key;
+      showSignalAlert(signal);
+    }
+  }
+
   function setSignal(signal) {
     const value = String(signal || "WAIT").toUpperCase();
 
@@ -1104,6 +1235,7 @@ async function refresh() {
 
     if (livePrediction) {
       updateSignal(livePrediction);
+      checkForNewSignal(livePrediction);
 
       text(
         "engineStatus",
@@ -1208,6 +1340,15 @@ async function refresh() {
       connectButton.addEventListener("click", () => {
         window.location.href = "/auth/login";
       });
+    }
+
+    const enableAlertsButton = $("enableAlertsBtn");
+    if (enableAlertsButton) {
+      enableAlertsButton.addEventListener("click", enableSignalAlerts);
+    }
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      text("alertStatus", "Alerts enabled");
     }
 
     refresh();
