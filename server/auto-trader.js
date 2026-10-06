@@ -156,6 +156,7 @@ async function executeSignal(signal) {
   if (signal.direction==="SELL" && stop<=entry) return reject("SELL_STOP_INVALID",{entry,stop});
 
   const riskDistance=Math.abs(entry-stop);
+  if (!Number.isFinite(riskDistance) || riskDistance <= 0) return reject("INVALID_RISK_DISTANCE",{entry,stop});
   if (typeof cTrader.getAccountBalance !== "function") return reject("ACCOUNT_BALANCE_NOT_AVAILABLE");
   const account=await cTrader.getAccountBalance();
   const balance=Number(account.balance);
@@ -382,6 +383,15 @@ async function init() {
       `ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS ${name} ${type}`
     );
   }
+
+  // Repair legacy schemas created by earlier Auto-Trader versions.
+  // Keep existing rows intact; only normalize nullable/default metadata needed by V1.
+  await dbQuery(`ALTER TABLE aurixa.auto_trades ALTER COLUMN stop_loss_distance SET DEFAULT 0`);
+  await dbQuery(`UPDATE aurixa.auto_trades SET stop_loss_distance = 0 WHERE stop_loss_distance IS NULL`);
+  await dbQuery(`ALTER TABLE aurixa.auto_trades ALTER COLUMN stop_loss_distance SET NOT NULL`);
+  await dbQuery(`ALTER TABLE aurixa.auto_trades ALTER COLUMN volume SET DEFAULT 0`);
+  await dbQuery(`UPDATE aurixa.auto_trades SET volume = 0 WHERE volume IS NULL`);
+  await dbQuery(`ALTER TABLE aurixa.auto_trades ALTER COLUMN volume SET NOT NULL`);
 
   await dbQuery(`
     CREATE INDEX IF NOT EXISTS idx_auto_trades_client_msg_id
