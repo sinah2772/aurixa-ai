@@ -51,6 +51,7 @@ function getStatus() {
 
   return {
     enabled: cfg.enabled,
+    strategy: "AURIXA_OF1",
     demoOnly: cfg.demoOnly,
     demoAccount: isDemo,
     blocked: cfg.demoOnly && !isDemo,
@@ -573,6 +574,10 @@ async function init() {
       `ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS ${name} ${type}`
     );
   }
+
+  // OF1 trades are independent strategy events and do not require an
+  // AURIXA M5 signal row. Existing M5 trade rows remain intact.
+  await dbQuery(`ALTER TABLE aurixa.auto_trades ALTER COLUMN signal_id DROP NOT NULL`);
 
   // Repair legacy schemas created by earlier Auto-Trader versions.
   // Keep existing rows intact; only normalize nullable/default metadata needed by V1.
