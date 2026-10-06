@@ -770,89 +770,47 @@ function calculatePrediction(candles) {
 
 
   /* ------------------------------------------------------------
-     CONFIDENCE
-     ------------------------------------------------------------ */
+     CONFIDENCE */
 
-  /*
- * V4.1 CONSERVATIVE CONFIDENCE
- *
- * Confidence is a model-strength indicator, NOT
- * a probability of being correct.
- *
- * V4 validation showed that the previous 90-94%
- * confidence range was substantially over-calibrated.
- *
- * Therefore V4.1:
- * - reduces score amplification
- * - rewards directional agreement
- * - penalizes abnormal volatility
- * - penalizes extreme RSI
- * - caps directional confidence at 79
- * - keeps WAIT below directional confidence
- */
-let confidence = 45;
+  let confidence = 45;
 
-if (signal !== "WAIT") {
-  const scoreComponent = Math.min(16, absScore * 2);
-  const agreementComponent = Math.min(10, directionalGap * 2);
+  if (signal !== "WAIT") {
+    const scoreComponent = Math.min(16, absScore * 2);
+    const agreementComponent = Math.min(10, directionalGap * 2);
 
-  confidence =
-    50 +
-    scoreComponent +
-    agreementComponent;
+    confidence =
+      50 +
+      scoreComponent +
+      agreementComponent;
 
-  /*
-   * High volatility makes directional predictions
-   * less reliable.
-   */
-  if (volatilityState === "high") {
-    confidence -= 8;
+    if (volatilityState === "high") {
+      confidence -= 8;
+    }
+
+    if (
+      signal === "BUY" &&
+      r > 76
+    ) {
+      confidence -= 8;
+    }
+
+    if (
+      signal === "SELL" &&
+      r < 24
+    ) {
+      confidence -= 8;
+    }
+
+    confidence = Math.max(
+      50,
+      Math.min(79, confidence)
+    );
+  } else {
+    confidence = Math.min(
+      62,
+      42 + Math.min(20, absScore * 2)
+    );
   }
-
-  /*
-   * Extreme RSI means the move may already be
-   * extended, so reduce confidence.
-   */
-  if (
-    signal === "BUY" &&
-    r > 76
-  ) {
-    confidence -= 8;
-  }
-
-  if (
-    signal === "SELL" &&
-    r < 24
-  ) {
-    confidence -= 8;
-  }
-
-  /*
-   * Prevent the UI from presenting an inflated
-   * probability-like number.
-   *
-   * Maximum displayed directional confidence: 79.
-   */
-  confidence = Math.max(
-    50,
-    Math.min(79, confidence)
-  );
-} else {
-  /*
-   * WAIT is intentionally kept below directional
-   * confidence because the engine has not found
-   * enough agreement for a directional signal.
-   */
-  confidence = Math.min(
-    62,
-    42 + Math.min(20, absScore * 2)
-  );
-}
-
-
-  /* ------------------------------------------------------------
-     FINAL REASON
-     ------------------------------------------------------------ */
 
   let statusReason;
 
@@ -1138,6 +1096,29 @@ function setSpotPrice(price) {
       closeLiveCandle(
         current
       );
+    }
+
+    /*
+     * When Render starts, historical candles already exist but
+     * currentCandle is null. Previously we left lastClosedTime
+     * pointing at the newest historical bar while starting a
+     * brand-new live candle. The signal tracker then kept
+     * replaying that historical bar; Auto-Trader correctly
+     * rejected the resulting BUY/SELL as STALE_SIGNAL.
+     *
+     * Hand the stream over explicitly: the newest historical
+     * bar becomes the latest closed bar, and the new time bucket
+     * becomes the live candle.
+     */
+    const latestHistorical =
+      state.candles[state.candles.length - 1];
+
+    if (
+      latestHistorical &&
+      Number(latestHistorical.time) < bucket
+    ) {
+      state.lastClosedTime =
+        Number(latestHistorical.time);
     }
 
     current = {
