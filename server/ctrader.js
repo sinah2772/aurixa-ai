@@ -1384,14 +1384,13 @@ subscribeLiveTrendbar(
           // the minute boundary and keep the M1 request within 24 hours.
           const now = Date.now();
           const toTimestamp = Math.floor(now / 60000) * 60000;
-          const fromTimestamp = toTimestamp - (24 * 60 * 60 * 1000);
+          // Use count back from toTimestamp; avoid broker-sensitive from/to ranges.
 
           const historicalRequest = {
             ctidTraderAccountId: Number(state.accountId),
             symbolId: Number(state.symbolId),
             period: 5,
-            count: 300,
-            fromTimestamp,
+            count: 288,
             toTimestamp
           };
 
@@ -1400,8 +1399,7 @@ const m1HistoricalRequest = {
   ctidTraderAccountId: Number(state.accountId),
   symbolId: Number(state.symbolId),
   period: 1,
-  count: 2000,
-  fromTimestamp,
+  count: 720,
   toTimestamp
 };
 
@@ -1887,16 +1885,14 @@ function registerCTrader(app) {
        * M5 historical candles.
        */
       const now = Date.now();
-      const fromTimestamp =
-        now - (2 * 24 * 60 * 60 * 1000);
+      const toTimestamp = Math.floor(Date.now() / 60000) * 60000;
 
       send(state.ws, 2137, {
         ctidTraderAccountId: accountId,
         symbolId: symbolId,
         period: 5,
-        count: 300,
-        fromTimestamp,
-        toTimestamp: now
+        count: 288,
+        toTimestamp
       });
 
       /*
