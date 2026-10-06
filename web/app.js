@@ -698,40 +698,36 @@
 
   function updateFinalTradeGate(marketState, prediction, orFvg, of1, positions) {
     const marketOpen = String(first(marketState?.marketStatus, "")).toUpperCase() === "MARKET_OPEN";
-    const direction = String(first(prediction?.direction, prediction?.signal, "WAIT")).toUpperCase();
-    const fvgDirection = String(first(orFvg?.signal, "WAIT")).toUpperCase();
-    const triggered = String(first(orFvg?.phase, "")).toUpperCase() === "TRIGGERED";
     const of1Signal = String(first(of1?.signal, of1?.direction, "WAIT")).toUpperCase();
     const of1Score = Number(of1?.score);
     const of1Confidence = Number(of1?.confidence);
-    const of1Confirmed = of1Signal === direction && of1Signal !== "WAIT" && of1Score >= 8 && of1Confidence >= 75;
+    const of1Confirmed = (of1Signal === "BUY" || of1Signal === "SELL") &&
+      of1Score >= 8 &&
+      of1Confidence >= 75;
     const hasPosition = Number(first(positions?.count, 0)) > 0;
-    const ready = marketOpen && direction !== "WAIT" && direction === fvgDirection && triggered && of1Confirmed && !hasPosition;
+    const ready = marketOpen && of1Confirmed && !hasPosition;
 
     text("gateMarket", marketOpen ? "OPEN" : "BLOCKED");
-    text("gateSignal", direction);
-    text("gateFvg", triggered ? fvgDirection : String(first(orFvg?.phase, "WAIT")).replaceAll("_", " "));
+    text("gateSignal", of1Signal);
+    text("gateFvg", of1Confirmed ? "OF1 CONFIRMED" : "OF1 WAIT");
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
-    text("gateEntry", number(first(of1?.entry, orFvg?.entryPrice), 2));
-    text("gateSL", number(first(of1?.stop, orFvg?.stopLoss), 2));
-    text("gateTP", number(first(of1?.target, orFvg?.takeProfit), 2));
-    text("gateRR", orFvg?.rewardRisk ? number(orFvg.rewardRisk, 1) + "R" : "2R PLAN");
+    text("gateEntry", number(first(of1?.entry, of1?.price), 2));
+    text("gateSL", number(first(of1?.stop, of1?.stopLoss), 2));
+    text("gateTP", number(first(of1?.target, of1?.takeProfit), 2));
+    text("gateRR", "OF1 " + (of1?.risk && of1?.target ? number(Math.abs((Number(of1.target) - Number(of1.entry)) / (Number(of1.entry) - Number(of1.stop))), 1) + "R" : "PLAN"));
 
     const decision = $("gateDecision");
     if (decision) {
       decision.classList.remove("buy", "sell", "wait");
-      decision.classList.add(ready ? direction.toLowerCase() : "wait");
-      decision.textContent = ready ? "TRADE " + direction : "WAIT";
+      decision.classList.add(ready ? of1Signal.toLowerCase() : "wait");
+      decision.textContent = ready ? "TRADE " + of1Signal : "WAIT";
     }
 
-    let reason = "Waiting for confirmation.";
+    let reason = "Waiting for OF1 confirmation.";
     if (!marketOpen) reason = "Market/feed is not open. No trade.";
     else if (hasPosition) reason = "One XAUUSD position is already open.";
-    else if (direction === "WAIT") reason = "AURIXA M5 has no confirmed direction.";
-    else if (!triggered) reason = "Waiting for opening-range breakout + FVG retest + engulfing.";
-    else if (direction !== fvgDirection) reason = "M5 direction and OR/FVG direction disagree.";
-    else if (!of1Confirmed) reason = "OF1 confirmation required: matching direction, score ≥ 8 and confidence ≥ 75%.";
-    else if (ready) reason = direction + " confirmed by M5 + OR/FVG + OF1.";
+    else if (!of1Confirmed) reason = "OF1 requires direction, score ≥ 8 and confidence ≥ 75%.";
+    else if (ready) reason = of1Signal + " confirmed by OrderFlow OF1.";
     text("gateReason", reason);
   }
 
@@ -744,7 +740,7 @@
     const state = blocked ? "BLOCKED" : (enabled && demo && connected ? "READY" : (enabled ? "WAITING" : "OFF"));
 
     text("autoTradeStatus", state);
-    text("autoTradeMode", demo ? "DEMO ONLY" : "GUARDED");
+    text("autoTradeMode", demo ? "DEMO ONLY · OF1" : "GUARDED · OF1");
     text("autoTradePosition", positions?.count ? "OPEN" : "FLAT");
 
     const rows = Array.isArray(trades?.trades) ? trades.trades : [];
