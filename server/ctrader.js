@@ -1383,7 +1383,8 @@ subscribeLiveTrendbar(
           // cTrader requires a valid bounded period. Align both ends to
           // the minute boundary and keep the M1 request within 24 hours.
           const now = Date.now();
-          const toTimestamp = Math.floor(now / 60000) * 60000;
+          const toTimestampM5 = Math.floor(now / (5 * 60000)) * (5 * 60000);
+          const toTimestampM1 = Math.floor(now / 60000) * 60000;
           // Use count back from toTimestamp; avoid broker-sensitive from/to ranges.
 
           const historicalRequest = {
@@ -1400,7 +1401,7 @@ const m1HistoricalRequest = {
   symbolId: Number(state.symbolId),
   period: 1,
   count: 720,
-  toTimestamp
+  toTimestamp: toTimestampM1
 };
 
           console.log(
@@ -1411,7 +1412,8 @@ const m1HistoricalRequest = {
               symbolId: historicalRequest.symbolId,
               period: historicalRequest.period,
               count: historicalRequest.count,
-              toTimestamp: historicalRequest.toTimestamp
+              toTimestamp: historicalRequest.toTimestamp,
+              boundary: new Date(historicalRequest.toTimestamp).toISOString()
             })
           );
 
@@ -1885,7 +1887,7 @@ function registerCTrader(app) {
        * M5 historical candles.
        */
       const now = Date.now();
-      const toTimestamp = Math.floor(Date.now() / 60000) * 60000;
+      const toTimestamp = Math.floor(Date.now() / (5 * 60000)) * (5 * 60000);
 
       send(state.ws, 2137, {
         ctidTraderAccountId: accountId,
@@ -2003,18 +2005,6 @@ async function getDealsByPositionId(positionId, fromTimestamp = null, toTimestam
     payload.toTimestamp = Number(toTimestamp);
   }
 
-  const msg = await request(state.ws, 2179, payload, 10000);
-  return Array.isArray(msg?.payload?.deal) ? msg.payload.deal : [];
-}
-
-async function getDealsByPositionId(positionId, fromTimestamp = null, toTimestamp = null) {
-  if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
-  if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
-  const pid = Number(positionId);
-  if (!Number.isFinite(pid) || pid <= 0) throw new Error("Invalid cTrader position ID");
-  const payload = { ctidTraderAccountId: Number(state.accountId), positionId: pid };
-  if (Number.isFinite(Number(fromTimestamp))) payload.fromTimestamp = Number(fromTimestamp);
-  if (Number.isFinite(Number(toTimestamp))) payload.toTimestamp = Number(toTimestamp);
   const msg = await request(state.ws, 2179, payload, 10000);
   return Array.isArray(msg?.payload?.deal) ? msg.payload.deal : [];
 }
@@ -2199,7 +2189,7 @@ async function placeDemoMarketOrder({
     state.ws,
     2106,
     payload,
-    20000,
+    45000,
     { waitForExecution: true }
   );
 
