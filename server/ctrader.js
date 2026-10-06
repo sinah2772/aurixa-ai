@@ -2012,6 +2012,18 @@ async function getDealsByPositionId(positionId, fromTimestamp = null, toTimestam
   return Array.isArray(msg?.payload?.deal) ? msg.payload.deal : [];
 }
 
+async function getDealsByPositionId(positionId, fromTimestamp = null, toTimestamp = null) {
+  if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
+  if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
+  const pid = Number(positionId);
+  if (!Number.isFinite(pid) || pid <= 0) throw new Error("Invalid cTrader position ID");
+  const payload = { ctidTraderAccountId: Number(state.accountId), positionId: pid };
+  if (Number.isFinite(Number(fromTimestamp))) payload.fromTimestamp = Number(fromTimestamp);
+  if (Number.isFinite(Number(toTimestamp))) payload.toTimestamp = Number(toTimestamp);
+  const msg = await request(state.ws, 2179, payload, 10000);
+  return Array.isArray(msg?.payload?.deal) ? msg.payload.deal : [];
+}
+
 async function getOpenXAUUSDPositions() {
   if (!state.ws || state.ws.readyState !== 1) {
     throw new Error("cTrader WebSocket is not connected");
