@@ -201,7 +201,75 @@ async function manageOpenPositions() {
   if (!status?.connected || !status?.authorized || !status?.accountId) {
     return {managed:0, skipped:"CTRADER_NOT_READY"};
   }
-  const positions=await cTrader.getOpenXAUUSDPositions(); if (!positions.length) return {managed:0};
+  const positions=await cTrader.getOpenXAUUSDPositions();
+  const openPositionIds = new Set(
+    positions.map(p => String(p?.positionId || p?.tradeData?.positionId || "")).filter(Boolean)
+  );
+
+  // Reconcile positions that disappeared from cTrader using the authoritative
+  // closing deal, including realized gross profit, swap and commission.
+  try {
+    const pending = await dbQuery(`
+      SELECT id, position_id AS "positionId", planned_stop_price AS "plannedStop",
+             planned_take_profit_price AS "plannedTakeProfit"
+      FROM aurixa.auto_trades
+      WHERE status IN ('OPEN','PARTIAL') AND position_id IS NOT NULL
+      ORDER BY opened_at ASC LIMIT 50
+    `);
+
+    for (const trade of pending.rows) {
+      const pid = String(trade.positionId);
+      if (openPositionIds.has(pid)) continue;
+
+      try {
+        const deals = typeof cTrader.getDealsByPositionId === "function"
+          ? await cTrader.getDealsByPositionId(pid)
+          : [];
+        const closingDeals = deals.filter(d => d?.closePositionDetail);
+        if (!closingDeals.length) continue;
+
+        const last = closingDeals[closingDeals.length - 1];
+        const detail = last.closePositionDetail || {};
+        const moneyDigits = Number(last.moneyDigits ?? detail.moneyDigits ?? 2);
+        const divisor = Math.pow(10, Number.isFinite(moneyDigits) ? moneyDigits : 2);
+        const gross = Number(detail.grossProfit ?? 0) / divisor;
+        const swap = Number(detail.swap ?? 0) / divisor;
+        const commission = Number(detail.commission ?? last.commission ?? 0) / divisor;
+        const profit = gross + swap + commission;
+        const closePrice = Number(last.executionPrice);
+        const plannedSL = Number(trade.plannedStop);
+        const plannedTP = Number(trade.plannedTakeProfit);
+
+        let exitReason = "MANUAL/OTHER";
+        if (Number.isFinite(closePrice) && Number.isFinite(plannedTP) && Math.abs(closePrice - plannedTP) <= 0.15) {
+          exitReason = "TAKE_PROFIT";
+        } else if (Number.isFinite(closePrice) && Number.isFinite(plannedSL) && Math.abs(closePrice - plannedSL) <= 0.15) {
+          exitReason = "STOP_LOSS";
+        }
+
+        const finalStatus = profit > 0 ? "CLOSED_WIN" : profit < 0 ? "CLOSED_LOSS" : "CLOSED_FLAT";
+
+        await dbQuery(`
+          UPDATE aurixa.auto_trades
+          SET status=$2, closed_at=TO_TIMESTAMP($3 / 1000.0),
+              close_price=$4, profit=$5, exit_reason=$6
+          WHERE id=$1
+        `, [trade.id, finalStatus, Number(last.executionTimestamp || Date.now()),
+             Number.isFinite(closePrice) ? closePrice : null,
+             Number.isFinite(profit) ? profit : null, exitReason]);
+
+        console.log("AURIXA_TRADE_CLOSED:", JSON.stringify({
+          id: trade.id, positionId: pid, status: finalStatus, closePrice, profit, exitReason
+        }));
+      } catch (err) {
+        console.error("AURIXA trade close reconciliation failed:", err.message);
+      }
+    }
+  } catch (err) {
+    console.error("AURIXA trade history reconciliation failed:", err.message);
+  }
+
+  if (!positions.length) return {managed:0};
   const ct=cTrader.getCTraderStatus?.()||{}; const bid=Number(ct.bid), ask=Number(ct.ask);
   if (!Number.isFinite(bid)||!Number.isFinite(ask)) return {managed:0};
   let managed=0;
@@ -375,7 +443,8 @@ async function init() {
     ["risk_percent", "NUMERIC(8,4)"],
     ["risk_amount", "NUMERIC(18,5)"],
     ["partial_taken", "BOOLEAN NOT NULL DEFAULT false"],
-    ["breakeven_applied", "BOOLEAN NOT NULL DEFAULT false"]
+    ["breakeven_applied", "BOOLEAN NOT NULL DEFAULT false"],
+    ["exit_reason", "TEXT"]
   ];
 
   for (const [name, type] of columns) {
