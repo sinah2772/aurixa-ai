@@ -157,9 +157,9 @@
     const entry = first(s.entryPrice, s.entry, s.price);
     const score = first(s.score);
 
-    const title = "AURIXA SIGNAL · " + direction;
+    const title = "AURIXA OF1 SIGNAL · " + direction;
     const body = [
-      "XAUUSD M5",
+      "XAUUSD · OF1",
       Number.isFinite(confidence) ? "Confidence " + number(confidence, 0) + "%" : null,
       entry !== null ? "Entry " + number(entry, 2) : null,
       score !== null ? "Score " + number(score, 1) : null,
@@ -1037,7 +1037,7 @@
     const source = candles.filter(c => c && [c.open,c.high,c.low,c.close].every(v => Number.isFinite(Number(v)))).slice(-120);
     if (source.length < 2) return;
     let canvas = container.querySelector("canvas");
-    if (!canvas) { container.innerHTML=""; canvas=document.createElement("canvas"); canvas.setAttribute("aria-label","cTrader live XAUUSD M5 candlestick chart"); canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.display="block"; container.appendChild(canvas); }
+    if (!canvas) { container.innerHTML=""; canvas=document.createElement("canvas"); canvas.setAttribute("aria-label","cTrader live XAUUSD · OF1 candlestick chart"); canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.display="block"; container.appendChild(canvas); }
     const rect=container.getBoundingClientRect(), dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1)), width=Math.max(320,Math.floor(rect.width||640)), height=Math.max(260,Math.floor(rect.height||420));
     canvas.width=Math.floor(width*dpr); canvas.height=Math.floor(height*dpr);
     const ctx=canvas.getContext("2d"); if(!ctx)return; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle="#080a0d"; ctx.fillRect(0,0,width,height);
