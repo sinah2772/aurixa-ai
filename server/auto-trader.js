@@ -7,9 +7,9 @@
  * - Disabled unless AUTO_TRADING=true
  * - Demo accounts only
  * - Never trades WAIT
- * - No application-level maximum open-position limit
+ * - One XAUUSD demo position maximum
  * - Mandatory SL
- * - Uses closed-candle AURIXA signals
+ * - Executes OrderFlow OF1 signals only
  */
 
 let cTrader = null;
