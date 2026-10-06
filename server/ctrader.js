@@ -71,7 +71,8 @@ const state = {
   error: null,
   ws: null,
   accountCandidates: [],
-  accountCandidateIndex: 0
+  accountCandidateIndex: 0,
+  reconnectTimer: null
 };
 
 function normalizeSymbolName(value) {
@@ -799,19 +800,23 @@ function connectOpenApi() {
       state.authorized = false;
       state.ws = null;
 
-      console.log(
-        "cTrader WebSocket closed; reconnecting in 5 seconds..."
-      );
+      // Do not reconnect over an already scheduled recovery attempt.
+      if (!state.reconnectTimer) {
+        console.log(
+          "cTrader WebSocket closed; reconnecting in 5 seconds..."
+        );
 
-      setTimeout(() => {
-        restoreCTraderSession().catch(err => {
-          state.error = safeError(err);
-          console.error(
-            "cTrader reconnect failed:",
-            err.message
-          );
-        });
-      }, 5000);
+        state.reconnectTimer = setTimeout(() => {
+          state.reconnectTimer = null;
+          restoreCTraderSession().catch(err => {
+            state.error = safeError(err);
+            console.error(
+              "cTrader reconnect failed:",
+              err.message
+            );
+          });
+        }, 5000);
+      }
     });
 
     ws.addEventListener("message", async event => {
@@ -1211,6 +1216,9 @@ function connectOpenApi() {
           ]);
 
           if (code === "RET_ACCOUNT_DISABLED") {
+            // This is an account-side authorization failure, not an
+            // order-execution failure. Try the next explicitly granted
+            // account, but never keep retrying the same account.
             const nextIndex =
               state.accountCandidateIndex + 1;
 
@@ -1967,6 +1975,8 @@ function registerCTrader(app) {
           : null,
       lastUpdate: state.lastUpdate,
       error: state.error,
+      permissionScope: state.permissionScope,
+      tradingPermission: state.permissionScope === 1,
       autoTrading: false,
       paperTrading: true
     });
@@ -2046,7 +2056,15 @@ async function inspectOpenXAUUSDPositions() {
 async function getAccountBalance() {
   if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
   if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
-  const msg = await request(state.ws, 2127, { ctidTraderAccountId: Number(state.accountId) }, 10000);
+  // ProtoOATraderReq / ProtoOATraderRes (2121 / 2122)
+  // 2127 is the spot subscription request and must never be used
+  // for account-balance reads.
+  const msg = await request(
+    state.ws,
+    2121,
+    { ctidTraderAccountId: Number(state.accountId) },
+    10000
+  );
   const trader = msg?.payload?.trader || msg?.payload || {};
   const rawBalance = Number(trader.balance);
   const moneyDigits = Number(trader.moneyDigits ?? 2);
