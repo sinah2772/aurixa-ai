@@ -16,13 +16,15 @@ function config(){return{
  maxTradesPerDay:Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_MAX_TRADES_PER_DAY||2))),
  cooldownMinutes:Math.max(5,Number(process.env.AUTO_TRADING_COOLDOWN_MINUTES||30)),
  maxSignalAgeMinutes:Math.max(1,Number(process.env.AUTO_TRADING_MAX_SIGNAL_AGE_MINUTES||7)),
- maxVolume:Math.max(100,Math.floor(Number(process.env.AUTO_TRADING_MAX_VOLUME||1000))),
+ maxVolume:Math.max(1000,Math.floor(Number(process.env.AUTO_TRADING_MAX_VOLUME||1000))),
+ volumeMin:Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_VOLUME_MIN||1000))),
+ volumeStep:Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_VOLUME_STEP||1000))),
  breakevenR:Math.max(.75,Number(process.env.AUTO_TRADING_BREAKEVEN_R||1))
 };}
 
 function getStatus(){
  const cfg=config(),ct=cTrader?.getCTraderStatus?.()||{};
- return {enabled:cfg.enabled,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,riskPercent:cfg.riskPercent,maxSpread:cfg.maxSpread,maxTradesPerDay:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:String(ct.symbolName||ct.symbol||"").toUpperCase()};
+ return {enabled:cfg.enabled,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,riskPercent:cfg.riskPercent,maxSpread:cfg.maxSpread,maxTradesPerDay:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:String(ct.symbolName||ct.symbol||"").toUpperCase()};
 }
 
 async function executeAiDecision(decision, decisionId=null){
@@ -56,7 +58,18 @@ async function executeAiDecision(decision, decisionId=null){
   const riskDistance=Math.abs(entry-stop),targetDistance=Math.abs(target-entry),rr=targetDistance/Math.max(0.00001,riskDistance);
   if(!Number.isFinite(rr)||rr<2)return reject("REWARD_RISK_TOO_LOW",{rr,minRewardRisk:2});
   const positions=await cTrader.getOpenXAUUSDPositions();
-  if(positions.length>=1)return reject("XAUUSD_POSITION_ALREADY_OPEN",{openPositions:positions.length});
+  if(positions.length>=1){
+    const openPositions=positions.map(p=>({
+      positionId:p?.positionId??null,
+      symbolId:p?.tradeData?.symbolId??null,
+      volume:p?.tradeData?.volume??null,
+      tradeSide:p?.tradeData?.tradeSide??null,
+      label:p?.tradeData?.label??p?.label??null,
+      comment:p?.tradeData?.comment??p?.comment??null,
+      status:p?.positionStatus??null
+    }));
+    return reject("XAUUSD_POSITION_ALREADY_OPEN",{openPositions:positions.length,positions:openPositions});
+  }
   if(typeof dbQuery==="function"){
     const dup=await dbQuery("SELECT id FROM aurixa.auto_trades WHERE strategy_signal_key=$1 LIMIT 1",[key]);
     if(dup.rows.length)return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,reason:"AI_SIGNAL_ALREADY_GATED",strategySignalKey:key};
@@ -67,8 +80,19 @@ async function executeAiDecision(decision, decisionId=null){
   }
   const account=await cTrader.getAccountBalance?.(),balance=Number(account?.balance);
   if(!Number.isFinite(balance)||balance<=0)return reject("INVALID_ACCOUNT_BALANCE");
-  const riskAmount=balance*cfg.riskPercent/100,volume=Math.min(cfg.maxVolume,Math.floor((riskAmount/riskDistance)/100)*100);
-  if(volume<100)return reject("RISK_BUDGET_TOO_SMALL_FOR_VOLUME_STEP",{riskAmount,riskDistance});
+  const riskAmount=balance*cfg.riskPercent/100;
+  const rawVolume=riskAmount/riskDistance;
+  const volume=Math.min(cfg.maxVolume,Math.floor(rawVolume/cfg.volumeStep)*cfg.volumeStep);
+  if(volume<cfg.volumeMin){
+    return reject("RISK_BUDGET_TOO_SMALL_FOR_VOLUME_STEP",{
+      riskAmount,
+      riskDistance,
+      rawVolume,
+      volumeMin:cfg.volumeMin,
+      volumeStep:cfg.volumeStep,
+      maxVolume:cfg.maxVolume
+    });
+  }
   let result;
   try{result=await cTrader.placeDemoMarketOrder({direction:decision.signal,volume,stopLossDistance:riskDistance,takeProfitDistance:targetDistance});}
   catch(e){return reject("CTRADER_ORDER_REJECTED",{error:e.message});}
