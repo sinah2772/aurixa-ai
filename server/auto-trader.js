@@ -34,8 +34,12 @@ async function executeAiDecision(decision, decisionId=null){
     if(typeof dbQuery==="function")try{
       await dbQuery(`INSERT INTO aurixa.auto_trades(decision_id,strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,volume,status,gate_reason,error)
         VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,0,'REJECTED',$5,$6)
-        ON CONFLICT(strategy_signal_key) DO UPDATE SET decision_id=EXCLUDED.decision_id,status='REJECTED',gate_reason=EXCLUDED.gate_reason,error=EXCLUDED.error`,
+        ON CONFLICT DO NOTHING`,
         [decisionId,key,decision?.signal||"BUY",decision?.entry||null,reason,extra.error||null]);
+    await dbQuery(`UPDATE aurixa.auto_trades
+      SET decision_id=$2,status='REJECTED',gate_reason=$3,error=$4,updated_at=NOW()
+      WHERE strategy_signal_key=$1`,
+      [key,decisionId,reason,extra.error||null]);
     }catch(e){console.error("AI trade audit failed:",e.message);}
     return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision?.signal||null,reason,...extra};
   };
@@ -174,8 +178,11 @@ async function executeAiDecision(decision, decisionId=null){
   if(typeof dbQuery==="function")try{
     await dbQuery(`INSERT INTO aurixa.auto_trades(decision_id,strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,order_id,position_id,client_msg_id,volume,stop_loss_distance,take_profit_distance,status,opened_at,execution_entry_price,gate_reason,risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price)
       VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $11 IN ('OPEN','PARTIAL') THEN NOW() ELSE NULL END,$12,'PASSED',$13,$14,$15,$16,$17)
-      ON CONFLICT(strategy_signal_key) DO UPDATE SET decision_id=EXCLUDED.decision_id,order_id=EXCLUDED.order_id,position_id=EXCLUDED.position_id,status=EXCLUDED.status,execution_entry_price=EXCLUDED.execution_entry_price`,
+      ON CONFLICT DO NOTHING`,
       [decisionId,key,decision.signal,decision.entry,result.orderId||null,result.positionId||null,result.clientMsgId||null,volume,riskDistance,targetDistance,result.status||"SUBMITTED",result.executionPrice||entry,cfg.riskPercent,riskAmount,entry,stop,target]);
+    await dbQuery(`UPDATE aurixa.auto_trades SET decision_id=$2,order_id=$3,position_id=$4,status=$5,execution_entry_price=$6,updated_at=NOW()
+      WHERE strategy_signal_key=$1`,
+      [key,decisionId,result.orderId||null,result.positionId||null,result.status||"SUBMITTED",result.executionPrice||entry]);
   }catch(e){console.error("AI trade record failed:",e.message);}
   return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:stop,plannedTakeProfitPrice:target,...result};
 }
@@ -241,6 +248,17 @@ async function init(){
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS decision_id BIGINT");
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT");
+  // Older deployments may have the table without a unique constraint.
+  // Deduplicate historical keys before creating the constraint required by
+  // future writes; the application no longer depends on the constraint for
+  // ON CONFLICT targeting, but keeping it prevents duplicate signal rows.
+  await dbQuery(`DELETE FROM aurixa.auto_trades a
+    USING aurixa.auto_trades b
+    WHERE a.id > b.id
+      AND a.strategy_signal_key IS NOT NULL
+      AND a.strategy_signal_key = b.strategy_signal_key`);
+  await dbQuery(`CREATE UNIQUE INDEX IF NOT EXISTS auto_trades_strategy_signal_key_uidx
+    ON aurixa.auto_trades(strategy_signal_key)`);
   return true;
 }
 module.exports={configure,getStatus,executeAiDecision,dryRunAiTrader,syncOpenPositions,init};
