@@ -499,10 +499,10 @@
     const state = blocked ? "BLOCKED" : (enabled && demo && connected ? "READY" : (enabled ? "WAITING" : "OFF"));
 
     text("autoTradeStatus", state);
-    text("autoTradeMode", demo ? "DEMO ONLY · AI V1" : "GUARDED · AI V1");
-    text("gateMaxPositions", "MAX " + maxOpen + " POSITIONS");
     const openCount = Number(first(positions?.count, Array.isArray(positions?.positions) ? positions.positions.length : 0));
     const maxOpen = Number(first(status.maxOpenPositions, 3));
+    text("autoTradeMode", demo ? "DEMO ONLY · AI V1" : "GUARDED · AI V1");
+    text("gateMaxPositions", "MAX " + maxOpen + " POSITIONS");
     text("autoTradePosition", openCount > 0 ? `OPEN ${openCount}/${maxOpen}` : `FLAT 0/${maxOpen}`);
 
     const list = Array.isArray(positions?.positions) ? positions.positions : [];
@@ -751,6 +751,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
     renderConfirmedSignalHistory(aiSignals, autoTrades?.trades || []);
+    renderClosedTradeHistory(autoTrades);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
