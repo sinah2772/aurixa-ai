@@ -612,7 +612,30 @@
     ctx.fillStyle="#89919d";ctx.fillText(formatTime(first(source[0].time,source[0].timestamp,source[0].openTime)),left,height-8);ctx.fillText(formatTime(first(latest.time,latest.timestamp,latest.openTime)),Math.max(left,left+plotW-90),height-8);
     text("candleCount",String(source.length));text("latestCandle",formatTime(first(latest.time,latest.timestamp,latest.openTime)));
   }
-async function refresh() {
+function updateActivity(ai, ctrader, autoStatus, positions) {
+    const data = ai?.decision || ai || {};
+    const signal = String(first(data.signal, data.direction, "WAIT")).toUpperCase();
+    const eligible = data.executionEligible === true;
+    const connected = ctrader?.connected === true && ctrader?.authorized === true;
+    const autoReady = autoStatus?.enabled === true && autoStatus?.demoAccount === true && connected && autoStatus?.blocked !== true;
+    const failed = Array.isArray(data.blockedBy) ? data.blockedBy : [];
+    const logic = data.logic || {};
+    const rr = first(data.rewardRisk, data.riskReward);
+    const items = [
+      ["FEED", connected ? "LIVE" : "OFFLINE"],
+      ["AI", signal + " · " + number(data.confidence, 0) + "%"],
+      ["LOGIC", Number.isFinite(Number(logic.passed)) ? String(logic.passed) + "/" + String(first(logic.total, 6)) : "—"],
+      ["R:R", Number.isFinite(Number(rr)) ? number(rr, 2) + "R" : "—"],
+      ["AUTO", autoReady ? "ARMED · DEMO" : (autoStatus?.enabled ? "BLOCKED" : "OFF")],
+      ["POSITION", Number(first(positions?.count, 0)) > 0 ? "OPEN" : "FLAT"]
+    ];
+    const target = $("activityFeed") || $("aiActivity") || $("activity");
+    if (target) target.innerHTML = items.map(([k,v]) => '<div class="activity-item"><strong>' + escapeHTML(k) + '</strong><span>' + escapeHTML(v) + '</span></div>').join("");
+    text("activityStatus", eligible ? "TRADE ELIGIBLE" : (failed.length ? "BLOCKED · " + failed[0].replaceAll("_", " ") : "WAITING"));
+    text("activityUpdated", new Date().toLocaleTimeString());
+  }
+
+  async function refresh() {
     const [
       market,
       marketState,
@@ -645,7 +668,7 @@ async function refresh() {
     updateSignal(liveAi);
     updateAutoTrader(autoStatus, autoPositions, autoTrades);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
-    updateActivity(liveAi, ctrader, autoStatus, autoPositions);
+    try { updateActivity(liveAi, ctrader, autoStatus, autoPositions); } catch (e) { console.error("AURIXA activity update:", e); }
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
