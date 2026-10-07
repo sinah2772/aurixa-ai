@@ -87,10 +87,10 @@ async function dryRunOrderflow(){
 }
 
 async function syncOpenPositions(){
-  if(typeof dbQuery!=="function"||!cTrader?.getOpenXAUUSDPositions)return {updated:0,closed:0,protected:0};
+  if(typeof dbQuery!=="function"||!cTrader?.getOpenXAUUSDPositions)return {updated:0,closed:0,protectedCount:0};
   const cfg=config(),positions=await cTrader.getOpenXAUUSDPositions();
   const open=await dbQuery("SELECT * FROM aurixa.auto_trades WHERE status IN ('OPEN','PARTIAL') ORDER BY created_at DESC LIMIT 50");
-  let updated=0,closed=0,protected=0;
+  let updated=0,closed=0,protectedCount=0;
   for(const t of open.rows){
     const pos=positions.find(p=>String(p?.positionId||"")===String(t.position_id||""));
     if(pos){
@@ -98,7 +98,7 @@ async function syncOpenPositions(){
       const risk=Math.abs(Number(t.planned_entry_price)-Number(t.planned_stop_price)),move=t.direction==="BUY"?current-entry:entry-current,rVal=risk>0?move/risk:0;
       if(t.breakeven_applied!==true&&rVal>=cfg.breakevenR&&cTrader.modifyPositionProtection)try{
         await cTrader.modifyPositionProtection(t.position_id,entry,Number(t.planned_take_profit_price));
-        await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);protected++;
+        await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);protectedCount++;
       }catch(e){console.warn("AI breakeven:",e.message);}
       await dbQuery("UPDATE aurixa.auto_trades SET execution_entry_price=COALESCE(execution_entry_price,$2),status='OPEN',profit=$3,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(entry)?entry:null,Number.isFinite(pnl)?pnl:null]);updated++;
     }else{
@@ -110,7 +110,7 @@ async function syncOpenPositions(){
       await dbQuery("UPDATE aurixa.auto_trades SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),close_price=$2,profit=COALESCE($3,profit),exit_reason=$4,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(closePrice)?closePrice:null,Number.isFinite(profit)?profit:null,reason]);closed++;
     }
   }
-  return {updated,closed,protected,brokerPositions:positions.length};
+  return {updated,closed,protectedCount,brokerPositions:positions.length};
 }
 
 async function init(){
