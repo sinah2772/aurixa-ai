@@ -2050,7 +2050,7 @@ async function getXAUUSDVolumeConstraints() {
     2116,
     {
       ctidTraderAccountId: Number(state.accountId),
-      symbolId: Number(state.symbolId)
+      symbolId: [Number(state.symbolId)]
     },
     10000
   );
