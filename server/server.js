@@ -1,4 +1,3 @@
-const { analyze: analyzeOrderflowV1 } = require('./chris-creamer-orderflow');
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -17,7 +16,7 @@ const signalTracker = require("./signal-tracker");
 const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const { backtest } = require("./validation");
-const openingRangeStrategy = require("./opening-range-strategy");
+const aiTraderEngine = require("./ai-trader-engine");
 setMarketEngine(marketEngine);
 
 signalTracker.configure({
@@ -43,7 +42,7 @@ autoTrader.configure({
     getMarketCandles: () => marketEngine.getState()?.candles || []
   },
   query: queryDatabase,
-  orderflow: analyzeOrderflowV1
+  ai: aiTraderEngine
 });
 
 const PORT = Number(process.env.PORT || 8787);
@@ -62,46 +61,30 @@ app.get("/health", (req, res) => {
 });
 
 registerCTrader(app);
-app.get('/api/strategies/of1', (req, res) => {
+app.get("/api/ai/decision", async (req,res)=>{
   try {
-    const marketState = marketEngine.getState();
-    const candlesSource = marketState?.candles;
-    const candles = Array.isArray(candlesSource)
-      ? candlesSource
-      : [];
-
-    const result = analyzeOrderflowV1(candles);
-
-    res.json({
-      ok: true,
-      strategy: 'AURIXA_OF1',
-      strategyVersion: '1.0.0',
-      symbol: 'XAUUSD',
-      timeframe: 'M5',
-      candleCount: candles.length,
-      liveExecution: false,
-      result,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('AURIXA_OF1 endpoint error:', error);
-
-    res.status(500).json({
-      ok: false,
-      strategy: 'AURIXA_OF1',
-      error: error.message
-    });
+    const state=marketEngine.getState()||{};
+    const ct=getCTraderStatus()||{};
+    const decision=aiTraderEngine.decide(state.candles||[],ct);
+    let audit=null;
+    try {
+      await queryDatabase("CREATE SCHEMA IF NOT EXISTS aurixa");
+      await queryDatabase("CREATE TABLE IF NOT EXISTS aurixa.ai_trade_decisions(id BIGSERIAL PRIMARY KEY,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),engine TEXT NOT NULL,version TEXT NOT NULL,signal TEXT NOT NULL,confidence NUMERIC(6,2),decision JSONB NOT NULL)");
+      const q=await queryDatabase("INSERT INTO aurixa.ai_trade_decisions(engine,version,signal,confidence,decision) VALUES($1,$2,$3,$4,$5::jsonb) RETURNING id,created_at",[decision.engine,decision.version,decision.signal,decision.confidence,JSON.stringify(decision)]);
+      audit=q.rows[0]||null;
+    } catch(e) { audit={error:e.message}; }
+    res.json({ok:true,...decision,decisionId:audit?.id||null});
+  } catch(e) {
+    res.status(500).json({ok:false,signal:"WAIT",executionEligible:false,error:e.message});
   }
 });
 
-app.get('/api/strategies/or-fvg', (req, res) => {
+app.get("/api/ai/decision/history",async(req,res)=>{
   try {
-    const result = openingRangeStrategy.getPrediction();
-    res.json({ ok: true, strategy: 'NY_OPENING_RANGE_FVG', ...result, timestamp: new Date().toISOString() });
-  } catch (error) {
-    console.error('AURIXA OR/FVG endpoint error:', error);
-    res.status(500).json({ ok: false, strategy: 'NY_OPENING_RANGE_FVG', error: error.message });
-  }
+    const limit=Math.min(100,Math.max(1,Number(req.query.limit)||20));
+    const q=await queryDatabase('SELECT id,created_at AS "createdAt",engine,version,signal,confidence,decision FROM aurixa.ai_trade_decisions ORDER BY created_at DESC LIMIT $1',[limit]);
+    res.json({ok:true,count:q.rows.length,decisions:q.rows});
+  } catch(e) { res.status(500).json({ok:false,error:"AI decision history unavailable"}); }
 });
 
 const WEB_DIR = path.join(__dirname, "..", "web");
@@ -691,17 +674,13 @@ app.get("/api/auto-trader/status", (req, res) => {
 
 app.get("/api/auto-trader/dry-run", async (req, res) => {
   try {
-    const candles = marketEngine.getState()?.candles || [];
-    const of1 = analyzeOrderflowV1(candles);
     const dryRun = await autoTrader.dryRunOrderflow();
 
     res.json({
       ok: true,
-      strategy: "AURIXA_OF1",
+      strategy: "AURIXA_AI_TRADER_V1",
       liveExecution: false,
       paperTrading: true,
-      candleCount: candles.length,
-      of1,
       ...dryRun
     });
   } catch (err) {
