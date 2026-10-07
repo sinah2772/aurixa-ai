@@ -17,6 +17,14 @@ const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const { backtest } = require("./validation");
 const aiTraderEngine = require("./ai-trader-engine");
+async function auditAiDecision(decision){
+ try{
+  await queryDatabase("CREATE SCHEMA IF NOT EXISTS aurixa");
+  await queryDatabase("CREATE TABLE IF NOT EXISTS aurixa.ai_trade_decisions(id BIGSERIAL PRIMARY KEY,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),engine TEXT NOT NULL,version TEXT NOT NULL,signal TEXT NOT NULL,confidence NUMERIC(6,2),decision JSONB NOT NULL)");
+  const q=await queryDatabase("INSERT INTO aurixa.ai_trade_decisions(engine,version,signal,confidence,decision) VALUES($1,$2,$3,$4,$5::jsonb) RETURNING id",[decision.engine,decision.version,decision.signal,decision.confidence,JSON.stringify(decision)]);
+  return q.rows[0]?.id||null;
+ }catch(e){console.warn("AI decision audit:",e.message);return null;}
+}
 setMarketEngine(marketEngine);
 
 signalTracker.configure({
@@ -62,21 +70,11 @@ app.get("/health", (req, res) => {
 
 registerCTrader(app);
 app.get("/api/ai/decision", async (req,res)=>{
-  try {
-    const state=marketEngine.getState()||{};
-    const ct=getCTraderStatus()||{};
-    const decision=aiTraderEngine.decide(state.candles||[],ct);
-    let audit=null;
-    try {
-      await queryDatabase("CREATE SCHEMA IF NOT EXISTS aurixa");
-      await queryDatabase("CREATE TABLE IF NOT EXISTS aurixa.ai_trade_decisions(id BIGSERIAL PRIMARY KEY,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),engine TEXT NOT NULL,version TEXT NOT NULL,signal TEXT NOT NULL,confidence NUMERIC(6,2),decision JSONB NOT NULL)");
-      const q=await queryDatabase("INSERT INTO aurixa.ai_trade_decisions(engine,version,signal,confidence,decision) VALUES($1,$2,$3,$4,$5::jsonb) RETURNING id,created_at",[decision.engine,decision.version,decision.signal,decision.confidence,JSON.stringify(decision)]);
-      audit=q.rows[0]||null;
-    } catch(e) { audit={error:e.message}; }
-    res.json({ok:true,...decision,decisionId:audit?.id||null});
-  } catch(e) {
-    res.status(500).json({ok:false,signal:"WAIT",executionEligible:false,error:e.message});
-  }
+ try{
+  const state=marketEngine.getState()||{},ct=getCTraderStatus()||{};
+  const decision=aiTraderEngine.decide(state.candles||[],ct),decisionId=await auditAiDecision(decision);
+  res.json({ok:true,...decision,decisionId});
+ }catch(e){res.status(500).json({ok:false,signal:"WAIT",executionEligible:false,error:e.message});}
 });
 
 app.get("/api/ai/decision/history",async(req,res)=>{
@@ -726,6 +724,8 @@ app.get("/api/auto-trader/trades", async (req, res) => {
     const result = await queryDatabase(`
       SELECT
         id,
+        decision_id AS "decisionId",
+        strategy_signal_key AS "strategySignalKey",
         signal_id AS "signalId",
         created_at AS "createdAt",
         symbol,
@@ -747,7 +747,12 @@ app.get("/api/auto-trader/trades", async (req, res) => {
         closed_at AS "closedAt",
         close_price AS "closePrice",
         profit,
-        error
+        error,
+        gate_reason AS "gateReason",
+        exit_reason AS "exitReason",
+        client_msg_id AS "clientMsgId",
+        risk_percent AS "riskPercent",
+        risk_amount AS "riskAmount"
       FROM aurixa.auto_trades
       ORDER BY created_at DESC
       LIMIT $1
@@ -989,46 +994,19 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
 
     setInterval(async () => {
       try {
-        const state = marketEngine.getState() || {};
-        const candles = Array.isArray(state.candles) ? state.candles : [];
-        const ct = getCTraderStatus() || {};
-        const decision = aiTraderEngine.decide(candles, ct);
-
-        console.log(
-          "AURIXA AI Trader V1:",
-          JSON.stringify({
-            signal: decision.signal,
-            confidence: decision.confidence,
-            executionEligible: decision.executionEligible,
-            blockedBy: decision.blockedBy || [],
-            candleTime: decision.candleTime || null
-          })
-        );
-
-        if (decision.executionEligible === true) {
-          const result = await autoTrader.executeAiDecision(decision);
-          console.log(
-            "AURIXA AI Trader V1 execution:",
-            JSON.stringify({
-              direction: decision.signal,
-              executed: result.executed,
-              reason: result.reason || null,
-              orderId: result.orderId || null,
-              positionId: result.positionId || null
-            })
-          );
+        const state=marketEngine.getState()||{},ct=getCTraderStatus()||{};
+        const decision=aiTraderEngine.decide(Array.isArray(state.candles)?state.candles:[],ct);
+        const decisionId=await auditAiDecision(decision);
+        if(decision.executionEligible===true){
+          const result=await autoTrader.executeAiDecision({...decision,decisionId},decisionId);
+          console.log("AURIXA AI EXECUTION:",JSON.stringify({decisionId,signal:decision.signal,executed:result.executed,reason:result.reason||null,orderId:result.orderId||null,positionId:result.positionId||null}));
         }
-
-        try {
-          await signalTracker.trackLatestClosedSignal();
-          await signalTracker.evaluatePending();
-        } catch (err) {
-          console.error("Signal analytics error:", err.message);
-        }
-      } catch (err) {
-        console.error("AURIXA AI Trader V1 loop error:", err.message);
-      }
-    }, signalTracker.getHorizonIntervalMs());
+        try{
+          const sync=await autoTrader.syncOpenPositions();
+          if(sync.updated||sync.closed||sync.protected)console.log("AURIXA POSITION SYNC:",JSON.stringify(sync));
+        }catch(e){console.error("AURIXA position sync error:",e.message);}
+      }catch(err){console.error("AURIXA AI Trader V1 loop error:",err.message);}
+    }, 15000);
 });
 app.get("/api/auto-trader/trade-trace/:id", async (req, res) => {
   try {
