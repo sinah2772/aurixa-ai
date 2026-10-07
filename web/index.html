@@ -60,7 +60,7 @@
       <div class="section-title">AI TRADER ENGINE</div>
       <div class="section-heading">AI TRADER V1</div>
 
-      <div class="engine-status" id="engineStatus">READY</div>
+      <div class="engine-status" id="engineStatus">AI ACTIVE · WAIT</div>
 
       <div class="signal-card" id="signalCard">
         <div class="eyebrow">CURRENT AI TRADER SIGNAL</div>
@@ -77,10 +77,9 @@
           <div id="buyIndicator" class="signal-option buy">BUY</div>
         </div>
 
-        <div class="eyebrow">AI TRADER REASON</div>
-        <div id="reason" class="reason">
-          Waiting for market data...
-        </div>
+        <div class="eyebrow">AI TRADER STATUS</div>
+        <div id="reason" class="reason">Waiting for live XAUUSD confirmation...</div>
+        <div class="ai-gate-summary"><span id="aiRegime">REGIME —</span><span id="aiGate">GATES —</span></div>
       </div>
     </section>
 
@@ -113,7 +112,7 @@
       <div class="gate-head"><div><div id="gateDecision" class="gate-decision wait">WAIT</div><div id="gateReason" class="gate-reason">Waiting for AI TRADER to meet the execution gate.</div></div><div class="gate-badge">DEMO ONLY</div></div>
       <div class="gate-conditions"><div class="gate-condition"><span>MARKET</span><strong id="gateMarket">WAIT</strong></div><div class="gate-condition"><span>AI TRADER SIGNAL</span><strong id="gateSignal">WAIT</strong></div><div class="gate-condition"><span>AI TRADER QUALITY</span><strong id="gateFvg">WAIT</strong></div><div class="gate-condition"><span>POSITION</span><strong id="gatePosition">CHECKING</strong></div></div>
       <div class="gate-levels"><div class="gate-level"><span>ENTRY</span><strong id="gateEntry">—</strong></div><div class="gate-level"><span>STOP LOSS</span><strong id="gateSL">—</strong></div><div class="gate-level"><span>TAKE PROFIT</span><strong id="gateTP">—</strong></div><div class="gate-level"><span>R:R</span><strong id="gateRR">2R PLAN</strong></div></div>
-      <div class="gate-rules"><span>RISK 0.5%</span><span>MAX 1 POSITION</span><span>NO MARTINGALE</span><span>WAIT = NO TRADE</span></div>
+      <div class="gate-rules"><span>RISK 0.5%</span><span>MAX 1 POSITION</span><span>1:2 MIN R:R</span><span>WAIT = NO TRADE</span></div>
     </section>
 
 
@@ -163,7 +162,7 @@
     <section class="system-footer">
       <span class="dot"></span>
       <strong id="systemStatus">SYSTEM ONLINE</strong>
-      <div>AURIXA AI · AI TRADER LIVE MARKET ANALYSIS</div>
+      <div>AURIXA AI · AI TRADER V1 · XAUUSD M5</div>
     </section>
 
   </main>
