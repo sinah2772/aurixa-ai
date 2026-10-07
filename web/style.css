@@ -1,133 +1,1229 @@
-/* ============================================================
-   AURIXA CONFIRMED SIGNAL HISTORY — MOBILE FIT FIX
-   ============================================================ */
-.confirmed-history-panel{
-  min-width:0;
-  overflow:hidden;
+:root {
+  --bg: #050608;
+  --panel: #0c0f13;
+  --panel2: #10141a;
+  --border: #20262e;
+  --text: #f3f5f7;
+  --muted: #89919d;
+  --green: #30d68a;
+  --red: #ff5b65;
+  --yellow: #e7c85b;
+  --blue: #65a9ff;
 }
-.confirmed-signal-head,
-.confirmed-signal-row{
-  width:100%;
-  min-width:0;
+
+* {
+  box-sizing: border-box;
 }
-@media(max-width:520px){
-  .confirmed-history-panel{
-    padding:12px 10px;
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, Arial, sans-serif;
+}
+
+.app {
+  width: min(1180px, 100%);
+  margin: auto;
+  padding: 18px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.brand {
+  font-size: 25px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.subtitle,
+.eyebrow,
+.section-title {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .14em;
+  font-weight: 800;
+}
+
+.subtitle {
+  margin-top: 4px;
+}
+
+.live-badge {
+  border: 1px solid #244c3c;
+  background: #0b1712;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-right: 5px;
+}
+
+.panel {
+  background: linear-gradient(145deg, var(--panel), var(--panel2));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 14px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.18);
+}
+
+.section-heading {
+  margin-top: 5px;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.instrument {
+  font-size: 34px;
+  font-weight: 900;
+  margin: 4px 0 18px;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+
+.value {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.price {
+  font-size: 29px;
+  font-weight: 900;
+  margin-top: 4px;
+}
+
+.change {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.status {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.good,
+.enabled {
+  color: var(--green);
+}
+
+.disabled {
+  color: var(--red);
+}
+
+.engine-status {
+  margin: 14px 0;
+  color: var(--green);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.signal-card {
+  border: 1px solid var(--border);
+  background: #080a0d;
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.signal {
+  font-size: 42px;
+  font-weight: 950;
+  margin: 2px 0 10px;
+}
+
+.signal.wait {
+  color: var(--yellow);
+}
+
+.signal.buy {
+  color: var(--green);
+}
+
+.signal.sell {
+  color: var(--red);
+}
+
+.confidence-row,
+.connection-row,
+.mode-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.confidence-row strong {
+  font-size: 15px;
+}
+
+.signal-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 14px 0 18px;
+}
+
+.signal-option {
+  padding: 10px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  font-weight: 900;
+  font-size: 11px;
+}
+
+.signal-option.active {
+  color: var(--yellow);
+  border-color: #665a25;
+  background: #181507;
+}
+
+.reason {
+  margin-top: 8px;
+  color: #cbd0d7;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  margin: 16px 0 8px;
+}
+
+.chart-header strong {
+  margin-left: 7px;
+}
+
+.chart-wrap {
+  height: 320px;
+  position: relative;
+}
+
+.metrics-grid,
+.position-grid,
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.metric,
+.stat,
+.result-grid > div {
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.metric span,
+.stat span,
+.result-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+
+.metric strong,
+.stat strong,
+.result-grid strong {
+  display: block;
+  margin-top: 7px;
+  font-size: 17px;
+}
+
+.position-status {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.history {
+  margin-top: 14px;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: 80px 80px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  margin-bottom: 8px;
+  background: #080a0d;
+}
+
+.history-direction {
+  font-weight: 950;
+}
+
+.history-buy {
+  color: var(--green);
+}
+
+.history-sell {
+  color: var(--red);
+}
+
+.history-wait {
+  color: var(--yellow);
+}
+
+.history-meta {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.history-result {
+  text-align: right;
+  font-size: 11px;
+}
+
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 20px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+.connect-button {
+  width: 100%;
+  margin-top: 16px;
+  border: 1px solid #31547d;
+  background: #0c1724;
+  color: #9cc9ff;
+  border-radius: 10px;
+  padding: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.notice {
+  margin-top: 14px;
+  padding: 12px;
+  background: #111317;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.system-footer {
+  text-align: center;
+  padding: 18px 10px 30px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 2;
+}
+
+.system-footer strong {
+  color: var(--green);
+}
+
+@media (max-width: 800px) {
+  .hero-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
-  .confirmed-signal-head,
-  .confirmed-signal-row{
-    grid-template-columns:48px 55px 65px 65px minmax(80px,1fr);
-    gap:4px;
-    width:100%;
-  }
-  .confirmed-signal-head{
-    margin:9px 0 5px;
-    padding:0 2px 3px;
-    font-size:8px;
-    letter-spacing:.04em;
-  }
-  .confirmed-signal-row{
-    min-height:36px;
-    padding:8px 5px;
-    font-size:8px;
-    border-radius:8px;
+
+  .metrics-grid,
+  .position-grid,
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
-/* Restored account, position and trade-history dashboard */
-.account-panel,.closed-history-panel{min-width:0;overflow:hidden}
+@media (max-width: 520px) {
+  .app {
+    padding: 10px;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .hero-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .metrics-grid,
+  .position-grid,
+  .stats-grid,
+  .result-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .history-item {
+    grid-template-columns: 65px 70px 1fr;
+  }
+
+  .price {
+    font-size: 25px;
+  }
+
+  .signal {
+    font-size: 36px;
+  }
+}
+
+/* ============================================================
+   AURIXA SIGNAL TRACKING V1
+   Frontend only - does not affect trading engine
+   ============================================================ */
+
+.tracking-v1 {
+  margin-top: 18px;
+}
+
+.tracking-v1-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tracking-horizon {
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.035);
+}
+
+.tracking-horizon-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.tracking-rate {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.tracking-rate-label {
+  opacity: .65;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.tracking-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.tracking-mini {
+  padding: 8px 5px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.04);
+  text-align: center;
+}
+
+.tracking-mini-value {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tracking-mini-label {
+  font-size: 9px;
+  opacity: .55;
+  margin-top: 2px;
+}
+
+.tracking-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.tracking-total {
+  padding: 13px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.07);
+}
+
+.tracking-total-value {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.tracking-total-label {
+  font-size: 10px;
+  opacity: .6;
+  margin-top: 3px;
+}
+
+.tracking-history {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.tracking-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.tracking-history-table th,
+.tracking-history-table td {
+  padding: 9px 7px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tracking-history-table th {
+  opacity: .6;
+  font-weight: 600;
+}
+
+.tracking-history-status {
+  font-weight: 700;
+}
+
+.tracking-history-status.win {
+  color: #42d392;
+}
+
+.tracking-history-status.loss {
+  color: #ff6b6b;
+}
+
+.tracking-history-status.flat,
+.tracking-history-status.wait {
+  opacity: .65;
+}
+
+.tracking-updated {
+  margin-top: 10px;
+  font-size: 10px;
+  opacity: .5;
+}
+
+@media (max-width: 700px) {
+  .tracking-v1-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tracking-totals {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ============================================================
+   AURIXA SIGNAL TRACKING V2
+   ============================================================ */
+
+.tracking-v2 {
+  width: 100%;
+  margin: 20px 0;
+}
+
+.tracking-v2-subtitle {
+  opacity: 0.7;
+  margin: 6px 0 18px;
+  font-size: 13px;
+}
+
+.tracking-v2 h3 {
+  margin: 20px 0 10px;
+  font-size: 14px;
+}
+
+.tracking-v2-table {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.tracking-v2-row {
+  display: grid;
+  grid-template-columns: 110px repeat(3, minmax(130px, 1fr));
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 6px;
+}
+
+.tracking-v2-row > div {
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  text-align: center;
+  min-width: 0;
+}
+
+.tracking-v2-header > div {
+  font-size: 11px;
+  opacity: 0.65;
+  text-transform: uppercase;
+}
+
+.tracking-v2-label {
+  font-weight: 700;
+}
+
+.tracking-v2-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tracking-v2-cell strong {
+  font-size: 15px;
+}
+
+.tracking-v2-cell span {
+  font-size: 10px;
+  opacity: 0.65;
+}
+
+.tracking-v2-updated {
+  margin-top: 14px;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+@media (max-width: 700px) {
+  .tracking-v2-row {
+    grid-template-columns: 80px repeat(3, minmax(105px, 1fr));
+    font-size: 12px;
+  }
+
+  .tracking-v2-row > div {
+    padding: 8px 5px;
+  }
+}
+
+/* ============================================================
+   AURIXA SIGNAL TRACKING V2.1
+   ============================================================ */
+
+.tracking-v21-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 20px;
+}
+
+.tracking-v21-stat {
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  text-align: center;
+}
+
+.tracking-v21-stat span {
+  display: block;
+  font-size: 11px;
+  opacity: .65;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.tracking-v21-stat strong {
+  display: block;
+  font-size: 20px;
+}
+
+.tracking-v21-horizon {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.tracking-v21-horizon > div {
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  text-align: center;
+}
+
+.tracking-v21-horizon > div > span {
+  display: block;
+  font-size: 11px;
+  opacity: .65;
+  margin-bottom: 7px;
+}
+
+.tracking-v21-horizon-value strong {
+  display: block;
+  font-size: 20px;
+}
+
+.tracking-v21-horizon-value span {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  opacity: .6;
+}
+
+@media (max-width: 700px) {
+  .tracking-v21-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tracking-v21-horizon {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+/* ==========================================================
+   AURIXA PAIR SELECTOR
+   ========================================================== */
+
+.instrument-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pair-selector {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #111;
+  color: #fff;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 9px 34px 9px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.pair-selector:hover {
+  border-color: #555;
+}
+
+.pair-selector:focus {
+  border-color: #777;
+}
+
+.pair-selector option {
+  background: #111;
+  color: #fff;
+}
+
+
+
+/* ============================================================
+   AURIXA CLEAN UI OVERRIDE
+   ============================================================ */
+
+.market-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.instrument-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 5px;
+}
+
+.instrument {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+
+.pair-selector {
+  appearance: none;
+  background: #080b0f;
+  color: #fff;
+  border: 1px solid #303842;
+  border-radius: 9px;
+  padding: 8px 30px 8px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pair-selector:hover {
+  border-color: #59636e;
+}
+
+.market-meta {
+  display: flex;
+  gap: 7px;
+}
+
+.market-tag {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.market-tag.live {
+  color: var(--green);
+  border-color: #24513f;
+  background: #09150f;
+}
+
+.hero-price {
+  margin: 20px 0 15px;
+}
+
+.hero-price .price {
+  font-size: 46px;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: -.035em;
+  margin-top: 5px;
+}
+
+.price-row {
+  display: flex;
+  gap: 18px;
+  margin-top: 11px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.price-row strong {
+  color: var(--text);
+  margin-left: 4px;
+}
+
+.compact-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.market-mini {
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px;
+}
+
+.market-mini span {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+
+.market-mini strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 14px;
+}
+
+.hero {
+  padding-bottom: 15px;
+}
+
+/* Reduce visual noise from old tracking sections */
+.tracking-v1 {
+  margin-top: 10px;
+}
+
+.tracking-v2,
+.tracking-v21 {
+  margin-top: 10px;
+}
+
+.tracking-v2 .card,
+.tracking-v21 .card {
+  border-radius: 12px;
+}
+
+/* Mobile */
+@media (max-width: 520px) {
+  .market-top {
+    align-items: flex-start;
+  }
+
+  .market-meta {
+    flex-direction: column;
+  }
+
+  .instrument {
+    font-size: 25px;
+  }
+
+  .hero-price .price {
+    font-size: 36px;
+  }
+
+  .price-row {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .compact-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ===== AURIXA UI FINAL CLEANUP ===== */
+
+.compact-panel {
+  padding: 16px 18px;
+}
+
+.compact-panel .section-heading {
+  margin-bottom: 10px;
+}
+
+.connection-row,
+.mode-row {
+  min-height: 32px;
+}
+
+.compact-panel .connect-button {
+  margin-top: 10px;
+}
+
+.compact-panel .notice {
+  margin-top: 8px;
+}
+
+.system-footer {
+  margin-top: 12px;
+}
+
+/* Reduce visual noise on mobile */
+@media (max-width: 600px) {
+  .compact-panel {
+    padding: 14px;
+  }
+
+  .section-title {
+    letter-spacing: .08em;
+  }
+
+  .section-heading {
+    font-size: 12px;
+  }
+}
+
+
+/* AURIXA ORGANIZED MULTI-MARKET LAYOUT */
+.dashboard,
+main { display:block; }
+
+.tracking-host {
+  width:100%;
+  margin:0 0 14px;
+}
+
+.tracking-host > section {
+  width:100%;
+  margin:0 0 14px;
+}
+
+.tracking-host .card {
+  background:linear-gradient(145deg,var(--panel),var(--panel2));
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:18px;
+}
+
+@media (max-width:520px) {
+  .tracking-host .card { padding:14px; }
+}
+
+
+/* ============================================================
+   AURIXA MULTI-MARKET DESKTOP LAYOUT
+   Real cTrader market selection and chart presentation
+   ============================================================ */
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.dashboard-grid > .panel {
+  margin-bottom: 14px;
+  min-width: 0;
+}
+
+.signal-panel,
+.chart-panel {
+  min-width: 0;
+}
+
+.signal-panel .signal-card {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.chart-panel .chart-wrap {
+  height: 360px;
+}
+
+.tracking-host {
+  width: 100%;
+  margin: 0 0 14px;
+}
+
+.tracking-host > section {
+  width: 100%;
+  margin: 0 0 14px;
+}
+
+@media (max-width: 850px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .signal-panel .signal-card {
+    min-height: auto;
+  }
+
+  .chart-panel .chart-wrap {
+    height: 320px;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard-grid {
+    gap: 10px;
+  }
+
+  .chart-panel .chart-wrap {
+    height: 270px;
+  }
+}
+
+
+.auto-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 15px;
+}
+.auto-history-title { margin-top: 18px; margin-bottom: 8px; }
+.auto-trade-history { display: grid; gap: 8px; }
+.auto-trade-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 11px;
+}
+.auto-trade-row > div { display: flex; flex-direction: column; gap: 4px; }
+.auto-trade-row small { color: var(--muted); }
+.trade-status { font-weight: 800; }
+@media (max-width: 720px) {
+  .auto-status-grid { grid-template-columns: repeat(2, 1fr); }
+  .auto-trade-row { grid-template-columns: 1fr; }
+}
+
+
+.command-center {
+  margin-bottom: 14px;
+}
+.command-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 15px;
+}
+.command-card {
+  min-height: 92px;
+  padding: 14px;
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.command-card span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .11em;
+}
+.command-card strong {
+  margin-top: 10px;
+  font-size: 20px;
+  font-weight: 950;
+}
+.command-card small {
+  color: var(--muted);
+  margin-top: 5px;
+  font-size: 10px;
+}
+.command-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+.command-foot strong {
+  color: var(--text);
+  letter-spacing: normal;
+  font-size: 11px;
+}
+@media (max-width: 720px) {
+  .command-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+
+/* AURIXA HISTORY BOARD DATE FILTER */
+.history-filter{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:10px 0 14px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#080a0d}
+.history-filter-field{display:flex;flex-direction:column;gap:5px}
+.history-filter-field label{color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.1em}
+.history-filter-field input{min-height:36px;padding:7px 9px;border:1px solid #303842;border-radius:8px;background:#0c0f13;color:var(--text);font:inherit;font-size:12px}
+.history-filter-actions{display:flex;gap:7px;flex-wrap:wrap}
+.history-filter-actions button{min-height:36px;padding:7px 11px;border:1px solid #303842;border-radius:8px;background:#11151a;color:var(--text);font-size:10px;font-weight:850;cursor:pointer}
+.history-filter-actions button:hover{border-color:#59636e}
+.history-board-title{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#historyFilterSummary{color:var(--muted);font-size:9px;font-weight:700;letter-spacing:.06em}
+@media(max-width:520px){
+ .history-filter{align-items:stretch}
+ .history-filter-field,.history-filter-field input{width:100%}
+ .history-filter-actions{width:100%}
+ .history-filter-actions button{flex:1}
+ .history-board-title{align-items:flex-start;flex-direction:column}
+}
+
+
+/* Market session indicator */
+.market-tag.market-open {
+  border-color: rgba(80, 220, 140, 0.45);
+}
+.market-tag.market-closed {
+  border-color: rgba(255, 110, 110, 0.45);
+}
+
+.market-tag.market-stale {
+  color: var(--yellow);
+  border-color: rgba(231, 200, 91, 0.45);
+  background: #181507;
+}
+.market-tag.market-disconnected {
+  color: var(--red);
+  border-color: rgba(255, 91, 101, 0.45);
+  background: #190b0d;
+}
+
+/* AURIXA FINAL TRADE GATE */
+.final-gate-panel{margin-bottom:14px}.gate-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-top:15px}.gate-decision{font-size:30px;font-weight:950}.gate-decision.buy{color:var(--green)}.gate-decision.sell{color:var(--red)}.gate-decision.wait{color:var(--yellow)}.gate-reason{margin-top:5px;color:var(--muted);font-size:11px;line-height:1.45}.gate-badge{border:1px solid #665a25;background:#181507;color:var(--yellow);border-radius:999px;padding:7px 10px;font-size:9px;font-weight:900}.gate-conditions,.gate-levels{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}.gate-condition,.gate-level{background:#080a0d;border:1px solid var(--border);border-radius:11px;padding:12px}.gate-condition span,.gate-level span{display:block;color:var(--muted);font-size:8px;font-weight:850;letter-spacing:.1em}.gate-condition strong,.gate-level strong{display:block;margin-top:6px;font-size:14px}.gate-rules{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}.gate-rules span{border:1px solid var(--border);border-radius:999px;padding:6px 9px;color:var(--muted);font-size:8px;font-weight:850}@media(max-width:650px){.gate-conditions,.gate-levels{grid-template-columns:repeat(2,1fr)}.gate-decision{font-size:25px}}
+
+/* cTrader live chart */
+.chart-wrap {
+  height: 420px;
+  min-height: 300px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #080a0d;
+}
+#marketChart {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+}
+
+
+/* ============================================================
+   AURIXA ACCOUNT / PERFORMANCE / POSITION HISTORY
+   ============================================================ */
+.account-summary-panel,.performance-panel,.account-panel,.closed-history-panel{min-width:0;overflow:hidden}
 .account-grid,.position-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
-.account-stat,.position-grid>div{min-width:0;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.025)}
-.account-stat span,.position-grid span{display:block;font-size:9px;letter-spacing:.08em;opacity:.65;margin-bottom:5px}
+.account-money-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.account-stat,.position-grid>div{min-width:0;padding:12px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.025)}
+.account-stat span,.position-grid span{display:block;color:var(--muted);font-size:9px;letter-spacing:.08em;margin-bottom:5px}
 .account-stat strong,.position-grid strong{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
-.position-card{margin-top:12px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px}
+.position-card{margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px}
 .position-title{font-size:10px;letter-spacing:.08em;font-weight:700;margin-bottom:2px}
 .position-card .notice{margin-top:10px}
-@media(max-width:520px){.account-grid,.position-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.account-stat,.position-grid>div{padding:9px}.account-stat strong,.position-grid strong{font-size:11px}.account-stat span,.position-grid span{font-size:8px}.position-card{padding:9px}}
-
 
 /* ============================================================
-   AURIXA COMPLETE TRADING DASHBOARD — RESPONSIVE LAYOUT
-   Keep the dashboard sections together on desktop and compact on mobile.
+   AURIXA COMPLETE RESPONSIVE DASHBOARD
    ============================================================ */
-main{
-  display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-  gap:16px;
-  align-items:start;
+main{width:100%}
+main > .dashboard-grid{width:100%}
+main > .panel,.dashboard-grid > .panel{min-width:0}
+@media(max-width:850px){
+  .dashboard-grid{grid-template-columns:1fr}
 }
-main > .dashboard-grid{
-  display:contents;
+@media(max-width:700px){
+  .account-grid,.position-grid,.account-money-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 }
-main > .panel,
-main > .dashboard-grid > .panel{
-  min-width:0;
-  width:100%;
-  box-sizing:border-box;
-}
-main > .hero{
-  grid-column:1 / -1;
-}
-main > .ai-activity-panel{
-  grid-column:1 / -1;
-}
-main > .confirmed-history-panel{
-  grid-column:1 / -1;
-}
-main > .closed-history-panel{
-  grid-column:1 / -1;
-}
-main > .compact-panel{
-  grid-column:1 / -1;
-}
-main > .system-footer{
-  grid-column:1 / -1;
-}
-
-/* Keep the most important execution information near the top. */
-main > .dashboard-grid > .signal-panel{grid-column:1;}
-main > .dashboard-grid > .chart-panel{grid-column:2;}
-main > .final-gate-panel{grid-column:2;}
-main > .account-summary-panel{grid-column:1;}
-main > .performance-panel{grid-column:1;}
-main > .account-panel{grid-column:2;}
-
-@media(max-width:760px){
-  main{
-    grid-template-columns:minmax(0,1fr);
-    gap:10px;
-  }
-  main > .hero,
-  main > .ai-activity-panel,
-  main > .confirmed-history-panel,
-  main > .closed-history-panel,
-  main > .compact-panel,
-  main > .system-footer,
-  main > .dashboard-grid > .signal-panel,
-  main > .dashboard-grid > .chart-panel,
-  main > .final-gate-panel,
-  main > .account-summary-panel,
-  main > .performance-panel,
-  main > .account-panel{
-    grid-column:1;
-  }
-}
-
 @media(max-width:520px){
-  main{gap:8px;}
-  main > .panel{border-radius:12px;}
-  .section-title{font-size:9px;}
-  .section-heading{font-size:12px;}
-  .hero-price .price{font-size:clamp(34px,11vw,52px);}
+  .account-grid,.position-grid,.account-money-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .account-stat,.position-grid>div{padding:9px}
+  .account-stat strong,.position-grid strong{font-size:11px}
+  .account-stat span,.position-grid span{font-size:8px}
+  .position-card{padding:9px}
+  .confirmed-history-panel{padding:12px 10px}
+  .confirmed-signal-head,.confirmed-signal-row{grid-template-columns:48px 55px 65px 65px minmax(80px,1fr);gap:4px;width:100%}
+  .confirmed-signal-head{margin:9px 0 5px;padding:0 2px 3px;font-size:8px;letter-spacing:.04em}
+  .confirmed-signal-row{min-height:36px;padding:8px 5px;font-size:8px;border-radius:8px}
+  .hero-price .price{font-size:clamp(34px,11vw,52px)}
+  .section-title{font-size:9px}
+  .section-heading{font-size:12px}
 }
-
-/* Prevent long live values from stretching the mobile layout. */
-.account-stat strong,
-.position-grid strong,
-.gate-level strong,
-.activity-summary strong{
-  max-width:100%;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
+.account-stat strong,.position-grid strong,.gate-level strong,.activity-summary strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
