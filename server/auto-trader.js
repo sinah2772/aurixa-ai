@@ -86,7 +86,17 @@ async function executeAiDecision(decision, decisionId=null){
     return reject("MAX_OPEN_XAUUSD_POSITIONS_REACHED",{maxOpenPositions,openPositions:positions.length,positions:openPositions});
   }
   if(typeof dbQuery==="function"){
-    const dup=await dbQuery("SELECT id FROM aurixa.auto_trades WHERE strategy_signal_key=$1 LIMIT 1",[key]);
+    const dup=await dbQuery(`SELECT id, status, order_id, position_id
+      FROM aurixa.auto_trades
+      WHERE strategy_signal_key=$1
+        AND (
+          status IN ('OPEN','PARTIAL','SUBMITTED','CLOSED')
+          OR order_id IS NOT NULL
+          OR position_id IS NOT NULL
+        )
+      LIMIT 1`,[key]);
+    // Rejected attempts must not permanently consume a confirmed candle.
+    // Only an actual/submitted trade attempt gates the same candle+direction.
     if(dup.rows.length)return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,reason:"AI_SIGNAL_ALREADY_GATED",strategySignalKey:key};
     const lim=await dbQuery(`SELECT COUNT(*) FILTER(WHERE created_at>=CURRENT_DATE AND status IN ('OPEN','PARTIAL','CLOSED','SUBMITTED'))::int today,
       MAX(created_at) FILTER(WHERE status IN ('OPEN','PARTIAL','CLOSED','SUBMITTED')) last_trade FROM aurixa.auto_trades`);
