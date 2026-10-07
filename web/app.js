@@ -13,13 +13,6 @@
   const $ = (id) => document.getElementById(id);
 
   const API = {
-    signal: "/api/signal",
-    signals: "/api/signals",
-    history: "/api/signals/history",
-    stats: "/api/signals/stats",
-    tracking: "/api/signal-tracking",
-    trackingStats: "/api/signals/stats",
-    trackingHistory: "/api/signals/history",
     market: "/api/market",
     marketState: "/api/market/state",
     system: "/api/system/state",
@@ -157,7 +150,7 @@
     const entry = first(s.entryPrice, s.entry, s.price);
     const score = first(s.score);
 
-    const title = "AURIXA OF1 SIGNAL · " + direction;
+    const title = "AURIXA AI SIGNAL · " + direction;
     const body = [
       "XAUUSD · OF1",
       Number.isFinite(confidence) ? "Confidence " + number(confidence, 0) + "%" : null,
@@ -810,191 +803,6 @@
       '</tbody></table></div>';
   }
 
-  function updateTrackingStats(data) {
-    if (!data) return;
-
-    const s =
-      data.stats ||
-      data.tracking ||
-      data.data ||
-      data;
-
-    text(
-      "totalSignals",
-      first(
-        s.totalSignals,
-        s.total,
-        s.count,
-        "—"
-      )
-    );
-
-    text(
-      "success5m",
-      percent(first(
-        s.success5m,
-        s.success_5m,
-        s["5m"],
-        s["5mSuccess"],
-        s.winRate5m
-      ))
-    );
-
-    text(
-      "success15m",
-      percent(first(
-        s.success15m,
-        s.success_15m,
-        s["15m"],
-        s["15mSuccess"],
-        s.winRate15m
-      ))
-    );
-
-    text(
-      "success30m",
-      percent(first(
-        s.success30m,
-        s.success_30m,
-        s["30m"],
-        s["30mSuccess"],
-        s.winRate30m
-      ))
-    );
-
-    text(
-      "wins",
-      first(s.wins, s.totalWins, "—")
-    );
-
-    text(
-      "losses",
-      first(s.losses, s.totalLosses, "—")
-    );
-
-    text(
-      "neutral",
-      first(s.neutral, s.draws, s.unchanged, "—")
-    );
-  }
-
-  function updateHistory(data) {
-    const container = $("signalHistory");
-
-    if (!container) return;
-
-    let rows = [];
-
-    if (Array.isArray(data)) {
-      rows = data;
-    } else if (Array.isArray(data?.signals)) {
-      rows = data.signals;
-    } else if (Array.isArray(data?.history)) {
-      rows = data.history;
-    } else if (Array.isArray(data?.data)) {
-      rows = data.data;
-    }
-
-    if (!rows.length) {
-      container.innerHTML =
-        '<div class="empty-state">No tracked signals yet.</div>';
-      return;
-    }
-
-    container.innerHTML = rows
-      .slice(0, 30)
-      .map((s) => {
-        const direction = String(
-          first(
-            s.direction,
-            s.signal,
-            s.action,
-            "WAIT"
-          )
-        ).toUpperCase();
-
-        const result5 = first(
-          s.result5m,
-          s.evaluation5m,
-          s["5m"],
-          s.success5m
-        );
-
-        const result15 = first(
-          s.result15m,
-          s.evaluation15m,
-          s["15m"],
-          s.success15m
-        );
-
-        const result30 = first(
-          s.result30m,
-          s.evaluation30m,
-          s["30m"],
-          s.success30m
-        );
-
-        return `
-          <div class="signal-row">
-            <div>
-              <strong class="${direction.toLowerCase()}">
-                ${escapeHTML(direction)}
-              </strong>
-              <span>
-                ${number(first(s.entryPrice, s.price), 2)}
-              </span>
-            </div>
-
-            <div>
-              <small>${escapeHTML(formatTime(
-                first(s.timestamp, s.createdAt, s.time)
-              ))}</small>
-            </div>
-
-            <div class="evaluation">
-              <span>5M: ${escapeHTML(displayResult(result5))}</span>
-              <span>15M: ${escapeHTML(displayResult(result15))}</span>
-              <span>30M: ${escapeHTML(displayResult(result30))}</span>
-            </div>
-          </div>
-        `;
-      })
-      .join("");
-  }
-
-  function displayResult(v) {
-    if (v === undefined || v === null || v === "") {
-      return "—";
-    }
-
-    if (typeof v === "boolean") {
-      return v ? "WIN" : "LOSS";
-    }
-
-    if (typeof v === "number") {
-      return v > 0 ? "WIN" : v < 0 ? "LOSS" : "NEUTRAL";
-    }
-
-    const value = String(v).toUpperCase();
-
-    if (
-      value.includes("WIN") ||
-      value.includes("SUCCESS") ||
-      value === "TRUE"
-    ) {
-      return "WIN";
-    }
-
-    if (
-      value.includes("LOSS") ||
-      value.includes("FAIL") ||
-      value === "FALSE"
-    ) {
-      return "LOSS";
-    }
-
-    return value;
-  }
 
   function formatTime(value) {
     if (!value) return "—";
@@ -1027,7 +835,7 @@
     const source = candles.filter(c => c && [c.open,c.high,c.low,c.close].every(v => Number.isFinite(Number(v)))).slice(-120);
     if (source.length < 2) return;
     let canvas = container.querySelector("canvas");
-    if (!canvas) { container.innerHTML=""; canvas=document.createElement("canvas"); canvas.setAttribute("aria-label","cTrader live XAUUSD · OF1 candlestick chart"); canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.display="block"; container.appendChild(canvas); }
+    if (!canvas) { container.innerHTML=""; canvas=document.createElement("canvas"); canvas.setAttribute("aria-label","cTrader live XAUUSD M5 candlestick chart"); canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.display="block"; container.appendChild(canvas); }
     const rect=container.getBoundingClientRect(), dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1)), width=Math.max(320,Math.floor(rect.width||640)), height=Math.max(260,Math.floor(rect.height||420));
     canvas.width=Math.floor(width*dpr); canvas.height=Math.floor(height*dpr);
     const ctx=canvas.getContext("2d"); if(!ctx)return; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle="#080a0d"; ctx.fillRect(0,0,width,height);
@@ -1039,189 +847,23 @@
     ctx.fillStyle="#89919d";ctx.fillText(formatTime(first(source[0].time,source[0].timestamp,source[0].openTime)),left,height-8);ctx.fillText(formatTime(first(latest.time,latest.timestamp,latest.openTime)),Math.max(left,left+plotW-90),height-8);
     text("candleCount",String(source.length));text("latestCandle",formatTime(first(latest.time,latest.timestamp,latest.openTime)));
   }
-
-async function loadPairSelector() {
-  const selector =
-    document.getElementById(
-      "pairSelector"
-    );
-
-  if (!selector) return;
-
-  try {
-    const response =
-      await fetch(
-        "/api/ctrader/symbols",
-        {
-          cache: "no-store"
-        }
-      );
-
-    if (!response.ok) return;
-
-    const data =
-      await response.json();
-
-    const apiSymbols =
-      Array.isArray(data.symbols)
-        ? data.symbols.filter(s => s && s.symbolName)
-        : [];
-
-    const knownSymbols = [
-      { symbolName: "XAUUSD" },
-      { symbolName: "BITCOIN" },
-      { symbolName: "BITCOINCASH" },
-      { symbolName: "XAUUSDgr" }
-    ];
-
-    const seen = new Set();
-    const symbols = [...apiSymbols, ...knownSymbols].filter((s) => {
-      const name = String(s.symbolName || "").toUpperCase();
-      if (!name || seen.has(name)) return false;
-      seen.add(name);
-      return true;
-    });
-
-    selector.innerHTML = "";
-
-    for (const symbol of symbols) {
-      const option =
-        document.createElement(
-          "option"
-        );
-
-      option.value =
-        symbol.symbolName;
-
-      option.textContent =
-        symbol.symbolName;
-
-      if (
-        String(
-          symbol.symbolName
-        ).toUpperCase() ===
-        String(
-          data.selected || ""
-        ).toUpperCase()
-      ) {
-        option.selected = true;
-      }
-
-      selector.appendChild(
-        option
-      );
-    }
-
-  } catch (err) {
-    console.error(
-      "AURIXA pair list:",
-      err
-    );
-  }
-}
-
-async function selectPair(symbol) {
-  try {
-    const response =
-      await fetch(
-        "/api/ctrader/select-symbol",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json"
-          },
-          body:
-            JSON.stringify({
-              symbol
-            })
-        }
-      );
-
-    const data =
-      await response.json();
-
-    if (
-      !response.ok ||
-      !data.ok
-    ) {
-      throw new Error(
-        data.error ||
-        "Pair selection failed"
-      );
-    }
-
-    selectedSymbol = String(
-      data.selected || symbol || "XAUUSD"
-    ).toUpperCase();
-    // Native canvas chart: clear the container instead of calling a library destroy() method.
-    const chartContainer = $("marketChart");
-    if (chartContainer) chartContainer.innerHTML = "";
-
-    text("instrument", selectedSymbol);
-    text("chartTitle", selectedSymbol + " / 5 MINUTE");
-    text("price", "—");
-    text("bid", "—");
-    text("ask", "—");
-    text("spread", "—");
-    text("candleCount", "—");
-    text("latestCandle", "—");
-    text("engineStatus", "LOADING " + selectedSymbol);
-
-    const selector = $("pairSelector");
-    if (selector) selector.value = selectedSymbol;
-
-    console.log(
-      "AURIXA selected:",
-      selectedSymbol,
-      "symbolId:",
-      data.symbolId
-    );
-
-    await refresh();
-
-  } catch (err) {
-    console.error(
-      "AURIXA pair selection:",
-      err
-    );
-
-    alert(
-      err.message ||
-      "Unable to select pair"
-    );
-  }
-}
-
 async function refresh() {
     const [
       market,
       marketState,
-      signal,
-      stats,
-      trackingStats,
-      history,
-      trackingHistory,
       ctrader,
       autoStatus,
       autoPositions,
       autoTrades,
-      aiDecision,
-      aiHistory
+      aiDecision
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
-      getJSON(API.signal),
-      getJSON(API.stats),
-      getJSON(API.trackingStats),
-      getJSON(API.history),
-      getJSON(API.trackingHistory),
       getJSON(API.ctrader),
       getJSON(API.autoStatus),
       getJSON(API.autoPositions),
       getJSON(API.autoTrades),
-      getJSON(API.aiDecision),
-      getJSON(API.aiHistory)
+      getJSON(API.aiDecision)
     ]);
 
     const mergedMarket = {
@@ -1232,54 +874,20 @@ async function refresh() {
     updateMarket(mergedMarket, ctrader);
     updateMarketSession(mergedMarket, ctrader);
 
-    // =========================================================
-    // LIVE PREDICTION V2
-    // /api/market/state is the ONLY authoritative source.
-    // Never fall back to /api/signal or old cached prediction data.
-    // =========================================================
-    const livePrediction = marketState?.prediction || null;
-
-    console.log("AURIXA MARKET STATE:", marketState);
-    console.log("AURIXA LIVE PREDICTION V2:", livePrediction);
-
-    if (livePrediction) {
-      updateSignal(livePrediction);
-      checkForNewSignal(livePrediction);
-
-      text(
-        "engineStatus",
-        livePrediction.dataReady === false ? "WAITING FOR DATA" : "LIVE"
-      );
-    } else {
-      setSignal("WAIT");
-
-      text("confidence", "0%");
-      text(
-        "reason",
-        "Live prediction unavailable from /api/market/state"
-      );
-      text("signalEntry", "—");
-      text("signalTime", new Date().toLocaleTimeString());
-      text("engineStatus", "NO LIVE DATA");
-    }
-
-    updateTrackingStats(
-      stats
-    );
-
-    updateHistory(
-      history
-    );
-
-    if (ctrader) {
-      updateConnection(ctrader);
-    }
-
-    updateCommandCenter(livePrediction, autoStatus, ctrader);
-    updateAutoTrader(autoStatus, autoPositions, autoTrades);
     const liveAi = aiDecision?.decision || aiDecision?.result || aiDecision || {};
+    updateSignal(liveAi);
+    updateAutoTrader(autoStatus, autoPositions, autoTrades);
     updateOrderflow(liveAi);
-    updateFinalTradeGate(mergedMarket, livePrediction, liveAi, autoPositions);
+    updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
+
+    text(
+      "engineStatus",
+      liveAi.dataReady === false
+        ? "WAITING FOR DATA"
+        : liveAi.executionEligible
+          ? "TRADE READY"
+          : "WAITING"
+    );
 
     const system = await getJSON(API.system);
 
@@ -1331,16 +939,6 @@ async function refresh() {
   }
 
   function start() {
-    loadPairSelector();
-
-    const selector = $("pairSelector");
-
-    if (selector) {
-      selector.addEventListener("change", () => {
-        selectPair(selector.value);
-      });
-    }
-
     const connectButton =
       $("loginBtn") ||
       $("connectCtrader");
@@ -1349,15 +947,6 @@ async function refresh() {
       connectButton.addEventListener("click", () => {
         window.location.href = "/auth/login";
       });
-    }
-
-    const enableAlertsButton = $("enableAlertsBtn");
-    if (enableAlertsButton) {
-      enableAlertsButton.addEventListener("click", enableSignalAlerts);
-    }
-
-    if ("Notification" in window && Notification.permission === "granted") {
-      text("alertStatus", "Alerts enabled");
     }
 
     refresh();
