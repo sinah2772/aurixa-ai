@@ -2115,8 +2115,30 @@ async function placeDemoMarketOrder({
 
   const openPositions = await getOpenXAUUSDPositions();
 
-  if (openPositions.length >= 1) {
-    throw new Error("Maximum XAUUSD position limit reached");
+  // Keep the cTrader-side safety gate aligned with the auto-trader's
+  // configured AURIXA_MAX_OPEN_POSITIONS value. Never allow more than
+  // 25 positions even if the environment is misconfigured.
+  const rawMaxOpenPositions = String(
+    process.env.AURIXA_MAX_OPEN_POSITIONS || "3"
+  ).trim().toLowerCase();
+  const configuredMaxOpenPositions =
+    rawMaxOpenPositions === "unlimited"
+      ? 25
+      : Math.floor(Number(rawMaxOpenPositions));
+  const maxOpenPositions = Math.max(
+    1,
+    Math.min(
+      25,
+      Number.isFinite(configuredMaxOpenPositions)
+        ? configuredMaxOpenPositions
+        : 3
+    )
+  );
+
+  if (openPositions.length >= maxOpenPositions) {
+    throw new Error(
+      "Maximum XAUUSD position limit reached (" + maxOpenPositions + ")"
+    );
   }
 
   const tradeSide =
