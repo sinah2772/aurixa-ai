@@ -2011,9 +2011,6 @@ async function inspectOpenXAUUSDPositions() {
 async function getAccountBalance() {
   if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
   if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
-  // ProtoOATraderReq / ProtoOATraderRes (2121 / 2122)
-  // 2127 is the spot subscription request and must never be used
-  // for account-balance reads.
   const msg = await request(
     state.ws,
     2121,
@@ -2021,10 +2018,49 @@ async function getAccountBalance() {
     10000
   );
   const trader = msg?.payload?.trader || msg?.payload || {};
-  const rawBalance = Number(trader.balance);
   const moneyDigits = Number(trader.moneyDigits ?? 2);
-  if (!Number.isFinite(rawBalance)) throw new Error("cTrader account balance is unavailable");
-  return { balance: rawBalance / Math.pow(10, Number.isFinite(moneyDigits) ? moneyDigits : 2), rawBalance, moneyDigits };
+  const scale = Math.pow(10, Number.isFinite(moneyDigits) ? moneyDigits : 2);
+  const readMoney = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n / scale : null;
+  };
+  const balance = readMoney(trader.balance);
+  if (!Number.isFinite(balance) || balance <= 0) throw new Error("cTrader account balance is unavailable");
+  return {
+    balance,
+    equity: readMoney(trader.equity),
+    usedMargin: readMoney(trader.usedMargin),
+    freeMargin: readMoney(trader.freeMargin),
+    rawBalance: Number(trader.balance),
+    moneyDigits
+  };
+}
+
+async function getXAUUSDVolumeConstraints() {
+  if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
+  if (!state.connected || !state.authorized || !state.accountId || !state.symbolId) {
+    throw new Error("cTrader account/symbol is not authorized");
+  }
+  // ProtoOASymbolByIdReq/Res: ask cTrader for the broker's actual
+  // min/max/step volume instead of relying on a hard-coded XAUUSD value.
+  const msg = await request(
+    state.ws,
+    2114,
+    { ctidTraderAccountId: Number(state.accountId), symbolId: Number(state.symbolId) },
+    10000
+  );
+  const symbol = msg?.payload?.symbol || msg?.payload || {};
+  const minVolume = Number(symbol.minVolume);
+  const maxVolume = Number(symbol.maxVolume);
+  const stepVolume = Number(symbol.stepVolume);
+  if (!Number.isFinite(minVolume) || minVolume <= 0 || !Number.isFinite(stepVolume) || stepVolume <= 0) {
+    throw new Error("cTrader XAUUSD volume constraints are unavailable");
+  }
+  return {
+    minVolume,
+    stepVolume,
+    maxVolume: Number.isFinite(maxVolume) && maxVolume > 0 ? maxVolume : null
+  };
 }
 
 async function modifyPositionProtection(positionId, stopLoss, takeProfit = null) {
