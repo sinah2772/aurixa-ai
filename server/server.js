@@ -15,6 +15,7 @@ const {
 
 const signalTracker = require("./signal-tracker");
 const autoTrader = require("./auto-trader");
+const aiTradeEngine = require("./ai-trade-engine");
 const marketEngine = require("./market-engine");
 const { backtest } = require("./validation");
 const openingRangeStrategy = require("./opening-range-strategy");
@@ -45,6 +46,21 @@ autoTrader.configure({
   query: queryDatabase,
   orderflow: analyzeOrderflowV1
 });
+
+function buildAiTradeDecision() {
+  const market = marketEngine.getState()?.prediction || {};
+  const candles = marketEngine.getState()?.candles || [];
+  const of1 = analyzeOrderflowV1(candles);
+  const orFvg = openingRangeStrategy.getPrediction();
+  const ctrader = getCTraderStatus() || {};
+
+  return aiTradeEngine.evaluate({
+    market,
+    of1,
+    orFvg,
+    ctrader
+  });
+}
 
 const PORT = Number(process.env.PORT || 8787);
 
@@ -90,6 +106,60 @@ app.get('/api/strategies/of1', (req, res) => {
       ok: false,
       strategy: 'AURIXA_OF1',
       error: error.message
+    });
+  }
+});
+
+app.get('/api/ai/decision', async (req, res) => {
+  try {
+    const decision = buildAiTradeDecision();
+    const persistence = await aiTradeEngine.persistDecision(
+      queryDatabase,
+      decision
+    );
+
+    res.json({
+      ok: true,
+      ...decision,
+      decisionId: persistence.id,
+      persisted: persistence.persisted,
+      persistenceError: persistence.error || null
+    });
+  } catch (error) {
+    console.error("AURIXA AI decision error:", error);
+    res.status(500).json({
+      ok: false,
+      engine: "AURIXA_AI_DECISION_V1",
+      signal: "WAIT",
+      executionEligible: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/ai/decision/history', async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const result = await queryDatabase(`
+      SELECT id, created_at AS "createdAt", engine, version, symbol, timeframe,
+             signal, confidence, price, spread, buy_score AS "buyScore",
+             sell_score AS "sellScore", agreement, execution_eligible AS "executionEligible",
+             blocked_by AS "blockedBy", decision
+      FROM aurixa.ai_trade_decisions
+      ORDER BY created_at DESC
+      LIMIT $1
+    `, [limit]);
+
+    res.json({
+      ok: true,
+      count: result.rows.length,
+      decisions: result.rows
+    });
+  } catch (error) {
+    console.error("AURIXA AI decision history error:", error);
+    res.status(500).json({
+      ok: false,
+      error: "AI decision history unavailable"
     });
   }
 });
