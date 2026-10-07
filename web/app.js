@@ -670,22 +670,22 @@
     const signal = String(first(data.direction, data.signal, "WAIT")).toUpperCase();
     const confidence = Number(data.confidence);
     const candles = first(data.candleCount, data.candles);
-    text("of1Signal", signal);
-    text("of1Confidence", Number.isFinite(confidence) ? number(confidence, 0) + "%" : "—");
-    text("of1Score", Number.isFinite(Number(data.score)) ? number(data.score, 0) : "—");
-    text("of1Phase", first(data.trend, data.regime, "—"));
-    text("of1Entry", number(first(data.entry, data.entryPrice), 2));
-    text("of1Stop", number(first(data.stopLoss, data.stop), 2));
-    text("of1Target", number(first(data.takeProfit, data.target), 2));
-    text("of1Candles", first(candles, "—"));
+    text("aiSignal", signal);
+    text("aiConfidence", Number.isFinite(confidence) ? number(confidence, 0) + "%" : "—");
+    text("aiScore", Number.isFinite(Number(data.score)) ? number(data.score, 0) : "—");
+    text("aiPhase", first(data.trend, data.regime, "—"));
+    text("aiEntry", number(first(data.entry, data.entryPrice), 2));
+    text("aiStop", number(first(data.stopLoss, data.stop), 2));
+    text("aiTarget", number(first(data.takeProfit, data.target), 2));
+    text("aiCandles", first(candles, "—"));
 
-    const decision = $("of1Decision");
+    const decision = $("aiDecision");
     if (decision) {
       decision.classList.remove("buy", "sell", "wait");
       decision.classList.add(signal === "BUY" || signal === "SELL" ? signal.toLowerCase() : "wait");
       decision.textContent = signal;
     }
-    text("of1Reason", first(data.reason, "Waiting for AURIXA AI Trader V1."));
+    text("aiReason", first(data.reason, "Waiting for AURIXA AI Trader V1."));
   }
 
   function updateFinalTradeGate(marketState, prediction, ai, positions) {
