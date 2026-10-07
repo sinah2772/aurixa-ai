@@ -54,7 +54,7 @@ app.get("/api/ai/decision", async (req,res)=>{
  try{
   const state=marketEngine.getState()||{},ct=getCTraderStatus()||{};
   const decision=aiTraderEngine.decide(state.candles||[],ct),decisionId=await auditAiDecision(decision);
-  res.json({ok:true,...decision,decisionId});
+  res.json({ok:true,decision,...decision,decisionId});
  }catch(e){res.status(500).json({ok:false,signal:"WAIT",executionEligible:false,error:e.message});}
 });
 
