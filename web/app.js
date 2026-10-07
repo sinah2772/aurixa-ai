@@ -521,64 +521,50 @@
     );
   }
 
-  function updateSignal(data) {
-    if (!data) return;
-
-    const s =
-      data.signal ||
-      data.currentSignal ||
-      data.prediction ||
-      data;
-
-    const direction = first(
-      s.direction,
-      s.signal,
-      s.action,
-      data.direction,
-      "WAIT"
-    );
-
-    setSignal(direction);
-
-    text(
-      "confidence",
-      Number.isFinite(Number(first(
-        s.confidence,
-        data.confidence
-      )))
-        ? `${number(first(s.confidence, data.confidence), 0)}%`
-        : "—"
-    );
-
+  function updateSignal(ai) {
+    const data = ai?.decision || ai || {};
+    const signal = String(first(data.signal, data.direction, "WAIT")).toUpperCase();
+    const confidence = Number(data.confidence);
     const gates = data.gates || {};
-    const blocked = Array.isArray(data.blockedBy) ? data.blockedBy : Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
-    const gateLabels = { quoteFresh:"QUOTE FRESHNESS", spreadAllowed:"SPREAD", volatilityAllowed:"VOLATILITY", candleQualityAllowed:"CANDLE QUALITY", trendConfirmed:"TREND", confidenceAllowed:"CONFIDENCE", rewardRiskAllowed:"R:R", cTraderReady:"cTRADER", demoAccount:"DEMO ACCOUNT", quoteReady:"QUOTE" };
-    const readableBlocked = blocked.map(k => gateLabels[k] || k).slice(0,3);
-    const baseReason = first(s.reason,s.marketReason,s.explanation,data.reason);
-    const statusReason = String(data.signal || "WAIT").toUpperCase() === "WAIT"
-      ? (readableBlocked.length ? "Waiting: " + readableBlocked.join(" · ") : (baseReason || "Waiting for stronger confirmation"))
-      : (baseReason || "AI Trader V1 confirmation passed.");
-    text("reason", statusReason);
-    text("aiRegime", "REGIME " + String(first(data.regime, "—")).replaceAll("_"," "));
-    text("aiGate", blocked.length ? "BLOCKED · " + readableBlocked.join(" · ") : "ALL GATES PASSED");
+    const blocked = Array.isArray(data.blockedBy)
+      ? data.blockedBy
+      : Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
+    const labels = {
+      quoteFresh:"QUOTE FRESHNESS", spreadAllowed:"SPREAD", volatilityAllowed:"VOLATILITY",
+      candleQualityAllowed:"CANDLE QUALITY", trendConfirmed:"TREND", confidenceAllowed:"CONFIDENCE",
+      rewardRiskAllowed:"R:R", cTraderReady:"cTRADER", demoAccount:"DEMO ACCOUNT", quoteReady:"QUOTE"
+    };
 
-    text(
-      "signalEntry",
-      number(first(
-        s.entryPrice,
-        s.price,
-        data.entryPrice
-      ), 2)
-    );
+    setSignal(signal);
+    text("confidence", Number.isFinite(confidence) ? number(confidence,0) + "%" : "—");
+    text("aiRegime", String(first(data.regime,"—")).replaceAll("_"," "));
+    text("aiTrend", first(data.trend,"—"));
+    text("aiRsi", Number.isFinite(Number(data.rsi)) ? number(data.rsi,1) : "—");
+    text("aiMomentum", Number.isFinite(Number(data.momentum)) ? number(data.momentum,2) + " ATR" : "—");
 
-    text(
-      "signalTime",
-      formatTime(first(
-        s.timestamp,
-        s.createdAt,
-        data.timestamp
-      ))
-    );
+    const buy = Number(data?.score?.buy);
+    const sell = Number(data?.score?.sell);
+    text("aiScore", Number.isFinite(buy) && Number.isFinite(sell) ? "BUY " + buy + " / SELL " + sell : "—");
+
+    const logic = data.logic || {};
+    text("aiLogicChecks", Number.isFinite(Number(logic.passed))
+      ? String(logic.passed) + "/" + String(first(logic.total,6)) + " PASSED"
+      : "—");
+
+    const failed = blocked.map(k => labels[k] || k).slice(0,4);
+    const logicFailed = Array.isArray(logic.failed) ? logic.failed.join(" · ").toUpperCase() : "";
+    let reason;
+    if (signal === "WAIT") {
+      reason = failed.length
+        ? "WAIT — BLOCKED: " + failed.join(" · ")
+        : (logicFailed ? "WAIT — LOGIC: " + logicFailed : "WAIT — confirmation not complete");
+    } else {
+      reason = "AI " + signal + " — " +
+        (logicFailed ? "logic weak: " + logicFailed : "logic aligned") +
+        (failed.length ? " · blocked: " + failed.join(" · ") : " · all execution gates passed");
+    }
+    text("reason", reason);
+    text("aiGate", failed.length ? "BLOCKED · " + failed.join(" · ") : "ALL GATES PASSED");
   }
 
   function updateCommandCenter(signal, autoStatus, ctrader) {
