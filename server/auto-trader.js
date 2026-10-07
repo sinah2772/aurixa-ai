@@ -59,26 +59,7 @@ async function executeAiDecision(decision, decisionId=null){
  const account=await cTrader.getAccountBalance?.();const balance=Number(account?.balance);if(!Number.isFinite(balance)||balance<=0)return reject("INVALID_ACCOUNT_BALANCE");
  const riskAmount=balance*cfg.riskPercent/100,volume=Math.min(cfg.maxVolume,Math.floor((riskAmount/riskDistance)/100)*100);if(volume<100)return reject("RISK_BUDGET_TOO_SMALL_FOR_VOLUME_STEP",{riskAmount,riskDistance});
  let result;try{result=await cTrader.placeDemoMarketOrder({direction:decision.signal,volume,stopLossDistance:riskDistance,takeProfitDistance:targetDistance});}catch(e){return reject("CTRADER_ORDER_REJECTED",{error:e.message});}
- if(typeof dbQuery==="function")try{await dbQuery(`INSERT INTO aurixa.auto_trades(decision_id,strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,order_id,position_id,client_msg_id,volume,stop_loss_distance,take_profit_distance,status,opened_at,execution_entry_price,gate_reason,risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price) VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,$5,$6,$6,$7,$8,$9,$10,CASE WHEN $10 IN ('OPEN','PARTIAL') THEN NOW() ELSE NULL END,$11,'PASSED',$12,$13,$14,$15,$16) ON CONFLICT(strategy_signal_key) DO UPDATE SET order_id=EXCLUDED.order_id,position_id=EXCLUDED.position_id,status=EXCLUDED.status,execution_entry_price=EXCLUDED.execution_entry_price`,[decisionId,key,decision.signal,decision.entry,result.orderId||null,result.positionId||null,result.clientMsgId||null,volume,riskDistance,targetDistance,result.status||"SUBMITTED",result.executionPrice||entry,cfg.riskPercent,riskAmount,entry,stop,target]);}catch(e){console.error("AI trade record failed:",e.message);}
- return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:stop,plannedTakeProfitPrice:target,...result};
-}
-
-async function dryRunOrderflow(){
- const candles=cTrader?.getMarketCandles?.()||[],st=cTrader?.getCTraderStatus?.()||{};
- const decision=aiEngine?.decide(candles,st)||null;
- return {dryRun:true,wouldExecute:Boolean(decision?.executionEligible),orderSubmitted:false,strategy:"AURIXA_AI_TRADER_V1",decision,reason:decision?.executionEligible?"AI_SIGNAL_READY_NO_ORDER_SUBMITTED":"AI_WAIT_OR_BLOCKED"};
-}
-
-async function init(){
- if(typeof dbQuery!=="function")return false;
- await dbQuery("CREATE SCHEMA IF NOT EXISTS aurixa");
- await dbQuery(`CREATE TABLE IF NOT EXISTS aurixa.auto_trades(
- id BIGSERIAL PRIMARY KEY,decision_id BIGINT NULL,signal_id BIGINT NULL UNIQUE REFERENCES aurixa.signals(id) ON DELETE CASCADE,
- strategy TEXT NOT NULL DEFAULT 'AURIXA_AI_TRADER_V1',strategy_signal_key TEXT UNIQUE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
- symbol TEXT NOT NULL DEFAULT 'XAUUSD',timeframe TEXT NOT NULL DEFAULT '5m',direction TEXT NOT NULL CHECK(direction IN ('BUY','SELL')),
- signal_entry_price NUMERIC(18,5),execution_entry_price NUMERIC(18,5),order_id TEXT,position_id TEXT,client_msg_id TEXT,volume BIGINT NOT NULL DEFAULT 0,
- stop_loss_distance NUMERIC(18,5) NOT NULL DEFAULT 0,take_profit_distance NUMERIC(18,5),planned_entry_price NUMERIC(18,5),planned_stop_price NUMERIC(18,5),planned_take_profit_price NUMERIC(18,5),
- risk_percent NUMERIC(8,4),risk_amount NUMERIC(18,5),gate_reason TEXT,status TEXT NOT NULL DEFAULT 'SUBMITTED',opened_at TIMESTAMPTZ,closed_at TIMESTAMPTZ,close_price NUMERIC(18,5),profit NUMERIC(18,5),error TEXT,partial_taken BOOLEAN NOT NULL DEFAULT false,breakeven_applied BOOLEAN NOT NULL DEFAULT false,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),exit_reason TEXT`);
+ if(typeof dbQuery==="function")try{await dbQuery(`INSERT INTO aurixa.auto_trades(decision_id,strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,order_id,position_id,client_msg_id,volume,stop_loss_distance,take_profit_distance,status,opened_at,execution_entry_price,gate_reason,risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price) VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $11 IN ('OPEN','PARTIAL') THEN NOW() ELSE NULL END,$12,'PASSED',$13,$14,$15,$16,$17) ON CONFLICT(strategy_signal_key) DO UPDATE SET decision_id=EXCLUDED.decision_id,order_id=EXCLUDED.order_id,position_id=EXCLUDED.position_id,status=EXCLUDED.status,execution_entry_price=EXCLUDED.execution_entry_price`);
  await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS decision_id BIGINT");
  await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
  await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT");
