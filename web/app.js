@@ -720,6 +720,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       aiDecision,
       aiHistory,
       aiSignals,
+      autoTrades,
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
@@ -728,7 +729,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       getJSON(API.autoPositions),
       getJSON(API.aiDecision),
       getJSON(API.aiHistory + "?limit=20"),
-      getJSON(API.aiSignals + "?limit=100")
+      getJSON(API.aiSignals + "?limit=100"),
+      getJSON(API.autoTrades)
     ]);
 
     const mergedMarket = {
