@@ -2105,13 +2105,6 @@ async function placeDemoMarketOrder({
     throw new Error("Invalid cTrader volume");
   }
 
-  if (
-    !Number.isFinite(Number(stopLossDistance)) ||
-    Number(stopLossDistance) <= 0
-  ) {
-    throw new Error("A positive stop-loss distance is required");
-  }
-
   const openPositions = await getOpenXAUUSDPositions();
 
   if (openPositions.length >= 1) {
@@ -2179,7 +2172,7 @@ async function placeDemoMarketOrder({
   const executionType = Number(responsePayload.executionType);
 
   return {
-    status: executionType === 4 ? "PARTIAL" : "OPEN",
+    status: executionType === 11 ? "PARTIAL" : "OPEN",
     clientMsgId: response?.clientMsgId || null,
     orderId,
     positionId,
