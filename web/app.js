@@ -88,167 +88,6 @@
     if (el) el.textContent = value ?? "—";
   }
 
-  // =========================================================
-  // SIGNAL ALERTS
-  // Browser notification + sound + vibration.
-  // Alerts are for NEW signals only; they do not mean a trade was opened.
-  // =========================================================
-  let alertInitialized = false;
-  let lastAlertKey = null;
-
-  function signalAlertKey(signal) {
-    const s = signal || {};
-    const direction = String(first(s.direction, s.signal, "WAIT")).toUpperCase();
-    if (direction !== "BUY" && direction !== "SELL") return null;
-
-    const candleTime = first(
-      s.candleTime,
-      s.candle_time,
-      s.timestamp,
-      s.createdAt,
-      s.created_at,
-      s.time
-    );
-
-    const entry = first(s.entryPrice, s.entry, s.price);
-    return direction + "|" + String(candleTime || entry || "");
-  }
-
-  function playSignalAlert(direction) {
-    try {
-      if (navigator.vibrate) navigator.vibrate([180, 90, 180]);
-    } catch (_) {}
-
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = "sine";
-      osc.frequency.value = direction === "BUY" ? 880 : 520;
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.4);
-      osc.addEventListener("ended", () => ctx.close());
-    } catch (_) {}
-  }
-
-  function showSignalAlert(signal) {
-    const s = signal || {};
-    const direction = String(first(s.direction, s.signal, "WAIT")).toUpperCase();
-    if (direction !== "BUY" && direction !== "SELL") return;
-
-    const confidence = Number(first(s.confidence));
-    const entry = first(s.entryPrice, s.entry, s.price);
-    const score = first(s.score);
-
-    const title = "AURIXA AI SIGNAL · " + direction;
-    const body = [
-      "XAUUSD · OF1",
-      Number.isFinite(confidence) ? "Confidence " + number(confidence, 0) + "%" : null,
-      entry !== null ? "Entry " + number(entry, 2) : null,
-      score !== null ? "Score " + number(score, 1) : null,
-      "Signal only — trade not guaranteed"
-    ].filter(Boolean).join(" · ");
-
-    playSignalAlert(direction);
-
-    if ("Notification" in window && Notification.permission === "granted") {
-      try {
-        const n = new Notification(title, {
-          body,
-          tag: "aurixa-" + signalAlertKey(s),
-          renotify: true
-        });
-        setTimeout(() => n.close(), 10000);
-      } catch (_) {}
-    }
-
-    const banner = $("signalAlert");
-    if (banner) {
-      banner.textContent = title + " — " + body;
-      banner.classList.remove("buy", "sell", "show");
-      banner.classList.add(direction.toLowerCase(), "show");
-      window.clearTimeout(window.__aurixaAlertTimer);
-      window.__aurixaAlertTimer = window.setTimeout(() => {
-        banner.classList.remove("show");
-      }, 12000);
-    }
-  }
-
-  async function enableSignalAlerts() {
-    if (!("Notification" in window)) {
-      text("alertStatus", "Notifications not supported");
-      return;
-    }
-
-    try {
-      const permission = await Notification.requestPermission();
-      text(
-        "alertStatus",
-        permission === "granted"
-          ? "Alerts enabled"
-          : "Alerts blocked"
-      );
-    } catch (_) {
-      text("alertStatus", "Alert permission unavailable");
-    }
-  }
-
-  function checkForNewSignal(signal) {
-    const key = signalAlertKey(signal);
-    if (!key) return;
-
-    if (!alertInitialized) {
-      lastAlertKey = key;
-      alertInitialized = true;
-      return;
-    }
-
-    if (key !== lastAlertKey) {
-      lastAlertKey = key;
-      showSignalAlert(signal);
-    }
-  }
-
-  function setSignal(signal) {
-    const value = String(signal || "WAIT").toUpperCase();
-
-    const el = $("signal");
-    if (el) {
-      el.textContent = value;
-      el.classList.remove("buy", "sell", "wait");
-
-      if (value === "BUY") el.classList.add("buy");
-      else if (value === "SELL") el.classList.add("sell");
-      else el.classList.add("wait");
-    }
-
-    // Keep the three direction indicators synchronized with the
-    // single active signal. They are status indicators, not
-    // simultaneous signals.
-    ["buyIndicator", "waitIndicator", "sellIndicator"].forEach((id) => {
-      const option = $(id);
-      if (option) option.classList.remove("active");
-    });
-
-    const activeId =
-      value === "BUY" ? "buyIndicator" :
-      value === "SELL" ? "sellIndicator" :
-      "waitIndicator";
-
-    const active = $(activeId);
-    if (active) active.classList.add("active");
-  }
-
   function updateConnection(status) {
     if (!status) return;
 
@@ -567,33 +406,6 @@
     text("aiGate", failed.length ? "BLOCKED · " + failed.join(" · ") : "ALL GATES PASSED");
   }
 
-  function updateCommandCenter(signal, autoStatus, ctrader) {
-    const s = signal || {};
-    const direction = String(first(s.direction, s.signal, "WAIT")).toUpperCase();
-    const confidence = first(s.confidence);
-    text("dashSignal", direction);
-    text("dashConfidence", confidence === undefined || confidence === null ? "—" : String(number(confidence, 0)) + "%");
-
-    if (autoStatus) {
-      const enabled = autoStatus.enabled === true;
-      const demo = autoStatus.demoOnly === true && autoStatus.demoAccount === true;
-      const connected = autoStatus.connected === true && autoStatus.authorized === true;
-      const state = autoStatus.blocked === true ? "BLOCKED" : (enabled && demo && connected ? "READY" : (enabled ? "WAITING" : "OFF"));
-      text("dashAutoStatus", state);
-      text("dashAutoMode", demo ? "DEMO ONLY" : "GUARDED");
-      text("dashRisk", autoStatus.blocked === true ? "BLOCKED" : "ACTIVE");
-      text("dashRiskDetail", "MAX " + String(first(autoStatus.maxPositions, 1)) + " POSITION");
-    }
-
-    if (ctrader) {
-      const connected = ctrader.connected === true && ctrader.authorized === true;
-      text("dashConnection", connected ? "CONNECTED" : "OFFLINE");
-      text("dashAccount", first(ctrader.accountId, "—"));
-    }
-
-    text("dashRefresh", new Date().toLocaleTimeString());
-  }
-
   function updateMarketSession(market, ctrader) {
     const state = market || {};
     const status = String(
@@ -645,30 +457,6 @@
     }
   }
 
-  function updateOrderflow(ai) {
-    const data = ai?.decision || ai || {};
-    const signal = String(first(data.direction, data.signal, "WAIT")).toUpperCase();
-    const confidence = Number(data.confidence);
-    const candles = first(data.candleCount, data.candles);
-    text("aiSignal", signal);
-    text("aiConfidence", Number.isFinite(confidence) ? number(confidence, 0) + "%" : "—");
-    const buyScore = Number(data?.score?.buy), sellScore = Number(data?.score?.sell);
-    text("aiScore", Number.isFinite(buyScore) && Number.isFinite(sellScore) ? "BUY " + buyScore + " / SELL " + sellScore : "—");
-    text("aiPhase", first(data.trend, data.regime, "—"));
-    text("aiEntry", number(first(data.entry, data.entryPrice), 2));
-    text("aiStop", number(first(data.stopLoss, data.stop), 2));
-    text("aiTarget", number(first(data.takeProfit, data.target), 2));
-    text("aiCandles", first(candles, "—"));
-
-    const decision = $("aiDecision");
-    if (decision) {
-      decision.classList.remove("buy", "sell", "wait");
-      decision.classList.add(signal === "BUY" || signal === "SELL" ? signal.toLowerCase() : "wait");
-      decision.textContent = signal;
-    }
-    text("aiReason", first(data.reason, "Waiting for AURIXA AI Trader V1."));
-  }
-
   function updateFinalTradeGate(marketState, prediction, ai, positions) {
     const data = ai?.decision || ai || {};
     const gates = data.gates || {};
@@ -680,7 +468,7 @@
     text("gateMarket", gates.dataReady === false ? "NO DATA" : (gates.spreadAllowed === false ? "SPREAD BLOCKED" : "READY"));
     text("gateSignal", direction);
     const failedGates = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
-    text("gateFvg", failedGates.length ? "BLOCKED · " + failedGates.slice(0,2).join(" / ").toUpperCase() : "PASSED");
+    text("gateQuality", failedGates.length ? "BLOCKED · " + failedGates.slice(0,2).join(" / ").toUpperCase() : "PASSED");
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
     text("gateEntry", number(first(data.entry, data.entryPrice), 2));
     text("gateSL", number(first(data.stopLoss, data.stop), 2));
@@ -866,7 +654,6 @@ async function refresh() {
     const liveAi = aiDecision?.decision || aiDecision?.result || aiDecision || {};
     updateSignal(liveAi);
     updateAutoTrader(autoStatus, autoPositions, autoTrades);
-    updateOrderflow(liveAi);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
