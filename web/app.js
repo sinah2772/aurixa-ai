@@ -27,8 +27,8 @@
     autoStatus: "/api/auto-trader/status",
     autoPositions: "/api/auto-trader/positions",
     autoTrades: "/api/auto-trader/trades",
-    openingRange: "/api/strategies/or-fvg",
-    orderflow: "/api/strategies/of1",
+    aiDecision: "/api/ai/decision",
+    aiHistory: "/api/ai/decision/history",
     marketHistory: "/api/market/history?limit=300"
   };
 
@@ -665,21 +665,18 @@
     }
   }
 
-  function updateOrderflow(of1) {
-    const data = of1?.result || of1 || {};
-    const signal = String(first(data.signal, data.direction, "WAIT")).toUpperCase();
-    const phase = String(first(data.phase, "WAIT")).toUpperCase();
-    const score = Number(data.score);
+  function updateOrderflow(ai) {
+    const data = ai?.decision || ai || {};
+    const signal = String(first(data.direction, data.signal, "WAIT")).toUpperCase();
     const confidence = Number(data.confidence);
-    const candles = first(data.candleCount, data.candles, data.bars);
-
+    const candles = first(data.candleCount, data.candles);
     text("of1Signal", signal);
     text("of1Confidence", Number.isFinite(confidence) ? number(confidence, 0) + "%" : "—");
-    text("of1Score", Number.isFinite(score) ? number(score, 0) : "—");
-    text("of1Phase", phase.replaceAll("_", " "));
+    text("of1Score", Number.isFinite(Number(data.score)) ? number(data.score, 0) : "—");
+    text("of1Phase", first(data.trend, data.regime, "—"));
     text("of1Entry", number(first(data.entry, data.entryPrice), 2));
-    text("of1Stop", number(first(data.stop, data.stopLoss, data.stopLossPrice), 2));
-    text("of1Target", number(first(data.target, data.takeProfit, data.takeProfitPrice), 2));
+    text("of1Stop", number(first(data.stopLoss, data.stop), 2));
+    text("of1Target", number(first(data.takeProfit, data.target), 2));
     text("of1Candles", first(candles, "—"));
 
     const decision = $("of1Decision");
@@ -688,46 +685,39 @@
       decision.classList.add(signal === "BUY" || signal === "SELL" ? signal.toLowerCase() : "wait");
       decision.textContent = signal;
     }
-
-    let reason = first(data.reason, "Waiting for OF1 confirmation.");
-    if (signal !== "WAIT" && Number.isFinite(score) && Number.isFinite(confidence)) {
-      reason = signal + " OF1 · score " + number(score, 0) + " · confidence " + number(confidence, 0) + "%";
-    }
-    text("of1Reason", reason);
+    text("of1Reason", first(data.reason, "Waiting for AURIXA AI Trader V1."));
   }
 
-  function updateFinalTradeGate(marketState, prediction, orFvg, of1, positions) {
-    const marketOpen = String(first(marketState?.marketStatus, "")).toUpperCase() === "MARKET_OPEN";
-    const of1Signal = String(first(of1?.signal, of1?.direction, "WAIT")).toUpperCase();
-    const of1Score = Number(of1?.score);
-    const of1Confidence = Number(of1?.confidence);
-    const of1Confirmed = (of1Signal === "BUY" || of1Signal === "SELL") &&
-      of1Score >= 8 &&
-      of1Confidence >= 75;
+  function updateFinalTradeGate(marketState, prediction, ai, positions) {
+    const data = ai?.decision || ai || {};
+    const gates = data.gates || {};
+    const direction = String(first(data.direction, data.signal, "WAIT")).toUpperCase();
+    const eligible = data.executionEligible === true;
     const hasPosition = Number(first(positions?.count, 0)) > 0;
-    const ready = marketOpen && of1Confirmed && !hasPosition;
+    const ready = eligible && !hasPosition;
 
-    text("gateMarket", marketOpen ? "OPEN" : "BLOCKED");
-    text("gateSignal", of1Signal);
-    text("gateFvg", of1Confirmed ? "OF1 CONFIRMED" : "OF1 WAIT");
+    text("gateMarket", gates.dataReady === false ? "NO DATA" : (gates.spreadAllowed === false ? "SPREAD BLOCKED" : "READY"));
+    text("gateSignal", direction);
+    text("gateFvg", Number.isFinite(Number(data.confidence)) ? number(data.confidence, 0) + "% CONF" : "WAIT");
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
-    text("gateEntry", number(first(of1?.entry, of1?.price), 2));
-    text("gateSL", number(first(of1?.stop, of1?.stopLoss), 2));
-    text("gateTP", number(first(of1?.target, of1?.takeProfit), 2));
-    text("gateRR", "OF1 " + (of1?.risk && of1?.target ? number(Math.abs((Number(of1.target) - Number(of1.entry)) / (Number(of1.entry) - Number(of1.stop))), 1) + "R" : "PLAN"));
+    text("gateEntry", number(first(data.entry, data.entryPrice), 2));
+    text("gateSL", number(first(data.stopLoss, data.stop), 2));
+    text("gateTP", number(first(data.takeProfit, data.target), 2));
+    text("gateRR", Number.isFinite(Number(data.riskReward)) ? number(data.riskReward, 1) + "R" : "—");
 
     const decision = $("gateDecision");
     if (decision) {
       decision.classList.remove("buy", "sell", "wait");
-      decision.classList.add(ready ? of1Signal.toLowerCase() : "wait");
-      decision.textContent = ready ? "TRADE " + of1Signal : "WAIT";
+      decision.classList.add(ready && (direction === "BUY" || direction === "SELL") ? direction.toLowerCase() : "wait");
+      decision.textContent = ready ? "TRADE " + direction : "WAIT";
     }
 
-    let reason = "Waiting for OF1 confirmation.";
-    if (!marketOpen) reason = "Market/feed is not open. No trade.";
-    else if (hasPosition) reason = "One XAUUSD position is already open.";
-    else if (!of1Confirmed) reason = "OF1 requires direction, score ≥ 8 and confidence ≥ 75%.";
-    else if (ready) reason = of1Signal + " confirmed by OrderFlow OF1.";
+    let reason = first(data.reason, "Waiting for AI Trader decision.");
+    if (hasPosition) reason = "One XAUUSD position is already open.";
+    else if (!eligible) {
+      const failed = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
+      reason = failed.length ? "Blocked: " + failed.join(", ") : reason;
+    } else if (ready) reason = direction + " approved by AURIXA AI Trader V1.";
     text("gateReason", reason);
   }
 
@@ -740,7 +730,7 @@
     const state = blocked ? "BLOCKED" : (enabled && demo && connected ? "READY" : (enabled ? "WAITING" : "OFF"));
 
     text("autoTradeStatus", state);
-    text("autoTradeMode", demo ? "DEMO ONLY · OF1" : "GUARDED · OF1");
+    text("autoTradeMode", demo ? "DEMO ONLY · AI V1" : "GUARDED · AI V1");
     text("autoTradePosition", positions?.count ? "OPEN" : "FLAT");
 
     const rows = Array.isArray(trades?.trades) ? trades.trades : [];
@@ -1216,8 +1206,8 @@ async function refresh() {
       autoStatus,
       autoPositions,
       autoTrades,
-      openingRange,
-      orderflow
+      aiDecision,
+      aiHistory
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
@@ -1230,8 +1220,8 @@ async function refresh() {
       getJSON(API.autoStatus),
       getJSON(API.autoPositions),
       getJSON(API.autoTrades),
-      getJSON(API.openingRange),
-      getJSON(API.orderflow)
+      getJSON(API.aiDecision),
+      getJSON(API.aiHistory)
     ]);
 
     const mergedMarket = {
@@ -1287,9 +1277,9 @@ async function refresh() {
 
     updateCommandCenter(livePrediction, autoStatus, ctrader);
     updateAutoTrader(autoStatus, autoPositions, autoTrades);
-    const liveOrderflow = orderflow?.result || orderflow || {};
-    updateOrderflow(liveOrderflow);
-    updateFinalTradeGate(mergedMarket, livePrediction, openingRange?.result || openingRange, liveOrderflow, autoPositions);
+    const liveAi = aiDecision?.decision || aiDecision?.result || aiDecision || {};
+    updateOrderflow(liveAi);
+    updateFinalTradeGate(mergedMarket, livePrediction, liveAi, autoPositions);
 
     const system = await getJSON(API.system);
 
