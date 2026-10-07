@@ -27,7 +27,7 @@ function rsi(v,p=14){
   for(let i=v.length-p;i<v.length;i++){const d=v[i]-v[i-1];if(d>=0)g+=d;else l-=d;}
   if(l===0)return 100;return 100-(100/(1+(g/p)/(l/p)));
 }
-function wait(reason,extra={}){return {engine:"AURIXA_AI_TRADER_V1",version:"1.0.0",symbol:"XAUUSD",timeframe:"M5",signal:"WAIT",confidence:0,executionEligible:false,blockedBy:[reason],reasons:[reason],...extra,generatedAt:new Date().toISOString()};}
+function wait(reason,extra={}){return {engine:"AURIXA_AI_TRADER_V1",version:"1.2.0",symbol:"XAUUSD",timeframe:"M5",signal:"WAIT",confidence:0,executionEligible:false,blockedBy:[reason],reasons:[reason],...extra,generatedAt:new Date().toISOString()};}
 
 function decide(candles,quote={}){
   const clean=Array.isArray(candles)?candles.filter(c=>c&&[c.open,c.high,c.low,c.close].every(v=>n(v)!==null)).slice(-300):[];
@@ -49,7 +49,11 @@ function decide(candles,quote={}){
   const momentum=(last-prev)/(a||1); if(momentum>0.25)buy++; if(momentum<-0.25)sell++;
   if(trendUp)buy++; if(trendDown)sell++;
   const side=buy>sell?"BUY":sell>buy?"SELL":"WAIT",total=buy+sell,agreement=total?Math.max(buy,sell)/total:0;
-  const confidence=clamp(Math.round(45+agreement*32+Math.min(12,Math.abs(momentum)*6)+Math.min(8,trendStrength*3)),0,95);
+  const scoreGap=Math.abs(buy-sell);
+  const logicChecks={trend:trendUp||trendDown,momentum:Math.abs(momentum)>=0.25,rsiAlignment:(side==="BUY"&&r>=52&&r<=72)||(side==="SELL"&&r>=28&&r<=48),emaAlignment:(side==="BUY"&&e9>e21&&e21>e50)||(side==="SELL"&&e9<e21&&e21<e50),candleQuality:candleQualityAllowed,volatility:volatilityAllowed};
+  const passedLogic=Object.values(logicChecks).filter(Boolean).length;
+  const failedLogic=Object.entries(logicChecks).filter(([,v])=>!v).map(([k])=>k);
+  const confidence=clamp(Math.round(40+(passedLogic/6)*35+(scoreGap/6)*15+Math.min(10,trendStrength*3)),0,95);
   const bid=n(quote.bid),ask=n(quote.ask),spread=bid!==null&&ask!==null&&ask>=bid?ask-bid:null,entry=side==="BUY"?ask:side==="SELL"?bid:last;
   const swingHigh=Math.max(...recent.map(c=>n(c.high))),swingLow=Math.min(...recent.map(c=>n(c.low)));
   const swingRisk=side==="BUY"?Math.max(0,last-swingLow):side==="SELL"?Math.max(0,swingHigh-last):a*1.2;
@@ -58,6 +62,6 @@ function decide(candles,quote={}){
   const lastUpdate=quote.lastUpdate?Date.parse(quote.lastUpdate):NaN,quoteFresh=Number.isFinite(lastUpdate)&&Date.now()-lastUpdate<=30000;
   const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=Number(process.env.AI_MAX_SPREAD||0.60),volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
   const blockedBy=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k),signal=side!=="WAIT"&&blockedBy.length===0?side:"WAIT";
-  return {engine:"AURIXA_AI_TRADER_V1",version:"1.1.0",symbol:"XAUUSD",timeframe:"M5",signal,confidence,price:last,entry,stopLoss:stop,takeProfit:target,rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell},agreement:Number(agreement.toFixed(3)),trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,gates,blockedBy,executionEligible:signal!=="WAIT",reasons,candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
+  return {engine:"AURIXA_AI_TRADER_V1",version:"1.2.0",symbol:"XAUUSD",timeframe:"M5",signal,confidence,price:last,entry,stopLoss:stop,takeProfit:target,rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
 module.exports={decide,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
