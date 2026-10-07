@@ -725,17 +725,22 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }
     body.innerHTML = closed.map(t => {
       const direction = String(t.direction || "").toUpperCase();
-      const entry = Number(t.executionEntryPrice ?? t.plannedEntryPrice);
-      const exit = Number(t.closePrice);
-      const pnl = Number(t.profit);
-      const result = Number.isFinite(pnl) ? (pnl > 0 ? "PROFIT" : pnl < 0 ? "LOSS" : "BREAKEVEN") : "CLOSED";
+      const toNumber = value => {
+        if (value === null || value === undefined || value === "") return null;
+        const n = Number(value);
+        return Number.isFinite(n) ? n : null;
+      };
+      const entry = toNumber(first(t.executionEntryPrice, t.plannedEntryPrice));
+      const exit = toNumber(t.closePrice);
+      const pnl = toNumber(t.profit);
+      const result = pnl === null ? "CLOSED" : (pnl > 0 ? "PROFIT" : pnl < 0 ? "LOSS" : "BREAKEVEN");
       const cls = result === "PROFIT" ? "history-buy" : result === "LOSS" ? "history-sell" : "";
       const opened = formatTime(t.openedAt || t.createdAt);
       const closedAt = formatTime(t.closedAt);
       return '<div class="confirmed-signal-row">' +
         '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML(direction || "TRADE") + '</strong>' +
-        '<span>' + escapeHTML((Number.isFinite(entry) ? number(entry, 2) : "—") + " → " + (Number.isFinite(exit) ? number(exit, 2) : "—")) + '</span>' +
-        '<span class="' + cls + '">' + escapeHTML(Number.isFinite(pnl) ? (pnl > 0 ? "+" : "") + number(pnl, 2) : "—") + '</span>' +
+        '<span>' + escapeHTML((entry !== null ? number(entry, 2) : "—") + " → " + (exit !== null ? number(exit, 2) : "—")) + '</span>' +
+        '<span class="' + cls + '">' + escapeHTML(pnl !== null ? (pnl > 0 ? "+" : "") + number(pnl, 2) : "—") + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(result + " · " + closedAt) + '</span>' +
         '</div>';
     }).join("");
