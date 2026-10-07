@@ -25,11 +25,11 @@ function getStatus(){
  return {enabled:cfg.enabled,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,riskPercent:cfg.riskPercent,maxSpread:cfg.maxSpread,maxTradesPerDay:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:String(ct.symbolName||ct.symbol||"").toUpperCase()};
 }
 
-async function executeAiDecision(decision){
+async function executeAiDecision(decision, decisionId=null){
  const cfg=config();
  const reject=async(reason,extra={})=>{
    if(typeof dbQuery==="function")try{await dbQuery(`INSERT INTO aurixa.auto_trades(strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,volume,status,gate_reason,error) VALUES ('AURIXA_AI_TRADER_V1',$1,'XAUUSD','5m',$2,$3,0,'REJECTED',$4,$5) ON CONFLICT(strategy_signal_key) DO UPDATE SET status='REJECTED',gate_reason=EXCLUDED.gate_reason,error=EXCLUDED.error`,[key,decision?.signal||"BUY",decision?.entry||null,reason,extra.error||null]);}catch(e){console.error("AI trade audit failed:",e.message);}
-   return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId:null,signal:decision?.signal||null,reason,...extra};
+   return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision?.signal||null,reason,...extra};
  };
  const key=`AURIXA_AI:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
  if(!cfg.enabled)return reject("AUTO_TRADING_DISABLED");
@@ -51,7 +51,7 @@ async function executeAiDecision(decision){
  const rr=targetDistance/riskDistance;if(!Number.isFinite(rr)||rr<1.5)return reject("REWARD_RISK_TOO_LOW",{rr});
  const positions=await cTrader.getOpenXAUUSDPositions();if(positions.length>=1)return reject("XAUUSD_POSITION_ALREADY_OPEN",{openPositions:positions.length});
  if(typeof dbQuery==="function"){
-   const dup=await dbQuery("SELECT id FROM aurixa.auto_trades WHERE strategy_signal_key=$1 LIMIT 1",[key]);if(dup.rows.length)return {executed:false,strategy:"AURIXA_AI_TRADER_V1",reason:"AI_SIGNAL_ALREADY_GATED",strategySignalKey:key};
+   const dup=await dbQuery("SELECT id FROM aurixa.auto_trades WHERE strategy_signal_key=$1 LIMIT 1",[key]);if(dup.rows.length)return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,reason:"AI_SIGNAL_ALREADY_GATED",strategySignalKey:key};
    const lim=await dbQuery(`SELECT COUNT(*) FILTER(WHERE created_at>=CURRENT_DATE AND status IN ('OPEN','PARTIAL','CLOSED','SUBMITTED'))::int today,MAX(created_at) FILTER(WHERE status IN ('OPEN','PARTIAL','CLOSED','SUBMITTED')) last_trade FROM aurixa.auto_trades`);
    if(Number(lim.rows[0]?.today||0)>=cfg.maxTradesPerDay)return reject("MAX_DAILY_TRADES_REACHED");
    if(lim.rows[0]?.last_trade&&Date.now()-new Date(lim.rows[0].last_trade).getTime()<cfg.cooldownMinutes*60000)return reject("TRADE_COOLDOWN_ACTIVE");
@@ -60,7 +60,7 @@ async function executeAiDecision(decision){
  const riskAmount=balance*cfg.riskPercent/100,volume=Math.min(cfg.maxVolume,Math.floor((riskAmount/riskDistance)/100)*100);if(volume<100)return reject("RISK_BUDGET_TOO_SMALL_FOR_VOLUME_STEP",{riskAmount,riskDistance});
  let result;try{result=await cTrader.placeDemoMarketOrder({direction:decision.signal,volume,stopLossDistance:riskDistance,takeProfitDistance:targetDistance});}catch(e){return reject("CTRADER_ORDER_REJECTED",{error:e.message});}
  if(typeof dbQuery==="function")try{await dbQuery(`INSERT INTO aurixa.auto_trades(strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,order_id,position_id,client_msg_id,volume,stop_loss_distance,take_profit_distance,status,opened_at,execution_entry_price,gate_reason,risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price) VALUES ('AURIXA_AI_TRADER_V1',$1,'XAUUSD','5m',$2,$3,$4,$5,$6,$7,$8,$9,$10,CASE WHEN $10 IN ('OPEN','PARTIAL') THEN NOW() ELSE NULL END,$11,'PASSED',$12,$13,$14,$15,$16) ON CONFLICT(strategy_signal_key) DO UPDATE SET order_id=EXCLUDED.order_id,position_id=EXCLUDED.position_id,status=EXCLUDED.status,execution_entry_price=EXCLUDED.execution_entry_price`,[key,decision.signal,decision.entry,result.orderId||null,result.positionId||null,result.clientMsgId||null,volume,riskDistance,targetDistance,result.status||"SUBMITTED",result.executionPrice||entry,cfg.riskPercent,riskAmount,entry,stop,target]);}catch(e){console.error("AI trade record failed:",e.message);}
- return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:stop,plannedTakeProfitPrice:target,...result};
+ return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:stop,plannedTakeProfitPrice:target,...result};
 }
 
 async function dryRunOrderflow(){
@@ -73,12 +73,33 @@ async function init(){
  if(typeof dbQuery!=="function")return false;
  await dbQuery("CREATE SCHEMA IF NOT EXISTS aurixa");
  await dbQuery(`CREATE TABLE IF NOT EXISTS aurixa.auto_trades(
- id BIGSERIAL PRIMARY KEY,signal_id BIGINT NULL UNIQUE REFERENCES aurixa.signals(id) ON DELETE CASCADE,
+ id BIGSERIAL PRIMARY KEY,decision_id BIGINT NULL,signal_id BIGINT NULL UNIQUE REFERENCES aurixa.signals(id) ON DELETE CASCADE,
  strategy TEXT NOT NULL DEFAULT 'AURIXA_AI_TRADER_V1',strategy_signal_key TEXT UNIQUE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  symbol TEXT NOT NULL DEFAULT 'XAUUSD',timeframe TEXT NOT NULL DEFAULT '5m',direction TEXT NOT NULL CHECK(direction IN ('BUY','SELL')),
  signal_entry_price NUMERIC(18,5),execution_entry_price NUMERIC(18,5),order_id TEXT,position_id TEXT,client_msg_id TEXT,volume BIGINT NOT NULL DEFAULT 0,
  stop_loss_distance NUMERIC(18,5) NOT NULL DEFAULT 0,take_profit_distance NUMERIC(18,5),planned_entry_price NUMERIC(18,5),planned_stop_price NUMERIC(18,5),planned_take_profit_price NUMERIC(18,5),
- risk_percent NUMERIC(8,4),risk_amount NUMERIC(18,5),gate_reason TEXT,status TEXT NOT NULL DEFAULT 'SUBMITTED',opened_at TIMESTAMPTZ,closed_at TIMESTAMPTZ,close_price NUMERIC(18,5),profit NUMERIC(18,5),error TEXT,partial_taken BOOLEAN NOT NULL DEFAULT false,breakeven_applied BOOLEAN NOT NULL DEFAULT false)`);
+ risk_percent NUMERIC(8,4),risk_amount NUMERIC(18,5),gate_reason TEXT,status TEXT NOT NULL DEFAULT 'SUBMITTED',opened_at TIMESTAMPTZ,closed_at TIMESTAMPTZ,close_price NUMERIC(18,5),profit NUMERIC(18,5),error TEXT,partial_taken BOOLEAN NOT NULL DEFAULT false,breakeven_applied BOOLEAN NOT NULL DEFAULT false,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),exit_reason TEXT`);
+ await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS decision_id BIGINT");
+ await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+ await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT");
  return true;
 }
-module.exports={configure,getStatus,executeAiDecision,dryRunOrderflow,init};
+async function syncOpenPositions(){
+ if(typeof dbQuery!=="function"||!cTrader?.getOpenXAUUSDPositions)return {updated:0,closed:0,protected:0};
+ const cfg=config(),positions=await cTrader.getOpenXAUUSDPositions(),open=await dbQuery("SELECT * FROM aurixa.auto_trades WHERE status IN ('OPEN','PARTIAL') ORDER BY created_at DESC LIMIT 50");
+ let updated=0,closed=0,protected=0;
+ for(const t of open.rows){
+  const pos=positions.find(p=>String(p?.positionId||"")===String(t.position_id||""));
+  if(pos){
+   const td=pos.tradeData||{},entry=Number(td.openPrice??td.price??t.execution_entry_price),current=Number(pos.currentPrice??td.currentPrice??td.price),pnl=Number(pos.unrealizedNetProfit??td.unrealizedNetProfit??pos.netProfit),risk=Math.abs(Number(t.planned_entry_price)-Number(t.planned_stop_price)),move=t.direction==="BUY"?current-entry:entry-current,rVal=risk>0?move/risk:0;
+   if(t.breakeven_applied!==true&&rVal>=cfg.breakevenR&&cTrader.modifyPositionProtection){try{await cTrader.modifyPositionProtection(t.position_id,entry,Number(t.planned_take_profit_price));await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);protected++;}catch(e){console.warn("AI breakeven:",e.message);}}
+   await dbQuery("UPDATE aurixa.auto_trades SET execution_entry_price=COALESCE(execution_entry_price,$2),status='OPEN',profit=$3,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(entry)?entry:null,Number.isFinite(pnl)?pnl:null]);updated++;
+  }else{
+   let profit=null,closePrice=null,reason="BROKER_CLOSED";
+   if(cTrader.getDealsByPositionId)try{const deals=await cTrader.getDealsByPositionId(t.position_id),last=Array.isArray(deals)&&deals.length?deals.at(-1):null;closePrice=Number(last?.executionPrice??last?.price);profit=Number(last?.netProfit??last?.profit);reason=String(last?.closeReason||reason);}catch(e){}
+   await dbQuery("UPDATE aurixa.auto_trades SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),close_price=$2,profit=COALESCE($3,profit),exit_reason=$4,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(closePrice)?closePrice:null,Number.isFinite(profit)?profit:null,reason]);closed++;
+  }
+ }
+ return {updated,closed,protected,brokerPositions:positions.length};
+}
+module.exports={configure,getStatus,executeAiDecision,dryRunOrderflow,syncOpenPositions,init};
