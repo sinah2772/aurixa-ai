@@ -1312,3 +1312,127 @@ main > .panel,.dashboard-grid > .panel{min-width:0}
     font-size: 10px;
   }
 }
+
+
+/* ============================================================
+   AI TRADER ACTIVITY — RESPONSIVE / NO OVERFLOW
+   ============================================================ */
+.ai-activity-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.activity-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.activity-summary > div {
+  min-width: 0;
+  padding: 12px;
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.activity-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  margin-bottom: 6px;
+}
+
+.activity-summary strong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.ai-activity-feed {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  min-width: 0;
+}
+
+.activity-item {
+  min-width: 0;
+  padding: 10px;
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.activity-item strong,
+.activity-item span {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-item strong {
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: .08em;
+}
+
+.activity-item span {
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+@media (max-width: 900px) {
+  .activity-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-activity-feed {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .activity-summary {
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+
+  .activity-summary > div {
+    padding: 9px;
+  }
+
+  .activity-summary strong {
+    font-size: 10px;
+  }
+
+  .ai-activity-feed {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .activity-item {
+    padding: 8px;
+  }
+
+  .activity-item strong {
+    font-size: 7px;
+  }
+
+  .activity-item span {
+    font-size: 9px;
+  }
+}
