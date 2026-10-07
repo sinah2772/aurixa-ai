@@ -2043,13 +2043,21 @@ async function getXAUUSDVolumeConstraints() {
   }
   // ProtoOASymbolByIdReq/Res: ask cTrader for the broker's actual
   // min/max/step volume instead of relying on a hard-coded XAUUSD value.
+  // ProtoOASymbolByIdReq (2116) returns the full symbol definition.
+  // 2114 is SymbolsListReq and must NOT be used for a single-symbol lookup.
   const msg = await request(
     state.ws,
-    2114,
-    { ctidTraderAccountId: Number(state.accountId), symbolId: Number(state.symbolId) },
+    2116,
+    {
+      ctidTraderAccountId: Number(state.accountId),
+      symbolId: Number(state.symbolId)
+    },
     10000
   );
-  const symbol = msg?.payload?.symbol || msg?.payload || {};
+  const rawSymbols = msg?.payload?.symbol;
+  const symbol = Array.isArray(rawSymbols)
+    ? (rawSymbols.find(s => Number(s?.symbolId) === Number(state.symbolId)) || rawSymbols[0] || {})
+    : (rawSymbols || msg?.payload || {});
   const minVolume = Number(symbol.minVolume);
   const maxVolume = Number(symbol.maxVolume);
   const stepVolume = Number(symbol.stepVolume);
