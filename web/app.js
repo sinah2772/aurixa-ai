@@ -659,7 +659,6 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       autoTrades,
       aiDecision,
       aiHistory,
-      aiSignals
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
