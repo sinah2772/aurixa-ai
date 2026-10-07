@@ -60,7 +60,7 @@ function decide(candles,quote={}){
   const risk=Math.max(a*1.2,swingRisk*0.75),stop=side==="BUY"?entry-risk:side==="SELL"?entry+risk:null,target=side==="BUY"?entry+risk*MIN_RR:side==="SELL"?entry-risk*MIN_RR:null;
   const rawRR=side==="WAIT"?null:Math.abs(target-entry)/Math.max(0.00001,Math.abs(entry-stop));
   const rr=rawRR===null?null:Number(rawRR.toFixed(2));
-  const qualityTrade=side!=="WAIT"&&passedLogic>=5&&trendUp||side!=="WAIT"&&passedLogic>=5&&trendDown;
+  const qualityTrade=side!=="WAIT"&&passedLogic>=5&&(trendUp||trendDown);
   const lastUpdate=quote.lastUpdate?Date.parse(quote.lastUpdate):NaN,quoteFresh=Number.isFinite(lastUpdate)&&Date.now()-lastUpdate<=30000;
   const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=Number(process.env.AI_MAX_SPREAD||0.60),volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
   const blockedBy=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k),signal=side!=="WAIT"&&blockedBy.length===0?side:"WAIT";
