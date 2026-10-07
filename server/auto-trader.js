@@ -122,8 +122,56 @@ async function executeAiDecision(decision, decisionId=null){
     brokerMaxVolume:brokerMax,selectedVolume:volume
   }));
   let result;
-  try{result=await cTrader.placeDemoMarketOrder({direction:decision.signal,volume,stopLossDistance:riskDistance,takeProfitDistance:targetDistance});}
-  catch(e){return reject("CTRADER_ORDER_REJECTED",{error:e.message});}
+  // ENTRY-FIRST EXECUTION:
+  // Send the market order without waiting for SL/TP calculation at the
+  // broker. The first priority is to get the XAUUSD position opened.
+  let result;
+  try{
+    result=await cTrader.placeDemoMarketOrder({
+      direction:decision.signal,
+      volume
+    });
+  }catch(e){return reject("CTRADER_ORDER_REJECTED",{error:e.message});}
+
+  // Only after cTrader confirms the position do we attach protection.
+  // Protection is based on the actual fill price, not the pre-order quote.
+  if(["OPEN","PARTIAL"].includes(result.status) && result.positionId && typeof cTrader.modifyPositionProtection==="function"){
+    const actualEntry=Number(result.executionPrice);
+    const protectionEntry=Number.isFinite(actualEntry)&&actualEntry>0?actualEntry:entry;
+    const adjustedStop=decision.signal==="BUY"
+      ? protectionEntry-riskDistance
+      : protectionEntry+riskDistance;
+    const adjustedTarget=decision.signal==="BUY"
+      ? protectionEntry+targetDistance
+      : protectionEntry-targetDistance;
+    try{
+      const protection=await cTrader.modifyPositionProtection(
+        result.positionId,
+        adjustedStop,
+        adjustedTarget
+      );
+      result.stopLoss=adjustedStop;
+      result.takeProfit=adjustedTarget;
+      result.protectionStatus="SET";
+      console.log("AURIXA_POST_FILL_PROTECTION:",JSON.stringify({
+        positionId:result.positionId,
+        entry:protectionEntry,
+        stopLoss:adjustedStop,
+        takeProfit:adjustedTarget,
+        protection
+      }));
+    }catch(e){
+      // The position is real, so never pretend it failed. Keep it OPEN and
+      // surface the protection failure for reconciliation/monitoring.
+      result.protectionStatus="FAILED";
+      result.protectionError=e.message;
+      console.error("AURIXA_POST_FILL_PROTECTION_FAILED:",JSON.stringify({
+        positionId:result.positionId,
+        error:e.message
+      }));
+    }
+  }
+
   if(typeof dbQuery==="function")try{
     await dbQuery(`INSERT INTO aurixa.auto_trades(decision_id,strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,order_id,position_id,client_msg_id,volume,stop_loss_distance,take_profit_distance,status,opened_at,execution_entry_price,gate_reason,risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price)
       VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $11 IN ('OPEN','PARTIAL') THEN NOW() ELSE NULL END,$12,'PASSED',$13,$14,$15,$16,$17)
