@@ -1276,7 +1276,7 @@ main { display:block; }
 #confirmedSignalHistorySummary{color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.06em}
 .confirmed-signal-head,.confirmed-signal-row{
   display:grid;
-  grid-template-columns:100px 110px 110px 1fr;
+  grid-template-columns:75px 95px 110px 120px 1fr;
   gap:10px;
   align-items:center;
 }
@@ -1299,7 +1299,7 @@ main { display:block; }
 .confirmed-signal-row strong{font-weight:950}
 @media(max-width:520px){
   .confirmed-signal-head,.confirmed-signal-row{
-    grid-template-columns:65px 85px 90px 1fr;
+    grid-template-columns:55px 72px 82px 88px 1fr;
     gap:7px;
     font-size:9px;
   }
