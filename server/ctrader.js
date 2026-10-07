@@ -2135,19 +2135,13 @@ async function placeDemoMarketOrder({
     orderType: 1,
     tradeSide,
     volume: Number(volume),
-    relativeStopLoss: Math.round(
-      Number(stopLossDistance) * 100000
-    ),
     label: "AURIXA-DEMO-V1",
-    comment: "AURIXA closed-candle demo signal"
+    comment: "AURIXA confirmed-signal entry"
   };
 
-  if (Number(takeProfitDistance) > 0) {
-    payload.relativeTakeProfit = Math.round(
-      Number(takeProfitDistance) * 100000
-    );
-  }
-
+  // ENTRY-FIRST: deliberately do not attach SL/TP to the opening request.
+  // The position must be confirmed first; auto-trader then calls
+  // modifyPositionProtection() using the actual fill price.
   // 2106 is asynchronous. Do not treat an intermediary response
   // as an executed trade. Wait for 2126 execution confirmation.
   const response = await request(
