@@ -603,7 +603,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }
   }
 
-  function renderConfirmedSignalHistory(history) {
+  function renderConfirmedSignalHistory(history, autoTrades = []) {
     const body = $("confirmedSignalHistory");
     const summary = $("confirmedSignalHistorySummary");
     if (!body) return;
@@ -634,16 +634,48 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       return;
     }
 
+    const trades = Array.isArray(autoTrades) ? autoTrades : [];
+    const usedTrades = new Set();
+    const getTime = v => { const n = Date.parse(v || ""); return Number.isFinite(n) ? n : null; };
+    const findTrade = (row, signal, price) => {
+      const st = getTime(first(row?.timestamp, row?.createdAt, row?.created_at, row?.time, row?.created));
+      const pn = Number(price);
+      let best=null, score=Infinity;
+      trades.forEach((t,i)=>{
+        if(usedTrades.has(i) || String(t?.direction||"").toUpperCase()!==signal) return;
+        const tt=getTime(first(t?.createdAt,t?.created_at,t?.openedAt,""));
+        const tp=Number(t?.signalEntryPrice??t?.plannedEntryPrice??t?.executionEntryPrice);
+        const dt=st!=null&&tt!=null?Math.abs(st-tt):999999999;
+        const dp=Number.isFinite(pn)&&Number.isFinite(tp)?Math.abs(pn-tp):999999999;
+        if(dt>10*60*1000&&dp>1)return;
+        const sc=Math.min(dt/1000,3600)+Math.min(dp,10)*30;
+        if(sc<score){score=sc;best={t,i};}
+      });
+      if(best) usedTrades.add(best.i);
+      return best?.t||null;
+    };
     body.innerHTML = confirmed.map(row => {
-      const signal = String(first(row?.signal, row?.direction, row?.decision, "")).toUpperCase();
-      const confidence = Number(row?.confidence);
-      const price = first(row?.entryPrice, row?.price, row?.mid, row?.close);
-      const time = first(row?.timestamp, row?.createdAt, row?.created_at, row?.time, row?.created);
-      return '<div class="confirmed-signal-row">' +
-        '<strong class="' + (signal === "BUY" ? "history-buy" : "history-sell") + '">' + signal + '</strong>' +
-        '<span>' + escapeHTML(Number.isFinite(confidence) ? number(confidence, 0) + "%" : "—") + '</span>' +
-        '<span>' + escapeHTML(Number.isFinite(Number(price)) ? number(price, 2) : "—") + '</span>' +
-        '<span>' + escapeHTML(formatTime(time)) + '</span>' +
+      const signal=String(first(row?.signal,row?.direction,row?.decision,"")).toUpperCase();
+      const confidence=Number(row?.confidence);
+      const price=first(row?.entryPrice,row?.price,row?.mid,row?.close);
+      const time=first(row?.timestamp,row?.createdAt,row?.created_at,row?.time,row?.created);
+      const trade=findTrade(row,signal,price);
+      let tradeStatus="NOT TRADED", cls="";
+      if(trade){
+        const status=String(trade.status||"").toUpperCase(), pnl=Number(trade.profit);
+        if(status==="CLOSED"){
+          tradeStatus=Number.isFinite(pnl)?(pnl>0?"PROFIT +"+number(pnl,2):pnl<0?"LOSS "+number(pnl,2):"BREAKEVEN 0.00"):"CLOSED";
+          cls=pnl>0?"history-buy":pnl<0?"history-sell":"";
+        } else if(["OPEN","PARTIAL"].includes(status)) tradeStatus="TRADE OPEN";
+        else if(status==="SUBMITTED") tradeStatus="TRADE SUBMITTED";
+        else if(trade.gateReason) tradeStatus="BLOCKED";
+      }
+      return '<div class="confirmed-signal-row">'+
+        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'">'+signal+'</strong>'+
+        '<span>'+escapeHTML(Number.isFinite(confidence)?number(confidence,0)+"%":"—")+'</span>'+
+        '<span>'+escapeHTML(Number.isFinite(Number(price))?number(price,2):"—")+'</span>'+
+        '<span>'+escapeHTML(formatTime(time))+'</span>'+
+        '<span class="'+cls+'">'+escapeHTML(tradeStatus)+'</span>'+
         '</div>';
     }).join("");
   }
@@ -713,7 +745,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     updateAutoTrader(autoStatus, autoPositions);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
-    renderConfirmedSignalHistory(aiSignals);
+    renderConfirmedSignalHistory(aiSignals, autoTrades?.trades || []);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
