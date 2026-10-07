@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261007-ai">
+  <link rel="stylesheet" href="/style.css?v=20261007-activity">
   </head>
 <body>
 <div class="app">
@@ -108,6 +108,19 @@
     </section>
     </div>
 
+    <!-- AI ACTIVITY -->
+    <section class="panel ai-activity-panel">
+      <div class="section-title">AI TRADER ACTIVITY</div>
+      <div class="section-heading">LIVE DECISION &amp; EXECUTION ACTIVITY</div>
+      <div class="activity-summary">
+        <div><span>LAST EVALUATION</span><strong id="activityLast">—</strong></div>
+        <div><span>DECISION</span><strong id="activityDecision">WAIT</strong></div>
+        <div><span>LOGIC</span><strong id="activityLogic">—</strong></div>
+        <div><span>GATES</span><strong id="activityGates">—</strong></div>
+      </div>
+      <div id="aiActivityFeed" class="ai-activity-feed"><div class="empty-state">Waiting for AI Trader activity...</div></div>
+    </section>
+
     <!-- FINAL TRADE GATE -->
     <section class="panel final-gate-panel">
       <div class="section-title">FINAL TRADE GATE</div>
@@ -170,6 +183,6 @@
 
   </main>
 </div>
-<script defer src="/app.js?v=20261007-ai"></script>
+<script defer src="/app.js?v=20261007-activity"></script>
 </body>
 </html>
