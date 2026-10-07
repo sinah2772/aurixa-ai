@@ -684,13 +684,13 @@ app.get("/api/auto-trader/dry-run", async (req, res) => {
       ...dryRun
     });
   } catch (err) {
-    console.error("OF1 Auto-Trader dry-run error:", err);
+    console.error("AI Trader dry-run error:", err);
     res.status(500).json({
       ok: false,
-      strategy: "AURIXA_OF1",
+      strategy: "AURIXA_AI_TRADER_V1",
       dryRun: true,
       orderSubmitted: false,
-      error: "OF1 Auto-Trader dry-run unavailable"
+      error: "AI Trader dry-run unavailable"
     });
   }
 });
@@ -935,7 +935,7 @@ app.get("/api/market",(req,res)=>{
     marketDataAgeMs: marketStatus.ageMs,
 
     autoTrading: autoTrader.getStatus().enabled,
-    autoTradingStrategy: "AURIXA_OF1",
+    autoTradingStrategy: "AURIXA_AI_TRADER_V1",
     paperTrading: true,
 
     aurixa: {
@@ -952,22 +952,14 @@ app.use((req,res)=>{
 });
 
 
-/*
- * AURIXA_OF1 — separate OrderFlow V1 endpoint.
- * Does not replace the existing AURIXA strategy.
- * Live execution is intentionally NOT connected here.
- */
-
-
-
 const server = app.listen(PORT,"0.0.0.0",async()=>{
   console.log("");
   console.log("======================================");
-  console.log("      AURIXA OF1 ORDERFLOW AUTO-TRADER");
+  console.log("      AURIXA AI TRADER V1");
   console.log("======================================");
   console.log(`Phone: http://127.0.0.1:${PORT}`);
   console.log(`Symbol: ${process.env.SYMBOL}`);
-  console.log("Auto trading strategy: AURIXA_OF1");
+  console.log("Auto trading strategy: AURIXA_AI_TRADER_V1");
   console.log("Paper trading: ENABLED");
   console.log("Signal tracking: ENABLED");
   console.log("======================================");
@@ -997,45 +989,44 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
 
     setInterval(async () => {
       try {
-        const candles = marketEngine.getState()?.candles || [];
-        const of1 = analyzeOrderflowV1(candles);
+        const state = marketEngine.getState() || {};
+        const candles = Array.isArray(state.candles) ? state.candles : [];
+        const ct = getCTraderStatus() || {};
+        const decision = aiTraderEngine.decide(candles, ct);
 
-        if (of1?.signal === "BUY" || of1?.signal === "SELL") {
-          try {
-            const result = await autoTrader.executeOrderflowSignal(of1);
+        console.log(
+          "AURIXA AI Trader V1:",
+          JSON.stringify({
+            signal: decision.signal,
+            confidence: decision.confidence,
+            executionEligible: decision.executionEligible,
+            blockedBy: decision.blockedBy || [],
+            candleTime: decision.candleTime || null
+          })
+        );
 
-            console.log(
-              "AURIXA OF1 Auto-Trader:",
-              JSON.stringify({
-                strategy: "AURIXA_OF1",
-                direction: of1.signal,
-                candleTime: of1.candleTime,
-                score: of1.score,
-                confidence: of1.confidence,
-                executed: result.executed,
-                reason: result.reason || null
-              })
-            );
-          } catch (err) {
-            console.error("AURIXA OF1 Auto-Trader execution error:", err.message);
-          }
+        if (decision.executionEligible === true) {
+          const result = await autoTrader.executeAiDecision(decision);
+          console.log(
+            "AURIXA AI Trader V1 execution:",
+            JSON.stringify({
+              direction: decision.signal,
+              executed: result.executed,
+              reason: result.reason || null,
+              orderId: result.orderId || null,
+              positionId: result.positionId || null
+            })
+          );
+        }
+
+        try {
+          await signalTracker.trackLatestClosedSignal();
+          await signalTracker.evaluatePending();
+        } catch (err) {
+          console.error("Signal analytics error:", err.message);
         }
       } catch (err) {
-        console.error("AURIXA OF1 strategy error:", err.message);
-      }
-
-      try {
-        await autoTrader.manageOpenPositions();
-      } catch (err) {
-        console.error("AURIXA OF1 position management error:", err.message);
-      }
-
-      // Keep M5 signal tracking/evaluation for analytics only.
-      try {
-        await signalTracker.trackLatestClosedSignal();
-        await signalTracker.evaluatePending();
-      } catch (err) {
-        console.error("Signal analytics error:", err.message);
+        console.error("AURIXA AI Trader V1 loop error:", err.message);
       }
     }, signalTracker.getHorizonIntervalMs());
 });
