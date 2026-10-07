@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
-  <title>AURIXA AI — OF1 Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261007-of1">
+  <title>AURIXA AI — AI TRADER Market Intelligence</title>
+  <link rel="stylesheet" href="/style.css?v=20261007-ai">
   <style>
     #frontendBoot {
       display:block !important; position:fixed !important; top:0 !important; left:0 !important;
@@ -106,7 +106,7 @@
       <div class="section-heading">LIVE SYSTEM OVERVIEW</div>
       <div class="command-grid">
         <div class="command-card">
-          <span>OF1 SIGNAL</span>
+          <span>AI TRADER SIGNAL</span>
           <strong id="dashSignal">WAIT</strong>
           <small id="dashConfidence">—</small>
         </div>
@@ -146,12 +146,12 @@
         <span id="alertStatus">Alerts not enabled</span>
       </div>
       <div class="section-title">ORDERFLOW ENGINE</div>
-      <div class="section-heading">ORDERFLOW OF1</div>
+      <div class="section-heading">ORDERFLOW AI TRADER</div>
 
       <div class="engine-status" id="engineStatus">READY</div>
 
       <div class="signal-card" id="signalCard">
-        <div class="eyebrow">CURRENT OF1 SIGNAL</div>
+        <div class="eyebrow">CURRENT AI TRADER SIGNAL</div>
         <div id="signal" class="signal wait">WAIT</div>
 
         <div class="confidence-row">
@@ -165,7 +165,7 @@
           <div id="buyIndicator" class="signal-option buy">BUY</div>
         </div>
 
-        <div class="eyebrow">OF1 REASON</div>
+        <div class="eyebrow">AI TRADER REASON</div>
         <div id="reason" class="reason">
           Waiting for market data...
         </div>
@@ -175,7 +175,7 @@
     <!-- CHART -->
     <section class="panel chart-panel">
       <div class="section-title">MARKET ENGINE</div>
-      <div class="section-heading"><span id="chartTitle">cTRADER LIVE · XAUUSD / OF1</span></div>
+      <div class="section-heading"><span id="chartTitle">cTRADER LIVE · XAUUSD / AI TRADER</span></div>
 
       <div class="chart-header">
         <div>
@@ -197,33 +197,33 @@
     <!-- FINAL TRADE GATE -->
     <section class="panel final-gate-panel">
       <div class="section-title">FINAL TRADE GATE</div>
-      <div class="section-heading">ORDERFLOW OF1 AUTO-TRADING</div>
-      <div class="gate-head"><div><div id="gateDecision" class="gate-decision wait">WAIT</div><div id="gateReason" class="gate-reason">Waiting for OF1 to meet the execution gate.</div></div><div class="gate-badge">DEMO ONLY</div></div>
-      <div class="gate-conditions"><div class="gate-condition"><span>MARKET</span><strong id="gateMarket">WAIT</strong></div><div class="gate-condition"><span>OF1 SIGNAL</span><strong id="gateSignal">WAIT</strong></div><div class="gate-condition"><span>OF1 QUALITY</span><strong id="gateFvg">WAIT</strong></div><div class="gate-condition"><span>POSITION</span><strong id="gatePosition">CHECKING</strong></div></div>
+      <div class="section-heading">ORDERFLOW AI TRADER AUTO-TRADING</div>
+      <div class="gate-head"><div><div id="gateDecision" class="gate-decision wait">WAIT</div><div id="gateReason" class="gate-reason">Waiting for AI TRADER to meet the execution gate.</div></div><div class="gate-badge">DEMO ONLY</div></div>
+      <div class="gate-conditions"><div class="gate-condition"><span>MARKET</span><strong id="gateMarket">WAIT</strong></div><div class="gate-condition"><span>AI TRADER SIGNAL</span><strong id="gateSignal">WAIT</strong></div><div class="gate-condition"><span>AI TRADER QUALITY</span><strong id="gateFvg">WAIT</strong></div><div class="gate-condition"><span>POSITION</span><strong id="gatePosition">CHECKING</strong></div></div>
       <div class="gate-levels"><div class="gate-level"><span>ENTRY</span><strong id="gateEntry">—</strong></div><div class="gate-level"><span>STOP LOSS</span><strong id="gateSL">—</strong></div><div class="gate-level"><span>TAKE PROFIT</span><strong id="gateTP">—</strong></div><div class="gate-level"><span>R:R</span><strong id="gateRR">2R PLAN</strong></div></div>
       <div class="gate-rules"><span>RISK 0.5%</span><span>MAX 1 POSITION</span><span>NO MARTINGALE</span><span>WAIT = NO TRADE</span></div>
     </section>
 
     <!-- ORDERFLOW CONFIRMATION -->
-    <section class="panel of1-panel">
+    <section class="panel ai-panel">
       <div class="section-title">ORDERFLOW CONFIRMATION</div>
-      <div class="section-heading">AURIXA OF1 · FINAL GATE INPUT</div>
-      <div class="of1-head">
+      <div class="section-heading">AURIXA AI TRADER · FINAL GATE INPUT</div>
+      <div class="ai-head">
         <div>
-          <div id="of1Decision" class="of1-decision wait">WAIT</div>
-          <div id="of1Reason" class="gate-reason">Waiting for 80 candles and OF1 confirmation.</div>
+          <div id="aiDecision" class="ai-decision wait">WAIT</div>
+          <div id="aiReason" class="gate-reason">Waiting for 80 candles and AI TRADER confirmation.</div>
         </div>
         <div class="gate-badge">LIVE ANALYSIS</div>
       </div>
-      <div class="of1-grid">
-        <div class="metric"><span>SIGNAL</span><strong id="of1Signal">WAIT</strong></div>
-        <div class="metric"><span>CONFIDENCE</span><strong id="of1Confidence">—</strong></div>
-        <div class="metric"><span>SCORE</span><strong id="of1Score">—</strong></div>
-        <div class="metric"><span>PHASE</span><strong id="of1Phase">—</strong></div>
-        <div class="metric"><span>ENTRY</span><strong id="of1Entry">—</strong></div>
-        <div class="metric"><span>STOP</span><strong id="of1Stop">—</strong></div>
-        <div class="metric"><span>TARGET</span><strong id="of1Target">—</strong></div>
-        <div class="metric"><span>CANDLES</span><strong id="of1Candles">—</strong></div>
+      <div class="ai-grid">
+        <div class="metric"><span>SIGNAL</span><strong id="aiSignal">WAIT</strong></div>
+        <div class="metric"><span>CONFIDENCE</span><strong id="aiConfidence">—</strong></div>
+        <div class="metric"><span>SCORE</span><strong id="aiScore">—</strong></div>
+        <div class="metric"><span>PHASE</span><strong id="aiPhase">—</strong></div>
+        <div class="metric"><span>ENTRY</span><strong id="aiEntry">—</strong></div>
+        <div class="metric"><span>STOP</span><strong id="aiStop">—</strong></div>
+        <div class="metric"><span>TARGET</span><strong id="aiTarget">—</strong></div>
+        <div class="metric"><span>CANDLES</span><strong id="aiCandles">—</strong></div>
       </div>
     </section>
 
@@ -268,7 +268,7 @@
 
     <!-- AUTO TRADER -->
     <section class="panel auto-trader-panel">
-      <div class="section-title">OF1 TRADE HISTORY</div>
+      <div class="section-title">AI TRADER TRADE HISTORY</div>
       <div class="section-heading">DEMO EXECUTION &amp; TRADE LIFECYCLE</div>
       <div class="auto-status-grid">
         <div class="metric"><span>STATUS</span><strong id="autoTradeStatus">CHECKING</strong></div>
@@ -285,7 +285,7 @@
         <div class="metric"><span>P&L</span><strong id="autoPositionPnl">—</strong></div>
       </div>
       <div id="autoTradeNotice" class="position-status">Checking demo execution status...</div>
-      <div class="section-title auto-history-title">OF1 TRADE HISTORY</div>
+      <div class="section-title auto-history-title">AI TRADER TRADE HISTORY</div>
       <div id="autoTradeHistory" class="auto-trade-history"><div class="empty-state">Loading trade history...</div></div>
     </section>
 
@@ -374,11 +374,11 @@
     <section class="system-footer">
       <span class="dot"></span>
       <strong id="systemStatus">SYSTEM ONLINE</strong>
-      <div>AURIXA AI · OF1 LIVE MARKET ANALYSIS</div>
+      <div>AURIXA AI · AI TRADER LIVE MARKET ANALYSIS</div>
     </section>
 
   </main>
 </div>
-<script defer src="/app.js?v=20261007-of1"></script>
+<script defer src="/app.js?v=20261007-ai"></script>
 </body>
 </html>
