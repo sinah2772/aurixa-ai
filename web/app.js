@@ -21,6 +21,7 @@
     autoPositions: "/api/auto-trader/positions",
     aiDecision: "/api/ai/decision",
     aiHistory: "/api/ai/decision/history",
+    aiSignals: "/api/ai/signals",
     marketHistory: "/api/market/history?limit=300"
   };
 
@@ -606,13 +607,15 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const summary = $("confirmedSignalHistorySummary");
     if (!body) return;
 
-    const source = Array.isArray(history?.history)
-      ? history.history
-      : Array.isArray(history?.decisions)
-        ? history.decisions
-        : Array.isArray(history)
-          ? history
-          : [];
+    const source = Array.isArray(history?.signals)
+      ? history.signals
+      : Array.isArray(history?.history)
+        ? history.history
+        : Array.isArray(history?.decisions)
+          ? history.decisions
+          : Array.isArray(history)
+            ? history
+            : [];
 
     const confirmed = source.filter(row => {
       const signal = String(first(row?.signal, row?.direction, row?.decision, "")).toUpperCase();
@@ -653,6 +656,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       autoPositions,
       aiDecision,
       aiHistory,
+      aiSignals,
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
@@ -660,7 +664,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       getJSON(API.autoStatus),
       getJSON(API.autoPositions),
       getJSON(API.aiDecision),
-      getJSON(API.aiHistory + "?limit=20")
+      getJSON(API.aiHistory + "?limit=20"),
+      getJSON(API.aiSignals + "?limit=100")
     ]);
 
     const mergedMarket = {
@@ -677,7 +682,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     updateAutoTrader(autoStatus, autoPositions);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
-    renderConfirmedSignalHistory(aiHistory);
+    renderConfirmedSignalHistory(aiSignals);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
