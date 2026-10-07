@@ -620,7 +620,8 @@ async function refresh() {
       autoStatus,
       autoPositions,
       autoTrades,
-      aiDecision
+      aiDecision,
+      aiHistory
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
@@ -628,7 +629,8 @@ async function refresh() {
       getJSON(API.autoStatus),
       getJSON(API.autoPositions),
       getJSON(API.autoTrades),
-      getJSON(API.aiDecision)
+      getJSON(API.aiDecision),
+      getJSON(API.aiHistory + "?limit=20")
     ]);
 
     const mergedMarket = {
@@ -643,6 +645,7 @@ async function refresh() {
     updateSignal(liveAi);
     updateAutoTrader(autoStatus, autoPositions, autoTrades);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
+    updateActivity(liveAi, ctrader, autoStatus, autoPositions);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
