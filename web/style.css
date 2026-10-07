@@ -1315,6 +1315,101 @@ main > .panel,.dashboard-grid > .panel{min-width:0}
 
 
 /* ============================================================
+   AI TRADER CLOSED TRADE HISTORY — RESPONSIVE / NO OVERFLOW
+   ============================================================ */
+.closed-history-panel{
+  min-width:0;
+  width:100%;
+  overflow:hidden;
+}
+
+.closed-history-panel .history-board-title{
+  min-width:0;
+  width:100%;
+}
+
+.closed-history-panel .history-board-title > div{
+  min-width:0;
+}
+
+.closed-history-panel .history-board-title .section-heading{
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+
+#closedTradeHistory{
+  width:100%;
+  min-width:0;
+  overflow:hidden;
+}
+
+#closedTradeHistory .confirmed-signal-row{
+  width:100%;
+  min-width:0;
+  display:grid;
+  grid-template-columns:minmax(55px,.65fr) minmax(125px,1.35fr) minmax(75px,.75fr) minmax(135px,1.25fr);
+  align-items:center;
+  gap:10px;
+  box-sizing:border-box;
+}
+
+#closedTradeHistory .confirmed-signal-row > *{
+  min-width:0;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+#closedTradeHistory .confirmed-signal-row strong{
+  font-size:11px;
+  font-weight:950;
+}
+
+@media(max-width:700px){
+  .closed-history-panel{
+    overflow:hidden;
+  }
+
+  .closed-history-panel .history-board-title{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:7px;
+  }
+
+  #closedTradeHistory{
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:thin;
+    padding-bottom:2px;
+  }
+
+  #closedTradeHistory .confirmed-signal-row{
+    min-width:460px;
+    grid-template-columns:65px 145px 80px 145px;
+    gap:8px;
+    padding:9px 8px;
+  }
+
+  #closedTradeHistory .confirmed-signal-row > *{
+    font-size:10px;
+  }
+
+  #closedTradeHistory .confirmed-signal-row strong{
+    font-size:10px;
+  }
+}
+
+@media(max-width:380px){
+  #closedTradeHistory .confirmed-signal-row{
+    min-width:420px;
+    grid-template-columns:60px 130px 75px 135px;
+    gap:7px;
+  }
+}
+
+/* ============================================================
    AI TRADER ACTIVITY — RESPONSIVE / NO OVERFLOW
    ============================================================ */
 .ai-activity-panel {
