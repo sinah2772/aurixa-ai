@@ -1270,3 +1270,37 @@ main { display:block; }
   .activity-summary{grid-template-columns:repeat(2,1fr)}
   .ai-activity-row{grid-template-columns:62px 105px 1fr;font-size:9px}
 }
+
+
+/* CONFIRMED SIGNAL HISTORY: BUY / SELL only */
+#confirmedSignalHistorySummary{color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.06em}
+.confirmed-signal-head,.confirmed-signal-row{
+  display:grid;
+  grid-template-columns:100px 110px 110px 1fr;
+  gap:10px;
+  align-items:center;
+}
+.confirmed-signal-head{
+  margin-top:12px;
+  padding:8px 10px;
+  color:var(--muted);
+  font-size:9px;
+  font-weight:850;
+  letter-spacing:.08em;
+}
+.confirmed-signal-history{display:grid;gap:7px}
+.confirmed-signal-row{
+  padding:10px;
+  background:#080a0d;
+  border:1px solid var(--border);
+  border-radius:10px;
+  font-size:11px;
+}
+.confirmed-signal-row strong{font-weight:950}
+@media(max-width:520px){
+  .confirmed-signal-head,.confirmed-signal-row{
+    grid-template-columns:65px 85px 90px 1fr;
+    gap:7px;
+    font-size:9px;
+  }
+}
