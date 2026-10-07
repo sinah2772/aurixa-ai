@@ -2304,5 +2304,6 @@ module.exports = {
   modifyPositionProtection,
   closeXAUUSDPosition,
   placeDemoMarketOrder,
-  getAccountBalance
+  getAccountBalance,
+  getXAUUSDVolumeConstraints
 };
