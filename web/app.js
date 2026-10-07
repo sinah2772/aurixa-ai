@@ -19,6 +19,7 @@
     ctrader: "/api/ctrader/status",
     autoStatus: "/api/auto-trader/status",
     autoPositions: "/api/auto-trader/positions",
+    autoTrades: "/api/auto-trader/trades?limit=50",
     aiDecision: "/api/ai/decision",
     aiHistory: "/api/ai/decision/history",
     aiSignals: "/api/ai/signals",
@@ -643,6 +644,36 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
         '<span>' + escapeHTML(Number.isFinite(confidence) ? number(confidence, 0) + "%" : "—") + '</span>' +
         '<span>' + escapeHTML(Number.isFinite(Number(price)) ? number(price, 2) : "—") + '</span>' +
         '<span>' + escapeHTML(formatTime(time)) + '</span>' +
+        '</div>';
+    }).join("");
+  }
+
+
+  function renderClosedTradeHistory(data) {
+    const body = $("closedTradeHistory");
+    const summary = $("closedTradeHistorySummary");
+    if (!body) return;
+    const trades = Array.isArray(data?.trades) ? data.trades : [];
+    const closed = trades.filter(t => String(t?.status || "").toUpperCase() === "CLOSED");
+    if (summary) summary.textContent = closed.length + " CLOSED TRADES";
+    if (!closed.length) {
+      body.innerHTML = '<div class="empty">No closed trades yet.</div>';
+      return;
+    }
+    body.innerHTML = closed.map(t => {
+      const direction = String(t.direction || "").toUpperCase();
+      const entry = Number(t.executionEntryPrice ?? t.plannedEntryPrice);
+      const exit = Number(t.closePrice);
+      const pnl = Number(t.profit);
+      const result = Number.isFinite(pnl) ? (pnl > 0 ? "PROFIT" : pnl < 0 ? "LOSS" : "BREAKEVEN") : "CLOSED";
+      const cls = result === "PROFIT" ? "history-buy" : result === "LOSS" ? "history-sell" : "";
+      const opened = formatTime(t.openedAt || t.createdAt);
+      const closedAt = formatTime(t.closedAt);
+      return '<div class="confirmed-signal-row">' +
+        '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML(direction || "TRADE") + '</strong>' +
+        '<span>' + escapeHTML((Number.isFinite(entry) ? number(entry, 2) : "—") + " → " + (Number.isFinite(exit) ? number(exit, 2) : "—")) + '</span>' +
+        '<span class="' + cls + '">' + escapeHTML(Number.isFinite(pnl) ? (pnl > 0 ? "+" : "") + number(pnl, 2) : "—") + '</span>' +
+        '<span class="' + cls + '">' + escapeHTML(result + " · " + closedAt) + '</span>' +
         '</div>';
     }).join("");
   }
