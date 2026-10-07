@@ -20,6 +20,7 @@
     autoStatus: "/api/auto-trader/status",
     autoPositions: "/api/auto-trader/positions",
     autoTrades: "/api/auto-trader/trades?limit=50",
+    account: "/api/auto-trader/account",
     aiDecision: "/api/ai/decision",
     aiHistory: "/api/ai/decision/history",
     aiSignals: "/api/ai/signals",
@@ -684,6 +685,33 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
   }
 
 
+  function updateAccountPanel(account, autoStatus, ctrader) {
+    const a = account?.account || account || {};
+    text("accountBalance", Number.isFinite(Number(a.balance)) ? number(a.balance, 2) : "—");
+    text("accountEquity", Number.isFinite(Number(a.equity)) ? number(a.equity, 2) : "—");
+    text("accountFreeMargin", Number.isFinite(Number(a.freeMargin)) ? number(a.freeMargin, 2) : "—");
+    text("accountUsedMargin", Number.isFinite(Number(a.usedMargin)) ? number(a.usedMargin, 2) : "—");
+    text("accountCurrency", first(a.currency, "—"));
+    text("accountBroker", first(a.brokerTitleShort, ctrader?.account?.brokerTitleShort, "—"));
+    text("accountLogin", first(a.traderLogin, ctrader?.account?.traderLogin, "—"));
+    text("accountEnvironment", a.isLive === false || ctrader?.account?.isLive === false ? "DEMO" : a.isLive === true || ctrader?.account?.isLive === true ? "LIVE BLOCKED" : "UNKNOWN");
+    text("accountPermission", ctrader?.tradingPermission === true ? "TRADING" : "READ ONLY / BLOCKED");
+    const ready = ctrader?.connected === true && ctrader?.authorized === true && a.isLive === false;
+    text("accountReadStatus", account?.ok === true ? (ready ? "ACCOUNT DATA LIVE" : "ACCOUNT DATA READ") : "ACCOUNT DATA UNAVAILABLE");
+  }
+
+  function updatePerformance(trades) {
+    const rows = Array.isArray(trades?.trades) ? trades.trades : [];
+    const closed = rows.filter(t => String(t?.status || "").toUpperCase() === "CLOSED");
+    let wins=0, losses=0, flat=0, pnl=0;
+    for (const t of closed) { const p=Number(t.profit); if(!Number.isFinite(p)) continue; pnl+=p; if(p>0)wins++; else if(p<0)losses++; else flat++; }
+    const evaluated=wins+losses+flat;
+    const winRate=evaluated?wins/evaluated*100:null;
+    text("performanceWins", wins); text("performanceLosses", losses); text("performanceFlat", flat);
+    text("performanceWinRate", winRate===null?"—":number(winRate,1)+"%");
+    text("performancePnl", Number.isFinite(pnl)?((pnl>0?"+":"")+number(pnl,2)):"—");
+  }
+
   function renderClosedTradeHistory(data) {
     const body = $("closedTradeHistory");
     const summary = $("closedTradeHistorySummary");
@@ -724,6 +752,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       aiHistory,
       aiSignals,
       autoTrades,
+      account,
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
@@ -733,7 +762,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       getJSON(API.aiDecision),
       getJSON(API.aiHistory + "?limit=20"),
       getJSON(API.aiSignals + "?limit=100"),
-      getJSON(API.autoTrades)
+      getJSON(API.autoTrades),
+      getJSON(API.account)
     ]);
 
     const mergedMarket = {
@@ -748,10 +778,12 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const liveAi = aiDecision?.decision || aiDecision?.result || aiDecision || {};
     updateSignal(liveAi);
     updateAutoTrader(autoStatus, autoPositions);
+    updateAccountPanel(account, autoStatus, ctrader);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
     renderConfirmedSignalHistory(aiSignals, autoTrades?.trades || []);
     renderClosedTradeHistory(autoTrades);
+    updatePerformance(autoTrades);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
