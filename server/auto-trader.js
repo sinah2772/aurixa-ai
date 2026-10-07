@@ -119,7 +119,7 @@ async function init(){
   await dbQuery(`CREATE TABLE IF NOT EXISTS aurixa.auto_trades(
     id BIGSERIAL PRIMARY KEY,
     decision_id BIGINT NULL,
-    signal_id BIGINT NULL UNIQUE REFERENCES aurixa.signals(id) ON DELETE CASCADE,
+    signal_id BIGINT NULL,
     strategy TEXT NOT NULL DEFAULT 'AURIXA_AI_TRADER_V1',
     strategy_signal_key TEXT UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
