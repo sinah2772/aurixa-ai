@@ -19,9 +19,16 @@ async function auditAiDecision(decision){
  try{
   await queryDatabase("CREATE SCHEMA IF NOT EXISTS aurixa");
   await queryDatabase("CREATE TABLE IF NOT EXISTS aurixa.ai_trade_decisions(id BIGSERIAL PRIMARY KEY,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),engine TEXT NOT NULL,version TEXT NOT NULL,signal TEXT NOT NULL,confidence NUMERIC(6,2),decision JSONB NOT NULL)");
+  await queryDatabase("CREATE TABLE IF NOT EXISTS aurixa.ai_signals(id BIGSERIAL PRIMARY KEY,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),candle_time TIMESTAMPTZ,engine TEXT NOT NULL,version TEXT NOT NULL,symbol TEXT NOT NULL,timeframe TEXT NOT NULL,signal TEXT NOT NULL,confidence NUMERIC(6,2),entry_price NUMERIC,stop_loss NUMERIC,take_profit NUMERIC,reward_risk NUMERIC,execution_eligible BOOLEAN NOT NULL DEFAULT FALSE,blocked_by JSONB NOT NULL DEFAULT '[]'::jsonb,decision JSONB NOT NULL)");
   const q=await queryDatabase("INSERT INTO aurixa.ai_trade_decisions(engine,version,signal,confidence,decision) VALUES($1,$2,$3,$4,$5::jsonb) RETURNING id",[decision.engine,decision.version,decision.signal,decision.confidence,JSON.stringify(decision)]);
+  await queryDatabase("INSERT INTO aurixa.ai_signals(candle_time,engine,version,symbol,timeframe,signal,confidence,entry_price,stop_loss,take_profit,reward_risk,execution_eligible,blocked_by,decision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb)",[
+    Number.isFinite(Date.parse(decision.candleTime))?new Date(decision.candleTime):null,
+    decision.engine,decision.version,decision.symbol||"XAUUSD",decision.timeframe||"M5",decision.signal,decision.confidence,
+    decision.entry,decision.stopLoss,decision.takeProfit,decision.rewardRisk,Boolean(decision.executionEligible),
+    JSON.stringify(decision.blockedBy||[]),JSON.stringify(decision)
+  ]);
   return q.rows[0]?.id||null;
- }catch(e){console.warn("AI decision audit:",e.message);return null;}
+ }catch(e){console.warn("AI signal audit:",e.message);return null;}
 }
 setMarketEngine(marketEngine);
 
@@ -56,6 +63,14 @@ app.get("/api/ai/decision", async (req,res)=>{
   const decision=aiTraderEngine.decide(state.candles||[],ct),decisionId=await auditAiDecision(decision);
   res.json({ok:true,decision,...decision,decisionId});
  }catch(e){res.status(500).json({ok:false,signal:"WAIT",executionEligible:false,error:e.message});}
+});
+
+app.get("/api/ai/signals",async(req,res)=>{
+  try{
+    const limit=Math.min(200,Math.max(1,Number(req.query.limit)||50));
+    const q=await queryDatabase(`SELECT id,created_at AS "createdAt",candle_time AS "candleTime",engine,version,symbol,timeframe,signal,confidence,entry_price AS "entry",stop_loss AS "stopLoss",take_profit AS "takeProfit",reward_risk AS "rewardRisk",execution_eligible AS "executionEligible",blocked_by AS "blockedBy",decision FROM aurixa.ai_signals ORDER BY created_at DESC LIMIT $1`,[limit]);
+    res.json({ok:true,count:q.rows.length,signals:q.rows});
+  }catch(e){console.error("AI signals history error:",e);res.status(500).json({ok:false,error:"AI signal history unavailable"});}
 });
 
 app.get("/api/ai/decision/history",async(req,res)=>{
