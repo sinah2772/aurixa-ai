@@ -307,6 +307,7 @@ app.get("/api/auto-trader/trades", async (req, res) => {
         timeframe,
         direction,
         signal_entry_price AS "signalEntryPrice",
+        execution_entry_price AS "executionEntryPrice",
         order_id AS "orderId",
         position_id AS "positionId",
         volume,
