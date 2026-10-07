@@ -33,3 +33,14 @@
     border-radius:8px;
   }
 }
+
+/* Restored account, position and trade-history dashboard */
+.account-panel,.closed-history-panel{min-width:0;overflow:hidden}
+.account-grid,.position-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+.account-stat,.position-grid>div{min-width:0;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.025)}
+.account-stat span,.position-grid span{display:block;font-size:9px;letter-spacing:.08em;opacity:.65;margin-bottom:5px}
+.account-stat strong,.position-grid strong{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.position-card{margin-top:12px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px}
+.position-title{font-size:10px;letter-spacing:.08em;font-weight:700;margin-bottom:2px}
+.position-card .notice{margin-top:10px}
+@media(max-width:520px){.account-grid,.position-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.account-stat,.position-grid>div{padding:9px}.account-stat strong,.position-grid strong{font-size:11px}.account-stat span,.position-grid span{font-size:8px}.position-card{padding:9px}}
