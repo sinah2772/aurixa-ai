@@ -22,6 +22,7 @@
     autoTrades: "/api/auto-trader/trades",
     aiDecision: "/api/ai/decision",
     aiHistory: "/api/ai/decision/history",
+    aiSignals: "/api/ai/signals",
     marketHistory: "/api/market/history?limit=300"
   };
 
@@ -649,6 +650,44 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }
   }
 
+  function updateSignalHistory(data) {
+    const rows = Array.isArray(data?.signals) ? data.signals : [];
+    text("signalHistoryCount", String(Number(data?.count) || rows.length));
+    const eligible = rows.filter(x => x.executionEligible === true).length;
+    text("signalHistoryEligible", String(eligible));
+    const latest = rows[0];
+    text("signalHistoryLast", latest ? String(first(latest.signal, "WAIT")).toUpperCase() : "—");
+    text("signalHistoryConfidence", latest && Number.isFinite(Number(latest.confidence)) ? number(latest.confidence, 0) + "%" : "—");
+
+    const box = $("signalHistory");
+    if (!box) return;
+    if (!rows.length) {
+      box.innerHTML = '<div class="empty-state">No AI signals recorded yet.</div>';
+      return;
+    }
+
+    box.innerHTML =
+      '<div class="auto-trade-table-wrap"><table class="auto-trade-table">' +
+      '<thead><tr><th>TIME</th><th>SIGNAL</th><th>CONFIDENCE</th><th>ENTRY</th><th>SL</th><th>TP</th><th>R:R</th><th>EXECUTION</th><th>BLOCKED BY</th></tr></thead><tbody>' +
+      rows.slice(0, 50).map(s => {
+        const signal = String(first(s.signal, "WAIT")).toUpperCase();
+        const execution = s.executionEligible === true ? "ELIGIBLE" : "WAIT / BLOCKED";
+        const blocked = Array.isArray(s.blockedBy) && s.blockedBy.length ? s.blockedBy.map(x => String(x).replaceAll("_"," ")).join(" · ") : "—";
+        return '<tr>' +
+          '<td><small>' + escapeHTML(formatTime(first(s.createdAt, s.candleTime))) + '</small></td>' +
+          '<td><strong class="' + (signal === "BUY" ? "buy" : signal === "SELL" ? "sell" : "") + '">' + escapeHTML(signal) + '</strong></td>' +
+          '<td>' + escapeHTML(Number.isFinite(Number(s.confidence)) ? number(s.confidence,0) + "%" : "—") + '</td>' +
+          '<td>' + escapeHTML(number(s.entry,2)) + '</td>' +
+          '<td>' + escapeHTML(number(s.stopLoss,2)) + '</td>' +
+          '<td>' + escapeHTML(number(s.takeProfit,2)) + '</td>' +
+          '<td>' + escapeHTML(Number.isFinite(Number(s.rewardRisk)) ? number(s.rewardRisk,2) + "R" : "—") + '</td>' +
+          '<td>' + escapeHTML(execution) + '</td>' +
+          '<td>' + escapeHTML(blocked) + '</td>' +
+          '</tr>';
+      }).join("") +
+      '</tbody></table></div>';
+  }
+
   async function refresh() {
     const [
       market,
@@ -658,7 +697,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       autoPositions,
       autoTrades,
       aiDecision,
-      aiHistory
+      aiHistory,
+      aiSignals
     ] = await Promise.all([
       getJSON(API.market),
       getJSON(API.marketState),
@@ -667,7 +707,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       getJSON(API.autoPositions),
       getJSON(API.autoTrades),
       getJSON(API.aiDecision),
-      getJSON(API.aiHistory + "?limit=20")
+      getJSON(API.aiHistory + "?limit=20"),
+      getJSON(API.aiSignals + "?limit=50")
     ]);
 
     const mergedMarket = {
@@ -684,6 +725,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     updateAutoTrader(autoStatus, autoPositions, autoTrades);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
+    updateSignalHistory(aiSignals);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
