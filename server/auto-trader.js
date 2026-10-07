@@ -72,7 +72,8 @@ async function executeAiDecision(decision, decisionId=null){
   const riskDistance=Math.abs(entry-stop),targetDistance=Math.abs(target-entry),rr=targetDistance/Math.max(0.00001,riskDistance);
   if(!Number.isFinite(rr)||rr<2)return reject("REWARD_RISK_TOO_LOW",{rr,minRewardRisk:2});
   const positions=await cTrader.getOpenXAUUSDPositions();
-  const maxOpenPositions=maxOpenPositionsConfig();\n  if(positions.length>=maxOpenPositions){
+  const maxOpenPositions=maxOpenPositionsConfig();
+  if(positions.length>=maxOpenPositions){
     const openPositions=positions.map(p=>({
       positionId:p?.positionId??null,
       symbolId:p?.tradeData?.symbolId??null,
