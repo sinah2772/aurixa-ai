@@ -311,6 +311,7 @@ app.get("/api/auto-trader/trades", async (req, res) => {
         order_id AS "orderId",
         position_id AS "positionId",
         volume,
+        execution_entry_price AS "executionEntryPrice",
         stop_loss_distance AS "stopLossDistance",
         take_profit_distance AS "takeProfitDistance",
         planned_entry_price AS "plannedEntryPrice",
