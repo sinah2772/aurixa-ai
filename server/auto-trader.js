@@ -110,9 +110,15 @@ async function executeAiDecision(decision, decisionId=null){
   }
   const configuredMax=Number.isFinite(brokerMax)&&brokerMax>0?Math.min(cfg.maxVolume,brokerMax):cfg.maxVolume;
   const riskAmount=balance*cfg.riskPercent/100;
-  const rawVolume=riskAmount/riskDistance;
+  // cTrader Open API volume is sent in "cents": 1000 means 10 base
+  // units. Convert the risk budget into the same volume scale before
+  // normalizing to the broker's min/step/max. The previous calculation
+  // treated volume cents as base units and therefore understated the
+  // tradable volume by 100x, incorrectly rejecting valid confirmed signals.
+  const volumeUnitScale=100;
+  const rawVolume=(riskAmount*volumeUnitScale)/riskDistance;
   const volume=Math.min(configuredMax,Math.floor(rawVolume/brokerStep)*brokerStep);
-  const requiredRiskAtMinVolume=brokerMin*riskDistance;
+  const requiredRiskAtMinVolume=(brokerMin/volumeUnitScale)*riskDistance;
   if(volume<brokerMin){
     return reject("RISK_BUDGET_TOO_SMALL_FOR_BROKER_MIN_VOLUME",{
       accountBalance:balance,
@@ -121,6 +127,7 @@ async function executeAiDecision(decision, decisionId=null){
       riskPercent:cfg.riskPercent,
       riskAmount,
       riskDistance,
+      volumeUnitScale,
       rawVolume,
       selectedVolume:0,
       brokerMinVolume:brokerMin,
@@ -133,6 +140,7 @@ async function executeAiDecision(decision, decisionId=null){
     balance,equity:Number.isFinite(equity)?equity:null,
     freeMargin:Number.isFinite(freeMargin)?freeMargin:null,
     riskPercent:cfg.riskPercent,riskAmount,riskDistance,
+    volumeUnitScale:100,
     brokerMinVolume:brokerMin,brokerVolumeStep:brokerStep,
     brokerMaxVolume:brokerMax,selectedVolume:volume
   }));
