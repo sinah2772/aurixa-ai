@@ -1227,3 +1227,88 @@ main > .panel,.dashboard-grid > .panel{min-width:0}
   .section-heading{font-size:12px}
 }
 .account-stat strong,.position-grid strong,.gate-level strong,.activity-summary strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+
+/* ============================================================
+   CONFIRMED SIGNAL HISTORY — TABLE COLUMNS
+   ============================================================ */
+.confirmed-history-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.confirmed-signal-head,
+.confirmed-signal-row {
+  display: grid;
+  grid-template-columns: minmax(70px,.8fr) minmax(90px,1fr) minmax(90px,1fr) minmax(110px,1.1fr) minmax(125px,1.35fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+}
+
+.confirmed-signal-head {
+  margin: 14px 0 6px;
+  padding: 0 12px 7px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.confirmed-signal-row {
+  min-height: 44px;
+  padding: 9px 12px;
+  margin-bottom: 6px;
+  background: #080a0d;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.confirmed-signal-row > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confirmed-signal-row strong {
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.confirmed-signal-history {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .confirmed-history-panel {
+    overflow-x: auto;
+  }
+
+  .confirmed-history-panel .history-board-title,
+  .confirmed-history-panel .confirmed-signal-head,
+  .confirmed-history-panel .confirmed-signal-history {
+    min-width: 620px;
+  }
+
+  .confirmed-signal-head,
+  .confirmed-signal-row {
+    grid-template-columns: 70px 90px 95px 115px 130px;
+    gap: 8px;
+  }
+
+  .confirmed-signal-head {
+    padding-left: 9px;
+    padding-right: 9px;
+    font-size: 8px;
+  }
+
+  .confirmed-signal-row {
+    padding: 8px 9px;
+    font-size: 10px;
+  }
+}
