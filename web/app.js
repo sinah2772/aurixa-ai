@@ -550,16 +550,17 @@
         : "—"
     );
 
-    text(
-      "reason",
-      first(
-        s.reason,
-        s.marketReason,
-        s.explanation,
-        data.reason,
-        "Waiting for stronger confirmation"
-      )
-    );
+    const gates = data.gates || {};
+    const blocked = Array.isArray(data.blockedBy) ? data.blockedBy : Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
+    const gateLabels = { quoteFresh:"QUOTE FRESHNESS", spreadAllowed:"SPREAD", volatilityAllowed:"VOLATILITY", candleQualityAllowed:"CANDLE QUALITY", trendConfirmed:"TREND", confidenceAllowed:"CONFIDENCE", rewardRiskAllowed:"R:R", cTraderReady:"cTRADER", demoAccount:"DEMO ACCOUNT", quoteReady:"QUOTE" };
+    const readableBlocked = blocked.map(k => gateLabels[k] || k).slice(0,3);
+    const baseReason = first(s.reason,s.marketReason,s.explanation,data.reason);
+    const statusReason = String(data.signal || "WAIT").toUpperCase() === "WAIT"
+      ? (readableBlocked.length ? "Waiting: " + readableBlocked.join(" · ") : (baseReason || "Waiting for stronger confirmation"))
+      : (baseReason || "AI Trader V1 confirmation passed.");
+    text("reason", statusReason);
+    text("aiRegime", "REGIME " + String(first(data.regime, "—")).replaceAll("_"," "));
+    text("aiGate", blocked.length ? "BLOCKED · " + readableBlocked.join(" · ") : "ALL GATES PASSED");
 
     text(
       "signalEntry",
@@ -665,7 +666,8 @@
     const candles = first(data.candleCount, data.candles);
     text("aiSignal", signal);
     text("aiConfidence", Number.isFinite(confidence) ? number(confidence, 0) + "%" : "—");
-    text("aiScore", Number.isFinite(Number(data.score)) ? number(data.score, 0) : "—");
+    const buyScore = Number(data?.score?.buy), sellScore = Number(data?.score?.sell);
+    text("aiScore", Number.isFinite(buyScore) && Number.isFinite(sellScore) ? "BUY " + buyScore + " / SELL " + sellScore : "—");
     text("aiPhase", first(data.trend, data.regime, "—"));
     text("aiEntry", number(first(data.entry, data.entryPrice), 2));
     text("aiStop", number(first(data.stopLoss, data.stop), 2));
@@ -691,12 +693,13 @@
 
     text("gateMarket", gates.dataReady === false ? "NO DATA" : (gates.spreadAllowed === false ? "SPREAD BLOCKED" : "READY"));
     text("gateSignal", direction);
-    text("gateFvg", Number.isFinite(Number(data.confidence)) ? number(data.confidence, 0) + "% CONF" : "WAIT");
+    const failedGates = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
+    text("gateFvg", failedGates.length ? "BLOCKED · " + failedGates.slice(0,2).join(" / ").toUpperCase() : "PASSED");
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
     text("gateEntry", number(first(data.entry, data.entryPrice), 2));
     text("gateSL", number(first(data.stopLoss, data.stop), 2));
     text("gateTP", number(first(data.takeProfit, data.target), 2));
-    text("gateRR", Number.isFinite(Number(data.riskReward)) ? number(data.riskReward, 1) + "R" : "—");
+    text("gateRR", Number.isFinite(Number(first(data.rewardRisk, data.riskReward))) ? number(first(data.rewardRisk, data.riskReward), 1) + "R" : "—");
 
     const decision = $("gateDecision");
     if (decision) {
@@ -880,13 +883,16 @@ async function refresh() {
     updateOrderflow(liveAi);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
 
-    text(
-      "engineStatus",
-      liveAi.dataReady === false
-        ? "WAITING FOR DATA"
-        : liveAi.executionEligible
-          ? "TRADE READY"
-          : "WAITING"
+    const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
+    const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
+    text("engineStatus",
+      liveAi.executionEligible === true
+        ? "TRADE READY · " + aiSignal
+        : liveAi.candleCount < 50
+          ? "WAITING FOR 50+ CANDLES"
+          : blocked.length
+            ? "AI ACTIVE · " + aiSignal + " · BLOCKED"
+            : "AI ACTIVE · " + aiSignal
     );
 
     const system = await getJSON(API.system);
