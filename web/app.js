@@ -529,6 +529,8 @@
 
 
 
+  }
+
   function formatTime(value) {
     if (!value) return "—";
 
