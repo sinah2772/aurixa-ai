@@ -81,7 +81,7 @@ async function executeAiDecision(decision, decisionId=null){
   return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:stop,plannedTakeProfitPrice:target,...result};
 }
 
-async function dryRunOrderflow(){
+async function dryRunAiTrader(){
   const candles=cTrader?.getMarketCandles?.()||[],st=cTrader?.getCTraderStatus?.()||{},decision=aiEngine?.decide(candles,st)||null;
   return {dryRun:true,wouldExecute:Boolean(decision?.executionEligible),orderSubmitted:false,strategy:"AURIXA_AI_TRADER_V1",decision,reason:decision?.executionEligible?"AI_SIGNAL_READY_NO_ORDER_SUBMITTED":"AI_WAIT_OR_BLOCKED"};
 }
@@ -144,4 +144,4 @@ async function init(){
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT");
   return true;
 }
-module.exports={configure,getStatus,executeAiDecision,dryRunOrderflow,syncOpenPositions,init};
+module.exports={configure,getStatus,executeAiDecision,dryRunAiTrader,syncOpenPositions,init};
