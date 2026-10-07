@@ -730,16 +730,16 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
         const n = Number(value);
         return Number.isFinite(n) ? n : null;
       };
-      const entry = toNumber(first(t.executionEntryPrice, t.plannedEntryPrice));
+      const entry = toNumber(first(t.executionEntryPrice, t.plannedEntryPrice, t.signalEntryPrice));
       const exit = toNumber(t.closePrice);
       const pnl = toNumber(t.profit);
-      const result = pnl === null ? "CLOSED" : (pnl > 0 ? "PROFIT" : pnl < 0 ? "LOSS" : "BREAKEVEN");
+      const result = pnl === null ? "RESULT UNAVAILABLE" : (pnl > 0 ? "PROFIT" : pnl < 0 ? "LOSS" : "BREAKEVEN");
       const cls = result === "PROFIT" ? "history-buy" : result === "LOSS" ? "history-sell" : "";
       const opened = formatTime(t.openedAt || t.createdAt);
       const closedAt = formatTime(t.closedAt);
       return '<div class="confirmed-signal-row">' +
         '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML(direction || "TRADE") + '</strong>' +
-        '<span>' + escapeHTML((entry !== null ? number(entry, 2) : "—") + " → " + (exit !== null ? number(exit, 2) : "—")) + '</span>' +
+        '<span>' + escapeHTML((entry !== null && entry > 0 ? number(entry, 2) : "—") + " → " + (exit !== null && exit > 0 ? number(exit, 2) : "—")) + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(pnl !== null ? (pnl > 0 ? "+" : "") + number(pnl, 2) : "—") + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(result + " · " + closedAt) + '</span>' +
         '</div>';
