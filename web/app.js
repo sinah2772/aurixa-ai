@@ -348,6 +348,16 @@
     );
   }
 
+  function setSignal(signal) {
+    const value = String(signal || "WAIT").toUpperCase();
+    const el = $("signal");
+    if (el) {
+      el.classList.remove("buy", "sell", "wait");
+      el.classList.add(value === "BUY" ? "buy" : value === "SELL" ? "sell" : "wait");
+      el.textContent = value === "BUY" || value === "SELL" ? value : "WAIT";
+    }
+  }
+
   function updateSignal(ai) {
     const data = ai?.decision || ai || {};
     const signal = String(first(data.signal, data.direction, "WAIT")).toUpperCase();
@@ -665,6 +675,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       ...(market || {})
     };
 
+    updateConnection(ctrader);
     updateMarket(mergedMarket, ctrader);
     updateMarketSession(mergedMarket, ctrader);
 
@@ -672,7 +683,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     updateSignal(liveAi);
     updateAutoTrader(autoStatus, autoPositions, autoTrades);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
-    try { updateActivity(liveAi, ctrader, autoStatus, autoPositions); } catch (e) { console.error("AURIXA activity update:", e); }
+    updateActivity(liveAi, ctrader, autoStatus, autoPositions);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
