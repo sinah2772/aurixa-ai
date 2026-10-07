@@ -121,7 +121,6 @@ async function executeAiDecision(decision, decisionId=null){
     brokerMinVolume:brokerMin,brokerVolumeStep:brokerStep,
     brokerMaxVolume:brokerMax,selectedVolume:volume
   }));
-  let result;
   // ENTRY-FIRST EXECUTION:
   // Send the market order without waiting for SL/TP calculation at the
   // broker. The first priority is to get the XAUUSD position opened.
