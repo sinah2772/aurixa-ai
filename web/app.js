@@ -26,7 +26,6 @@
   };
 
   let chart = null;
-  let selectedSymbol = "XAUUSD";
 
   async function getJSON(url) {
     try {
@@ -91,13 +90,9 @@
   function updateConnection(status) {
     if (!status) return;
 
-    const liveSymbol = first(status.symbol, status.symbolName, selectedSymbol, "XAUUSD");
-    selectedSymbol = String(liveSymbol).toUpperCase();
-    text("instrument", selectedSymbol);
-    text("chartTitle", selectedSymbol + " / 5 MINUTE");
-
-    const selector = $("pairSelector");
-    if (selector && selector.value !== selectedSymbol) selector.value = selectedSymbol;
+    const liveSymbol = String(first(status.symbol, status.symbolName, "XAUUSD")).toUpperCase();
+    text("instrument", liveSymbol);
+    text("chartTitle", liveSymbol + " / 5 MINUTE");
 
     const connected =
       status.connected === true &&
@@ -260,19 +255,12 @@
         ctrader?.symbol,
         market.symbol,
         market.symbolName,
-        selectedSymbol,
         "XAUUSD"
       )
     ).toUpperCase();
 
-    selectedSymbol = marketSymbol;
     text("instrument", marketSymbol);
     text("chartTitle", marketSymbol + " / 5 MINUTE");
-
-    const selector = $("pairSelector");
-    if (selector && selector.value !== marketSymbol) {
-      selector.value = marketSymbol;
-    }
 
     const candles = first(
       market.candles,
