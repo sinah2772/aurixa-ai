@@ -150,6 +150,46 @@
     </section>
 
 
+    <!-- ACCOUNT & EXECUTION -->
+    <section class="panel account-panel">
+      <div class="section-title">ACCOUNT &amp; EXECUTION</div>
+      <div class="section-heading">cTRADER DEMO ACCOUNT</div>
+      <div class="account-grid">
+        <div class="account-stat"><span>ACCOUNT</span><strong id="accountId">—</strong></div>
+        <div class="account-stat"><span>SYMBOL</span><strong id="symbolId">—</strong></div>
+        <div class="account-stat"><span>CONNECTION</span><strong id="ctraderConnection">DISCONNECTED</strong></div>
+        <div class="account-stat"><span>LAST UPDATE</span><strong id="lastUpdate">—</strong></div>
+        <div class="account-stat"><span>AUTO-TRADER</span><strong id="autoTradeStatus">OFF</strong></div>
+        <div class="account-stat"><span>POSITIONS</span><strong id="autoTradePosition">FLAT 0/3</strong></div>
+      </div>
+      <div class="position-card">
+        <div class="position-title">OPEN XAUUSD POSITION</div>
+        <div class="position-grid">
+          <div><span>DIRECTION</span><strong id="autoPositionDirection">FLAT</strong></div>
+          <div><span>ENTRY</span><strong id="autoPositionEntry">—</strong></div>
+          <div><span>CURRENT</span><strong id="autoPositionCurrent">—</strong></div>
+          <div><span>VOLUME</span><strong id="autoPositionVolume">—</strong></div>
+          <div><span>STOP LOSS</span><strong id="autoPositionSL">—</strong></div>
+          <div><span>UNREALIZED P&amp;L</span><strong id="autoPositionPnl">—</strong></div>
+        </div>
+        <div id="autoTradeNotice" class="notice">Waiting for demo position data...</div>
+      </div>
+    </section>
+
+    <!-- CLOSED TRADE HISTORY -->
+    <section class="panel closed-history-panel">
+      <div class="history-board-title">
+        <div>
+          <div class="section-title">AI TRADER TRADE HISTORY</div>
+          <div class="section-heading">CLOSED POSITIONS &amp; PROFIT / LOSS</div>
+        </div>
+        <span id="closedTradeHistorySummary">0 CLOSED TRADES</span>
+      </div>
+      <div id="closedTradeHistory" class="confirmed-signal-history">
+        <div class="empty">No closed trades yet.</div>
+      </div>
+    </section>
+
     <!-- AI TRADER CLOSED TRADE HISTORY -->
     
 
