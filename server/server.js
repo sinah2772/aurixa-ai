@@ -313,7 +313,7 @@ app.get("/api/auto-trader/status", (req, res) => {
 
 app.get("/api/auto-trader/dry-run", async (req, res) => {
   try {
-    const dryRun = await autoTrader.dryRunOrderflow();
+    const dryRun = await autoTrader.dryRunAiTrader();
 
     res.json({
       ok: true,
