@@ -54,7 +54,7 @@ async function executeAiDecision(decision, decisionId=null){
   if(decision.signal==="BUY"&&(stop>=entry||target<=entry))return reject("BUY_PROTECTION_INVALID",{entry,stop,target});
   if(decision.signal==="SELL"&&(stop<=entry||target>=entry))return reject("SELL_PROTECTION_INVALID",{entry,stop,target});
   const riskDistance=Math.abs(entry-stop),targetDistance=Math.abs(target-entry),rr=targetDistance/Math.max(0.00001,riskDistance);
-  if(!Number.isFinite(rr)||rr<1.5)return reject("REWARD_RISK_TOO_LOW",{rr});
+  if(!Number.isFinite(rr)||rr<2)return reject("REWARD_RISK_TOO_LOW",{rr,minRewardRisk:2});
   const positions=await cTrader.getOpenXAUUSDPositions();
   if(positions.length>=1)return reject("XAUUSD_POSITION_ALREADY_OPEN",{openPositions:positions.length});
   if(typeof dbQuery==="function"){
