@@ -44,3 +44,90 @@
 .position-title{font-size:10px;letter-spacing:.08em;font-weight:700;margin-bottom:2px}
 .position-card .notice{margin-top:10px}
 @media(max-width:520px){.account-grid,.position-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.account-stat,.position-grid>div{padding:9px}.account-stat strong,.position-grid strong{font-size:11px}.account-stat span,.position-grid span{font-size:8px}.position-card{padding:9px}}
+
+
+/* ============================================================
+   AURIXA COMPLETE TRADING DASHBOARD — RESPONSIVE LAYOUT
+   Keep the dashboard sections together on desktop and compact on mobile.
+   ============================================================ */
+main{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:16px;
+  align-items:start;
+}
+main > .dashboard-grid{
+  display:contents;
+}
+main > .panel,
+main > .dashboard-grid > .panel{
+  min-width:0;
+  width:100%;
+  box-sizing:border-box;
+}
+main > .hero{
+  grid-column:1 / -1;
+}
+main > .ai-activity-panel{
+  grid-column:1 / -1;
+}
+main > .confirmed-history-panel{
+  grid-column:1 / -1;
+}
+main > .closed-history-panel{
+  grid-column:1 / -1;
+}
+main > .compact-panel{
+  grid-column:1 / -1;
+}
+main > .system-footer{
+  grid-column:1 / -1;
+}
+
+/* Keep the most important execution information near the top. */
+main > .dashboard-grid > .signal-panel{grid-column:1;}
+main > .dashboard-grid > .chart-panel{grid-column:2;}
+main > .final-gate-panel{grid-column:2;}
+main > .account-summary-panel{grid-column:1;}
+main > .performance-panel{grid-column:1;}
+main > .account-panel{grid-column:2;}
+
+@media(max-width:760px){
+  main{
+    grid-template-columns:minmax(0,1fr);
+    gap:10px;
+  }
+  main > .hero,
+  main > .ai-activity-panel,
+  main > .confirmed-history-panel,
+  main > .closed-history-panel,
+  main > .compact-panel,
+  main > .system-footer,
+  main > .dashboard-grid > .signal-panel,
+  main > .dashboard-grid > .chart-panel,
+  main > .final-gate-panel,
+  main > .account-summary-panel,
+  main > .performance-panel,
+  main > .account-panel{
+    grid-column:1;
+  }
+}
+
+@media(max-width:520px){
+  main{gap:8px;}
+  main > .panel{border-radius:12px;}
+  .section-title{font-size:9px;}
+  .section-heading{font-size:12px;}
+  .hero-price .price{font-size:clamp(34px,11vw,52px);}
+}
+
+/* Prevent long live values from stretching the mobile layout. */
+.account-stat strong,
+.position-grid strong,
+.gate-level strong,
+.activity-summary strong{
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
