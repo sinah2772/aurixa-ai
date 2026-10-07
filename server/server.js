@@ -262,6 +262,33 @@ app.get("/api/auto-trader/positions", async (req, res) => {
   }
 });
 
+
+app.get("/api/auto-trader/account", async (req, res) => {
+  try {
+    const ct = getCTraderStatus() || {};
+    if (!ct.connected || !ct.authorized) {
+      return res.status(503).json({ ok:false, readOnly:true, error:"CTRADER_NOT_READY" });
+    }
+    if (ct.account?.isLive !== false) {
+      return res.status(403).json({ ok:false, readOnly:true, demoOnly:true, error:"DEMO_ACCOUNT_REQUIRED" });
+    }
+    const account = await require("./ctrader").getAccountBalance();
+    res.json({
+      ok:true, readOnly:true, demoOnly:true,
+      accountId:ct.accountId, symbol:ct.symbolName || ct.symbol || "XAUUSD",
+      brokerTitleShort:ct.account?.brokerTitleShort || null,
+      traderLogin:ct.account?.traderLogin || null,
+      isLive:ct.account?.isLive === true,
+      currency:account.currency || null,
+      ...account,
+      updatedAt:new Date().toISOString()
+    });
+  } catch (err) {
+    console.error("Auto-Trader account inspection error:", err);
+    res.status(500).json({ ok:false, readOnly:true, error:"ACCOUNT_DATA_UNAVAILABLE" });
+  }
+});
+
 app.get("/api/auto-trader/trades", async (req, res) => {
   try {
     const limit = Math.min(
