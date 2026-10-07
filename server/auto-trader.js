@@ -78,21 +78,49 @@ async function executeAiDecision(decision, decisionId=null){
     if(Number(lim.rows[0]?.today||0)>=cfg.maxTradesPerDay)return reject("MAX_DAILY_TRADES_REACHED");
     if(lim.rows[0]?.last_trade&&Date.now()-new Date(lim.rows[0].last_trade).getTime()<cfg.cooldownMinutes*60000)return reject("TRADE_COOLDOWN_ACTIVE");
   }
-  const account=await cTrader.getAccountBalance?.(),balance=Number(account?.balance);
+  // Read the live demo account immediately before sizing the order.
+  // Volume is derived from account balance + risk %, then constrained by
+  // the broker's actual XAUUSD min/step/max volume.
+  const account=await cTrader.getAccountBalance?.();
+  const balance=Number(account?.balance);
+  const equity=Number(account?.equity);
+  const freeMargin=Number(account?.freeMargin);
   if(!Number.isFinite(balance)||balance<=0)return reject("INVALID_ACCOUNT_BALANCE");
+  const volumeRules=await cTrader.getXAUUSDVolumeConstraints?.();
+  const brokerMin=Number(volumeRules?.minVolume);
+  const brokerStep=Number(volumeRules?.stepVolume);
+  const brokerMax=Number(volumeRules?.maxVolume);
+  if(!Number.isFinite(brokerMin)||brokerMin<=0||!Number.isFinite(brokerStep)||brokerStep<=0){
+    return reject("BROKER_VOLUME_RULES_UNAVAILABLE",{balance,equity,freeMargin});
+  }
+  const configuredMax=Number.isFinite(brokerMax)&&brokerMax>0?Math.min(cfg.maxVolume,brokerMax):cfg.maxVolume;
   const riskAmount=balance*cfg.riskPercent/100;
   const rawVolume=riskAmount/riskDistance;
-  const volume=Math.min(cfg.maxVolume,Math.floor(rawVolume/cfg.volumeStep)*cfg.volumeStep);
-  if(volume<cfg.volumeMin){
-    return reject("RISK_BUDGET_TOO_SMALL_FOR_VOLUME_STEP",{
+  const volume=Math.min(configuredMax,Math.floor(rawVolume/brokerStep)*brokerStep);
+  const requiredRiskAtMinVolume=brokerMin*riskDistance;
+  if(volume<brokerMin){
+    return reject("RISK_BUDGET_TOO_SMALL_FOR_BROKER_MIN_VOLUME",{
+      accountBalance:balance,
+      accountEquity:Number.isFinite(equity)?equity:null,
+      freeMargin:Number.isFinite(freeMargin)?freeMargin:null,
+      riskPercent:cfg.riskPercent,
       riskAmount,
       riskDistance,
       rawVolume,
-      volumeMin:cfg.volumeMin,
-      volumeStep:cfg.volumeStep,
-      maxVolume:cfg.maxVolume
+      selectedVolume:0,
+      brokerMinVolume:brokerMin,
+      brokerVolumeStep:brokerStep,
+      brokerMaxVolume:brokerMax,
+      requiredRiskAtMinVolume
     });
   }
+  console.log("AURIXA ACCOUNT VOLUME CHECK:",JSON.stringify({
+    balance,equity:Number.isFinite(equity)?equity:null,
+    freeMargin:Number.isFinite(freeMargin)?freeMargin:null,
+    riskPercent:cfg.riskPercent,riskAmount,riskDistance,
+    brokerMinVolume:brokerMin,brokerVolumeStep:brokerStep,
+    brokerMaxVolume:brokerMax,selectedVolume:volume
+  }));
   let result;
   try{result=await cTrader.placeDemoMarketOrder({direction:decision.signal,volume,stopLossDistance:riskDistance,takeProfitDistance:targetDistance});}
   catch(e){return reject("CTRADER_ORDER_REJECTED",{error:e.message});}
