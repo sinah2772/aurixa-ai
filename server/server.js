@@ -12,10 +12,8 @@ const {
   queryDatabase
 } = require("./ctrader");
 
-const signalTracker = require("./signal-tracker");
 const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
-const { backtest } = require("./validation");
 const aiTraderEngine = require("./ai-trader-engine");
 async function auditAiDecision(decision){
  try{
@@ -26,23 +24,6 @@ async function auditAiDecision(decision){
  }catch(e){console.warn("AI decision audit:",e.message);return null;}
 }
 setMarketEngine(marketEngine);
-
-signalTracker.configure({
-  query: queryDatabase,
-  getState: () => {
-    const state = marketEngine.getState();
-    const ctrader = getCTraderStatus();
-
-    return {
-      ...state,
-      symbol: ctrader.symbol,
-      symbolId: ctrader.symbolId,
-      symbolDigits: ctrader.symbolDigits,
-      tradingAccount: ctrader.accountId,
-      predictionEngine: marketEngine.calculatePrediction
-    };
-  }
-});
 
 autoTrader.configure({
   ctrader: {
@@ -234,66 +215,6 @@ function atr(data, period=14) {
     .reduce((a,b)=>a+b,0)/period;
 }
 
-function prediction() {
-  if (candles.length < 50) {
-    return {
-      signal:"WAIT",
-      confidence:0,
-      reason:"Waiting for real XAUUSD data",
-      dataReady:false
-    };
-  }
-
-  const closes=candles.map(x=>x.close);
-
-  const e9=ema(closes,9);
-  const e21=ema(closes,21);
-  const e50=ema(closes,50);
-  const r=rsi(closes,14);
-  const a=atr(candles,14);
-
-  let score=0;
-
-  if(e9 > e21) score += 1;
-  else score -= 1;
-
-  if(e21 > e50) score += 1;
-  else score -= 1;
-
-  if(r > 55 && r < 75) score += 1;
-  if(r < 45 && r > 25) score -= 1;
-
-  const last=closes[closes.length-1];
-  const previous=closes[closes.length-2];
-
-  if(last > previous) score += 1;
-  else if(last < previous) score -= 1;
-
-  let signal="WAIT";
-
-  if(score >= 3) signal="BUY";
-  if(score <= -3) signal="SELL";
-
-  const confidence=Math.min(
-    95,
-    Math.round(50 + Math.abs(score)*10)
-  );
-
-  return {
-    signal,
-    confidence,
-    price:last,
-    ema9:e9,
-    ema21:e21,
-    ema50:e50,
-    rsi:r,
-    atr:a,
-    dataReady:true,
-    timestamp:new Date().toISOString()
-  };
-}
-
-
 app.get("/api/system/health", async (req, res) => {
   const started = Date.now();
 
@@ -340,201 +261,6 @@ app.get("/api/health",(req,res)=>{
 });
 
 
-let simState = {
-  enabled: false,
-  price: 2650,
-  candles: [],
-  signal: "WAIT",
-  confidence: 0,
-  reason: "Simulation not started",
-  entry: null,
-  pnl: 0
-};
-
-function simCandle() {
-  const last = simState.price;
-  const move = (Math.random() - 0.48) * 3.5;
-  const close = Math.max(100, last + move);
-  const high = Math.max(last, close) + Math.random() * 1.5;
-  const low = Math.min(last, close) - Math.random() * 1.5;
-
-  simState.price = close;
-  simState.candles.push({
-    time: Date.now(),
-    open: last,
-    high,
-    low,
-    close
-  });
-
-  if (simState.candles.length > 100)
-    simState.candles.shift();
-
-  const closes = simState.candles.map(x => x.close);
-
-  if (closes.length < 21) {
-    simState.signal = "WAIT";
-    simState.confidence = 0;
-    simState.reason = "Building simulated 5-minute history";
-    return;
-  }
-
-  const ema = (period) => {
-    const k = 2 / (period + 1);
-    let value = closes[0];
-    for (const price of closes.slice(1))
-      value = price * k + value * (1 - k);
-    return value;
-  };
-
-  const ema9 = ema(9);
-  const ema21 = ema(21);
-
-  let gains = 0;
-  let losses = 0;
-  for (let i = Math.max(1, closes.length - 14); i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d >= 0) gains += d;
-    else losses -= d;
-  }
-
-  const avgGain = gains / 14;
-  const avgLoss = losses / 14;
-  const rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
-
-  if (ema9 > ema21 && rsi < 70) {
-    simState.signal = "BUY";
-    simState.confidence = Math.min(95, Math.round(55 + Math.abs(ema9 - ema21) * 8));
-    simState.reason = "Simulated bullish EMA alignment with RSI confirmation";
-  } else if (ema9 < ema21 && rsi > 30) {
-    simState.signal = "SELL";
-    simState.confidence = Math.min(95, Math.round(55 + Math.abs(ema9 - ema21) * 8));
-    simState.reason = "Simulated bearish EMA alignment with RSI confirmation";
-  } else {
-    simState.signal = "WAIT";
-    simState.confidence = Math.round(40 + Math.random() * 15);
-    simState.reason = "Simulated indicators disagree";
-  }
-
-  if (simState.entry !== null) {
-    simState.pnl =
-      simState.signal === "BUY"
-        ? simState.price - simState.entry
-        : simState.entry - simState.price;
-  }
-}
-
-app.get("/api/simulation", (req, res) => {
-  if (req.query.start === "1") simState.enabled = true;
-  if (req.query.stop === "1") simState.enabled = false;
-
-  if (simState.enabled) simCandle();
-
-  res.json({
-    mode: "SIMULATION",
-    realMarketData: false,
-    liveTrading: false,
-    paperTrading: true,
-    enabled: simState.enabled,
-    symbol: "XAUUSD",
-    timeframe: "5m",
-    price: Number(simState.price.toFixed(2)),
-    signal: simState.signal,
-    confidence: simState.confidence,
-    reason: simState.reason,
-    candles: simState.candles.slice(-30),
-    entry: simState.entry,
-    pnl: Number(simState.pnl.toFixed(2))
-  });
-});
-
-
-app.get("/api/validation",(req,res)=>{
-  try {
-    const state = marketEngine.getState();
-
-    const result = backtest(
-      state.candles || []
-    );
-
-    res.json({
-      ok: true,
-      autoTrading: false,
-      paperTrading: true,
-      ...result
-    });
-  } catch (err) {
-    res.status(500).json({
-      ok: false,
-      error: String(err.message || err)
-    });
-  }
-});
-
-
-/* ============================================================
-   AURIXA SIGNAL TRACKING V1
-   ============================================================ */
-
-app.get("/api/signals/stats", async (req, res) => {
-  try {
-    const symbol = String(req.query.symbol || "XAUUSD").trim().toUpperCase();
-    const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
-    const stats = await signalTracker.getStats(symbol, timeframe);
-
-    res.json(stats);
-  } catch (err) {
-    console.error("Signal stats error:", err);
-
-    res.status(500).json({
-      ok: false,
-      error: "Signal statistics unavailable"
-    });
-  }
-});
-
-
-app.get("/api/signals/v2-stats", async (req, res) => {
-  try {
-    const symbol = String(req.query.symbol || "XAUUSD").trim().toUpperCase();
-    const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
-    const stats = await signalTracker.getV2Stats(symbol, timeframe);
-    res.json(stats);
-  } catch (err) {
-    console.error("Signal V2 stats error:", err);
-
-    res.status(500).json({
-      ok: false,
-      error: "Signal V2 statistics unavailable"
-    });
-  }
-});
-
-app.get("/api/signals/history", async (req, res) => {
-  try {
-    const limit = Math.min(
-      Math.max(Number(req.query.limit) || 20, 1),
-      100
-    );
-
-    const symbol = String(req.query.symbol || "XAUUSD").trim().toUpperCase();
-    const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
-    const from = String(req.query.from || "").trim() || null;
-    const to = String(req.query.to || "").trim() || null;
-    const history = await signalTracker.getRecent(limit, symbol, timeframe, from, to);
-
-    res.json(history);
-  } catch (err) {
-    console.error("Signal history error:", err);
-
-    res.status(500).json({
-      ok: false,
-      error: "Signal history unavailable"
-    });
-  }
-});
-
-
 function getMarketSessionStatus(ct = getCTraderStatus()) {
   const connected = Boolean(ct?.connected && ct?.authorized);
   const last = ct?.lastUpdate ? Date.parse(ct.lastUpdate) : NaN;
@@ -569,91 +295,6 @@ function getMarketSessionStatus(ct = getCTraderStatus()) {
     reason: "Fresh cTrader market data is available"
   };
 }
-
-app.post("/api/auto-trader/test-sell", async (req, res) => {
-  try {
-    const cfg = { enabled: String(process.env.AUTO_TRADING || "false").toLowerCase() === "true", demoOnly: String(process.env.AUTO_TRADING_DEMO_ONLY || "true").toLowerCase() !== "false", volume: Math.max(1, Number(process.env.AUTO_TRADING_VOLUME || 100)), sl: Number(process.env.AUTO_TRADING_SL || 2), tp: Number(process.env.AUTO_TRADING_TP || 0) };
-
-    if (!cfg.enabled) {
-      return res.status(403).json({
-        ok: false,
-        orderSubmitted: false,
-        reason: "AUTO_TRADING_DISABLED"
-      });
-    }
-
-    if (!cfg.demoOnly) {
-      return res.status(403).json({
-        ok: false,
-        orderSubmitted: false,
-        reason: "DEMO_ONLY_GUARD_DISABLED"
-      });
-    }
-
-    const status = getCTraderStatus();
-    const market = getMarketSessionStatus(status);
-
-    if (!market.open) {
-      return res.status(403).json({
-        ok: false,
-        orderSubmitted: false,
-        reason: market.status,
-        marketStatus: market
-      });
-    }
-
-    if (status?.account?.isLive === true || status?.isLive === true) {
-      return res.status(403).json({
-        ok: false,
-        orderSubmitted: false,
-        reason: "LIVE_ACCOUNT_BLOCKED"
-      });
-    }
-
-    const ctrader = require("./ctrader");
-
-    if (
-      typeof ctrader.placeDemoMarketOrder !== "function" ||
-      typeof ctrader.getOpenXAUUSDPositions !== "function"
-    ) {
-      return res.status(503).json({
-        ok: false,
-        orderSubmitted: false,
-        reason: "POSITION_EXECUTOR_NOT_CONFIGURED"
-      });
-    }
-
-    // No application-level maximum-position limit.
-    // cTrader/broker account limits and margin rules still apply.
-
-    const result = await ctrader.placeDemoMarketOrder({
-      direction: "SELL",
-      volume: cfg.volume,
-      stopLossDistance: cfg.sl,
-      takeProfitDistance: cfg.tp
-    });
-
-    res.json({
-      ok: true,
-      test: true,
-      demoOnly: true,
-      direction: "SELL",
-      orderSubmitted: true,
-      result
-    });
-  } catch (err) {
-    console.error("Demo test SELL error:", err);
-
-    res.status(500).json({
-      ok: false,
-      test: true,
-      demoOnly: true,
-      orderSubmitted: false,
-      reason: "TEST_SELL_FAILED",
-      error: err.message
-    });
-  }
-});
 
 app.get("/api/auto-trader/status", (req, res) => {
   try {
@@ -845,29 +486,6 @@ app.get("/api/market/history", async (req, res) => {
   }
 });
 
-app.get("/api/signals/recent", async (req, res) => {
-  try {
-    const symbol = String(req.query.symbol || "XAUUSD").trim().toUpperCase();
-    const timeframe = String(req.query.timeframe || "5m").trim() || "5m";
-    const recent = await signalTracker.getRecent(
-      req.query.limit,
-      symbol,
-      timeframe,
-      String(req.query.from || "").trim() || null,
-      String(req.query.to || "").trim() || null
-    );
-
-    res.json(recent);
-  } catch (err) {
-    console.error("Recent signals error:", err);
-
-    res.status(500).json({
-      ok: false,
-      error: "Signal history unavailable"
-    });
-  }
-});
-
 app.get("/api/market/state", (req, res) => {
   try {
     const state = marketEngine.getState();
@@ -891,41 +509,19 @@ app.get("/api/market",(req,res)=>{
   const ct = getCTraderStatus();
   const marketStatus = getMarketSessionStatus(ct);
   const state = marketEngine.getState();
-  const prediction = state.prediction || {};
+  const decision = aiTraderEngine.decide(state.candles || [], ct);
 
   res.json({
     symbol: ct.symbol || "XAUUSD",
     timeframe: "5m",
 
-    price: ct.mid ?? state.spotPrice ?? null,
+    price: ct.mid ?? state.price ?? null,
     bid: ct.bid ?? null,
     ask: ct.ask ?? null,
 
     candles: state.candles || [],
 
-    prediction: {
-      signal: prediction.signal || "WAIT",
-      confidence: prediction.confidence ?? 0,
-      reason: prediction.reason || "Waiting for enough M5 data",
-      dataReady: prediction.dataReady ?? false,
-
-      ema9: prediction.ema9 ?? null,
-      ema21: prediction.ema21 ?? null,
-      ema50: prediction.ema50 ?? null,
-      rsi: prediction.rsi ?? null,
-      atr: prediction.atr ?? null,
-      score: prediction.score ?? 0,
-
-      momentum3: prediction.momentum3 ?? null,
-      momentum5: prediction.momentum5 ?? null,
-      momentum8: prediction.momentum8 ?? null,
-      slope: prediction.slope ?? null,
-      bodyStrength: prediction.bodyStrength ?? null,
-      volatility: prediction.volatility || "unknown",
-      breakout: prediction.breakout ?? 0,
-      bullishFactors: prediction.bullishFactors ?? 0,
-      bearishFactors: prediction.bearishFactors ?? 0
-    },
+    prediction: decision,
 
     liveConnected: !!(ct.connected && ct.authorized),
     authorized: !!ct.authorized,
@@ -966,21 +562,11 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
   console.log(`Symbol: ${process.env.SYMBOL}`);
   console.log("Auto trading strategy: AURIXA_AI_TRADER_V1");
   console.log("Paper trading: ENABLED");
-  console.log("Signal tracking: ENABLED");
   console.log("======================================");
 
   server.keepAliveTimeout = 120000;
   server.headersTimeout = 125000;
   server.requestTimeout = 30000;
-
-  try {
-    await signalTracker.init();
-  } catch (err) {
-    console.error(
-      "AURIXA Signal Tracking initialization failed:",
-      err.message
-    );
-  }
 
   try {
     await autoTrader.init();
