@@ -21,12 +21,29 @@ async function auditAiDecision(decision){
   await queryDatabase("CREATE TABLE IF NOT EXISTS aurixa.ai_trade_decisions(id BIGSERIAL PRIMARY KEY,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),engine TEXT NOT NULL,version TEXT NOT NULL,signal TEXT NOT NULL,confidence NUMERIC(6,2),decision JSONB NOT NULL)");
   await queryDatabase("CREATE TABLE IF NOT EXISTS aurixa.ai_signals(id BIGSERIAL PRIMARY KEY,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),candle_time TIMESTAMPTZ,engine TEXT NOT NULL,version TEXT NOT NULL,symbol TEXT NOT NULL,timeframe TEXT NOT NULL,signal TEXT NOT NULL,confidence NUMERIC(6,2),entry_price NUMERIC,stop_loss NUMERIC,take_profit NUMERIC,reward_risk NUMERIC,execution_eligible BOOLEAN NOT NULL DEFAULT FALSE,blocked_by JSONB NOT NULL DEFAULT '[]'::jsonb,decision JSONB NOT NULL)");
   const q=await queryDatabase("INSERT INTO aurixa.ai_trade_decisions(engine,version,signal,confidence,decision) VALUES($1,$2,$3,$4,$5::jsonb) RETURNING id",[decision.engine,decision.version,decision.signal,decision.confidence,JSON.stringify(decision)]);
-  await queryDatabase("INSERT INTO aurixa.ai_signals(candle_time,engine,version,symbol,timeframe,signal,confidence,entry_price,stop_loss,take_profit,reward_risk,execution_eligible,blocked_by,decision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb)",[
-    Number.isFinite(Date.parse(decision.candleTime))?new Date(decision.candleTime):null,
-    decision.engine,decision.version,decision.symbol||"XAUUSD",decision.timeframe||"M5",decision.signal,decision.confidence,
-    decision.entry,decision.stopLoss,decision.takeProfit,decision.rewardRisk,Boolean(decision.executionEligible),
-    JSON.stringify(decision.blockedBy||[]),JSON.stringify(decision)
-  ]);
+
+  // Execution is evaluated every 15s, but signal history is intentionally
+  // deduplicated: keep one record per new M5 candle and record any signal
+  // transition immediately. This prevents WAIT/BUY/SELL spam in the UI.
+  const parsedCandleTime=Date.parse(decision.candleTime);
+  const fallbackCandleTime=Math.floor(Date.now()/300000)*300000;
+  const candleTime=new Date(Number.isFinite(parsedCandleTime)?parsedCandleTime:fallbackCandleTime);
+  const latest=await queryDatabase("SELECT signal,candle_time AS \"candleTime\" FROM aurixa.ai_signals ORDER BY created_at DESC LIMIT 1");
+  const previous=latest.rows[0];
+  const previousCandle=previous?.candleTime?Date.parse(previous.candleTime):NaN;
+  const candleChanged=!previous || !Number.isFinite(previousCandle) || candleTime.getTime()!==previousCandle;
+  const signalChanged=!previous || String(previous.signal)!==String(decision.signal);
+  const shouldRecord=!previous || candleChanged || signalChanged;
+
+  if(shouldRecord){
+    await queryDatabase("INSERT INTO aurixa.ai_signals(candle_time,engine,version,symbol,timeframe,signal,confidence,entry_price,stop_loss,take_profit,reward_risk,execution_eligible,blocked_by,decision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb)",[
+      candleTime,
+      decision.engine,decision.version,decision.symbol||"XAUUSD",decision.timeframe||"M5",decision.signal,decision.confidence,
+      decision.entry,decision.stopLoss,decision.takeProfit,decision.rewardRisk,Boolean(decision.executionEligible),
+      JSON.stringify(decision.blockedBy||[]),JSON.stringify(decision)
+    ]);
+    console.log("AURIXA SIGNAL RECORDED:",JSON.stringify({signal:decision.signal,candleTime:candleTime.toISOString(),executionEligible:Boolean(decision.executionEligible)}));
+  }
   return q.rows[0]?.id||null;
  }catch(e){console.warn("AI signal audit:",e.message);return null;}
 }
