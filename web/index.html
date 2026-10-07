@@ -6,40 +6,8 @@
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
   <link rel="stylesheet" href="/style.css?v=20261007-ai">
-  <style>
-    #frontendBoot {
-      display:block !important; position:fixed !important; top:0 !important; left:0 !important;
-      right:0 !important; z-index:2147483647 !important; box-sizing:border-box !important;
-      padding:10px 14px !important; background:#111 !important; color:#fff !important;
-      font:700 13px/1.4 Arial,sans-serif !important; border-bottom:2px solid #888 !important;
-    }
-    body { padding-top:42px !important; }
-  </style>
-</head>
+  </head>
 <body>
-<div id="frontendBoot">AURIXA DIAGNOSTIC: HTML LOADED · JS WAITING</div>
-<script>
-(function () {
-  var b = document.getElementById('frontendBoot');
-  window.addEventListener('error', function (e) {
-    if (!b) return;
-    b.textContent = 'AURIXA DIAGNOSTIC: JS ERROR · ' + (e.message || 'unknown error');
-    b.style.background = '#7f1d1d';
-  });
-  window.addEventListener('unhandledrejection', function (e) {
-    if (!b) return;
-    var r = e.reason;
-    b.textContent = 'AURIXA DIAGNOSTIC: PROMISE ERROR · ' + (r && r.message ? r.message : String(r));
-    b.style.background = '#7f1d1d';
-  });
-  window.setTimeout(function () {
-    if (b && b.textContent.indexOf('JS ERROR') === -1 && b.textContent.indexOf('PROMISE ERROR') === -1) {
-      b.textContent = 'AURIXA DIAGNOSTIC: HTML LOADED · JS HAS NOT REPORTED AN ERROR';
-    }
-  }, 4000);
-})();
-</script>
-
 <div class="app">
 <!-- AURIXA APP CONTENT -->
 
@@ -63,9 +31,6 @@
           <div class="eyebrow">MARKET</div>
           <div class="instrument-row">
             <div id="instrument" class="instrument">XAUUSD</div>
-            <select id="pairSelector" class="pair-selector">
-              <option value="XAUUSD">XAUUSD</option>
-            </select>
           </div>
         </div>
 
@@ -87,64 +52,11 @@
         </div>
       </div>
 
-      <div class="hero-grid compact-grid">
-        <div>
-          <div class="eyebrow">TIMEFRAME</div>
-          <div class="value">5m</div>
-        </div>
-
-        <div class="market-mini">
-          <span>TIMEFRAME</span>
-          <strong>5 MIN</strong>
-        </div>
-      </div>
-    </section>
-
-    <!-- COMMAND CENTER -->
-    <section class="panel command-center">
-      <div class="section-title">AURIXA COMMAND CENTER</div>
-      <div class="section-heading">LIVE SYSTEM OVERVIEW</div>
-      <div class="command-grid">
-        <div class="command-card">
-          <span>AI TRADER SIGNAL</span>
-          <strong id="dashSignal">WAIT</strong>
-          <small id="dashConfidence">—</small>
-        </div>
-        <div class="command-card">
-          <span>AUTO TRADER</span>
-          <strong id="dashAutoStatus">CHECKING</strong>
-          <small id="dashAutoMode">—</small>
-        </div>
-        <div class="command-card">
-          <span>cTRADER</span>
-          <strong id="dashConnection">CHECKING</strong>
-          <small id="dashAccount">—</small>
-        </div>
-        <div class="command-card">
-          <span>RISK GUARD</span>
-          <strong id="dashRisk">ACTIVE</strong>
-          <small id="dashRiskDetail">Broker/account limits apply</small>
-        </div>
-        <div class="command-card">
-          <span>MARKET SESSION</span>
-          <strong id="dashMarketStatus">CHECKING</strong>
-          <small id="dashMarketDetail">Waiting for cTrader</small>
-        </div>
-      </div>
-      <div class="command-foot">
-        <span>LAST REFRESH</span>
-        <strong id="dashRefresh">—</strong>
-      </div>
     </section>
 
     <div class="dashboard-grid">
     <!-- SIGNAL -->
     <section class="panel signal-panel">
-      <div id="signalAlert" class="signal-alert" role="status" aria-live="assertive"></div>
-      <div class="signal-alert-controls">
-        <button id="enableAlertsBtn" class="connect-button" type="button">ENABLE SIGNAL ALERTS</button>
-        <span id="alertStatus">Alerts not enabled</span>
-      </div>
       <div class="section-title">AI TRADER ENGINE</div>
       <div class="section-heading">AI TRADER V1</div>
 
@@ -175,7 +87,7 @@
     <!-- CHART -->
     <section class="panel chart-panel">
       <div class="section-title">MARKET ENGINE</div>
-      <div class="section-heading"><span id="chartTitle">cTRADER LIVE · XAUUSD / AI TRADER</span></div>
+      <div class="section-heading"><span id="chartTitle">cTRADER LIVE · XAUUSD M5</span></div>
 
       <div class="chart-header">
         <div>
@@ -204,67 +116,6 @@
       <div class="gate-rules"><span>RISK 0.5%</span><span>MAX 1 POSITION</span><span>NO MARTINGALE</span><span>WAIT = NO TRADE</span></div>
     </section>
 
-    <!-- AI DECISION -->
-    <section class="panel ai-panel">
-      <div class="section-title">AI DECISION</div>
-      <div class="section-heading">AURIXA AI TRADER · FINAL GATE INPUT</div>
-      <div class="ai-head">
-        <div>
-          <div id="aiDecision" class="ai-decision wait">WAIT</div>
-          <div id="aiReason" class="gate-reason">Waiting for 80 candles and AI TRADER confirmation.</div>
-        </div>
-        <div class="gate-badge">LIVE ANALYSIS</div>
-      </div>
-      <div class="ai-grid">
-        <div class="metric"><span>SIGNAL</span><strong id="aiSignal">WAIT</strong></div>
-        <div class="metric"><span>CONFIDENCE</span><strong id="aiConfidence">—</strong></div>
-        <div class="metric"><span>SCORE</span><strong id="aiScore">—</strong></div>
-        <div class="metric"><span>PHASE</span><strong id="aiPhase">—</strong></div>
-        <div class="metric"><span>ENTRY</span><strong id="aiEntry">—</strong></div>
-        <div class="metric"><span>STOP</span><strong id="aiStop">—</strong></div>
-        <div class="metric"><span>TARGET</span><strong id="aiTarget">—</strong></div>
-        <div class="metric"><span>CANDLES</span><strong id="aiCandles">—</strong></div>
-      </div>
-    </section>
-
-    <!-- INDICATORS -->
-    <section class="panel">
-      <div class="section-title">TECHNICAL INDICATORS</div>
-      <div class="section-heading">MARKET STRUCTURE</div>
-
-      <div class="metrics-grid">
-        <div class="metric">
-          <span>EMA 9</span>
-          <strong id="ema9">—</strong>
-        </div>
-
-        <div class="metric">
-          <span>EMA 21</span>
-          <strong id="ema21">—</strong>
-        </div>
-
-        <div class="metric">
-          <span>EMA 50</span>
-          <strong id="ema50">—</strong>
-        </div>
-
-        <div class="metric">
-          <span>RSI 14</span>
-          <strong id="rsi">—</strong>
-        </div>
-
-        <div class="metric">
-          <span>ATR 14</span>
-          <strong id="atr">—</strong>
-        </div>
-
-        <div class="metric">
-          <span>SCORE</span>
-          <strong id="score">—</strong>
-        </div>
-      </div>
-    </section>
-
 
     <!-- AUTO TRADER -->
     <section class="panel auto-trader-panel">
@@ -287,68 +138,6 @@
       <div id="autoTradeNotice" class="position-status">Checking demo execution status...</div>
       <div class="section-title auto-history-title">AI TRADER TRADE HISTORY</div>
       <div id="autoTradeHistory" class="auto-trade-history"><div class="empty-state">Loading trade history...</div></div>
-    </section>
-
-    <!-- PAPER POSITION -->
-    <section class="panel">
-      <div class="section-title">PAPER TRADING</div>
-      <div class="section-heading">CURRENT POSITION</div>
-
-      <div class="position-grid">
-        <div class="metric">
-          <span>DIRECTION</span>
-          <strong id="positionDirection">FLAT</strong>
-        </div>
-
-        <div class="metric">
-          <span>ENTRY</span>
-          <strong id="positionEntry">—</strong>
-        </div>
-
-        <div class="metric">
-          <span>CURRENT</span>
-          <strong id="positionCurrent">—</strong>
-        </div>
-
-        <div class="metric">
-          <span>P&L</span>
-          <strong id="positionPnl">—</strong>
-        </div>
-      </div>
-
-      <div id="positionStatus" class="position-status">
-        No active paper position
-      </div>
-    </section>
-
-    <!-- SIGNAL TRACKING -->
-    <section class="panel compact-panel">
-      <div class="section-title">CONNECTION</div>
-      <div class="section-heading">CTRADER / FXPRO</div>
-
-      <div class="connection-row">
-        <span>CONNECTION</span>
-        <strong id="ctraderConnection">CHECKING</strong>
-      </div>
-
-      <div class="connection-row">
-        <span>ACCOUNT</span>
-        <strong id="accountId">—</strong>
-      </div>
-
-      <div class="connection-row">
-        <span>SYMBOL ID</span>
-        <strong id="symbolId">—</strong>
-      </div>
-
-      <div class="connection-row">
-        <span>LAST UPDATE</span>
-        <strong id="lastUpdate">—</strong>
-      </div>
-
-      <button id="loginBtn" class="connect-button">
-        RECONNECT cTRADER
-      </button>
     </section>
 
     <!-- MODE -->
