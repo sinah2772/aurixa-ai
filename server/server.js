@@ -90,131 +90,6 @@ app.use(express.static(WEB_DIR, {
   setHeaders: (res) => res.setHeader("Cache-Control", "no-store")
 }));
 
-let candles = [];
-let lastPrice = null;
-let liveConnected = false;
-let lastUpdate = null;
-
-// AURIXA live 5-minute candle engine.
-// Candles are built from the authenticated cTrader mid-price stream.
-// This does not place trades and does not modify cTrader authentication.
-const AURIXA_TIMEFRAME_MS = 5 * 60 * 1000;
-let liveCandle = null;
-let lastCandleBucket = null;
-
-function updateLiveCandle(price, timestamp = Date.now()) {
-  if (!Number.isFinite(price) || price <= 0) return;
-
-  const bucket = Math.floor(timestamp / AURIXA_TIMEFRAME_MS) * AURIXA_TIMEFRAME_MS;
-
-  if (!liveCandle || lastCandleBucket !== bucket) {
-    if (liveCandle) {
-      candles.push(liveCandle);
-      if (candles.length > 500) candles.shift();
-    }
-
-    liveCandle = {
-      time: bucket,
-      open: price,
-      high: price,
-      low: price,
-      close: price
-    };
-
-    lastCandleBucket = bucket;
-  } else {
-    liveCandle.high = Math.max(liveCandle.high, price);
-    liveCandle.low = Math.min(liveCandle.low, price);
-    liveCandle.close = price;
-  }
-
-  lastPrice = price;
-  lastUpdate = new Date(timestamp).toISOString();
-}
-
-function syncLiveMarket() {
-  const ct = getCTraderStatus();
-
-  if (
-    ct.mid !== null &&
-    ct.mid !== undefined &&
-    Number.isFinite(Number(ct.mid))
-  ) {
-    const timestamp = ct.lastUpdate
-      ? Date.parse(ct.lastUpdate)
-      : Date.now();
-
-    updateLiveCandle(Number(ct.mid), Number.isFinite(timestamp) ? timestamp : Date.now());
-  }
-
-  liveConnected = Boolean(ct.connected && ct.authorized);
-}
-
-function ema(values, period) {
-  if (values.length < period) return null;
-
-  const k = 2 / (period + 1);
-  let value = values.slice(0, period)
-    .reduce((a,b) => a + b, 0) / period;
-
-  for (let i = period; i < values.length; i++) {
-    value = values[i] * k + value * (1-k);
-  }
-
-  return value;
-}
-
-function rsi(values, period=14) {
-  if (values.length <= period) return null;
-
-  let gains = 0;
-  let losses = 0;
-
-  for (let i=1; i<=period; i++) {
-    const change = values[i] - values[i-1];
-    if (change >= 0) gains += change;
-    else losses -= change;
-  }
-
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-
-  for (let i=period+1; i<values.length; i++) {
-    const change = values[i] - values[i-1];
-    const gain = Math.max(change,0);
-    const loss = Math.max(-change,0);
-
-    avgGain = ((avgGain*(period-1))+gain)/period;
-    avgLoss = ((avgLoss*(period-1))+loss)/period;
-  }
-
-  if (avgLoss === 0) return 100;
-
-  const rs = avgGain / avgLoss;
-  return 100 - (100/(1+rs));
-}
-
-function atr(data, period=14) {
-  if (data.length <= period) return null;
-
-  const tr=[];
-
-  for(let i=1;i<data.length;i++){
-    const h=data[i].high;
-    const l=data[i].low;
-    const pc=data[i-1].close;
-
-    tr.push(Math.max(
-      h-l,
-      Math.abs(h-pc),
-      Math.abs(l-pc)
-    ));
-  }
-
-  return tr.slice(-period)
-    .reduce((a,b)=>a+b,0)/period;
-}
-
 app.get("/api/system/health", async (req, res) => {
   const started = Date.now();
 
@@ -597,12 +472,98 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
 app.get("/api/auto-trader/trade-trace/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-
     if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({
-        ok: false,
-        error: "Invalid trade trace ID"
-      });
+      return res.status(400).json({ ok: false, error: "Invalid trade trace ID" });
+    }
+
+    const result = await queryDatabase(`
+      SELECT
+        t.id,
+        t.decision_id AS "decisionId",
+        t.created_at AS "createdAt",
+        t.symbol,
+        t.timeframe,
+        t.direction,
+        t.signal_entry_price AS "signalEntryPrice",
+        t.execution_entry_price AS "executionEntryPrice",
+        t.order_id AS "orderId",
+        t.position_id AS "positionId",
+        t.client_msg_id AS "clientMsgId",
+        t.volume,
+        t.stop_loss_distance AS "stopLossDistance",
+        t.take_profit_distance AS "takeProfitDistance",
+        t.planned_entry_price AS "plannedEntryPrice",
+        t.planned_stop_price AS "plannedStopPrice",
+        t.planned_take_profit_price AS "plannedTakeProfitPrice",
+        t.partial_taken AS "partialTaken",
+        t.breakeven_applied AS "breakevenApplied",
+        t.status,
+        t.opened_at AS "openedAt",
+        t.closed_at AS "closedAt",
+        t.close_price AS "closePrice",
+        t.profit,
+        t.error,
+        t.gate_reason AS "gateReason",
+        t.exit_reason AS "exitReason",
+        d.engine,
+        d.version,
+        d.confidence,
+        d.decision
+      FROM aurixa.auto_trades t
+      LEFT JOIN aurixa.ai_trade_decisions d ON d.id = t.decision_id
+      WHERE t.id = $1
+      LIMIT 1
+    `, [id]);
+
+    if (!result.rows.length) {
+      return res.status(404).json({ ok: false, error: "Trade trace not found" });
+    }
+
+    const trade = result.rows[0];
+    res.json({
+      ok: true,
+      trace: {
+        decision: {
+          id: trade.decisionId,
+          engine: trade.engine,
+          version: trade.version,
+          confidence: trade.confidence,
+          data: trade.decision
+        },
+        execution: {
+          status: trade.status,
+          direction: trade.direction,
+          orderId: trade.orderId,
+          positionId: trade.positionId,
+          clientMsgId: trade.clientMsgId,
+          entryPrice: trade.executionEntryPrice,
+          openedAt: trade.openedAt
+        },
+        protection: {
+          stopLossDistance: trade.stopLossDistance,
+          takeProfitDistance: trade.takeProfitDistance,
+          plannedEntryPrice: trade.plannedEntryPrice,
+          plannedStopPrice: trade.plannedStopPrice,
+          plannedTakeProfitPrice: trade.plannedTakeProfitPrice
+        },
+        lifecycle: {
+          createdAt: trade.createdAt,
+          closedAt: trade.closedAt,
+          closePrice: trade.closePrice,
+          profit: trade.profit,
+          exitReason: trade.exitReason
+        },
+        gates: {
+          reason: trade.gateReason
+        },
+        error: trade.error
+      }
+    });
+  } catch (err) {
+    console.error("Auto-Trader trade trace error:", err);
+    res.status(500).json({ ok: false, error: "Trade trace unavailable" });
+  }
+});
     }
 
     const result = await queryDatabase(`
