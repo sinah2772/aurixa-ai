@@ -601,6 +601,49 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }
   }
 
+  function renderConfirmedSignalHistory(history) {
+    const body = $("confirmedSignalHistory");
+    const summary = $("confirmedSignalHistorySummary");
+    if (!body) return;
+
+    const source = Array.isArray(history?.history)
+      ? history.history
+      : Array.isArray(history?.decisions)
+        ? history.decisions
+        : Array.isArray(history)
+          ? history
+          : [];
+
+    const confirmed = source.filter(row => {
+      const signal = String(first(row?.signal, row?.direction, row?.decision, "")).toUpperCase();
+      const executionEligible =
+        row?.executionEligible === true ||
+        row?.confirmed === true ||
+        row?.finalGate === true ||
+        row?.status === "CONFIRMED";
+      return (signal === "BUY" || signal === "SELL") && executionEligible;
+    }).slice(0, 50);
+
+    if (summary) summary.textContent = confirmed.length + " CONFIRMED SIGNALS";
+    if (!confirmed.length) {
+      body.innerHTML = '<div class="empty">No confirmed BUY or SELL signals yet.</div>';
+      return;
+    }
+
+    body.innerHTML = confirmed.map(row => {
+      const signal = String(first(row?.signal, row?.direction, row?.decision, "")).toUpperCase();
+      const confidence = Number(row?.confidence);
+      const price = first(row?.entryPrice, row?.price, row?.mid, row?.close);
+      const time = first(row?.timestamp, row?.createdAt, row?.created_at, row?.time, row?.created);
+      return '<div class="confirmed-signal-row">' +
+        '<strong class="' + (signal === "BUY" ? "history-buy" : "history-sell") + '">' + signal + '</strong>' +
+        '<span>' + escapeHTML(Number.isFinite(confidence) ? number(confidence, 0) + "%" : "—") + '</span>' +
+        '<span>' + escapeHTML(Number.isFinite(Number(price)) ? number(price, 2) : "—") + '</span>' +
+        '<span>' + escapeHTML(formatTime(time)) + '</span>' +
+        '</div>';
+    }).join("");
+  }
+
   async function refresh() {
     const [
       market,
@@ -633,7 +676,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     updateSignal(liveAi);
     updateAutoTrader(autoStatus, autoPositions);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
-    updateActivity(liveAi, ctrader, autoStatus, autoPositions);
+    updateActivity(liveAi, ctrader, autoStatus, autoPositions);\n    renderConfirmedSignalHistory(aiHistory);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
