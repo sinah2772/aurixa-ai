@@ -615,24 +615,28 @@
 function updateActivity(ai, ctrader, autoStatus, positions) {
     const data = ai?.decision || ai || {};
     const signal = String(first(data.signal, data.direction, "WAIT")).toUpperCase();
-    const eligible = data.executionEligible === true;
     const connected = ctrader?.connected === true && ctrader?.authorized === true;
-    const autoReady = autoStatus?.enabled === true && autoStatus?.demoAccount === true && connected && autoStatus?.blocked !== true;
-    const failed = Array.isArray(data.blockedBy) ? data.blockedBy : [];
     const logic = data.logic || {};
+    const failed = Array.isArray(data.blockedBy) ? data.blockedBy : [];
     const rr = first(data.rewardRisk, data.riskReward);
-    const items = [
-      ["FEED", connected ? "LIVE" : "OFFLINE"],
-      ["AI", signal + " · " + number(data.confidence, 0) + "%"],
-      ["LOGIC", Number.isFinite(Number(logic.passed)) ? String(logic.passed) + "/" + String(first(logic.total, 6)) : "—"],
-      ["R:R", Number.isFinite(Number(rr)) ? number(rr, 2) + "R" : "—"],
-      ["AUTO", autoReady ? "ARMED · DEMO" : (autoStatus?.enabled ? "BLOCKED" : "OFF")],
-      ["POSITION", Number(first(positions?.count, 0)) > 0 ? "OPEN" : "FLAT"]
-    ];
-    const target = $("activityFeed") || $("aiActivity") || $("activity");
-    if (target) target.innerHTML = items.map(([k,v]) => '<div class="activity-item"><strong>' + escapeHTML(k) + '</strong><span>' + escapeHTML(v) + '</span></div>').join("");
-    text("activityStatus", eligible ? "TRADE ELIGIBLE" : (failed.length ? "BLOCKED · " + failed[0].replaceAll("_", " ") : "WAITING"));
-    text("activityUpdated", new Date().toLocaleTimeString());
+    text("activityLast", new Date().toLocaleTimeString());
+    text("activityDecision", signal + " · " + number(data.confidence, 0) + "%");
+    text("activityLogic", Number.isFinite(Number(logic.passed)) ? String(logic.passed) + "/" + String(first(logic.total, 6)) + " checks passed" : "Logic unavailable");
+    text("activityGates", failed.length ? "BLOCKED · " + failed.map(x => x.replaceAll("_"," ")).join(" · ").toUpperCase() : (data.executionEligible === true ? "ALL GATES PASSED" : "WAITING FOR GATES"));
+    const feed = $("aiActivityFeed");
+    if (feed) {
+      const status = autoStatus?.enabled === true
+        ? (autoStatus?.blocked === true ? "AUTO BLOCKED" : (connected && autoStatus?.demoAccount === true ? "AUTO ARMED · DEMO" : "AUTO WAITING"))
+        : "AUTO OFF";
+      const position = Number(first(positions?.count, 0)) > 0 ? "POSITION OPEN" : "FLAT";
+      feed.innerHTML =
+        '<div class="activity-item"><strong>LIVE FEED</strong><span>' + (connected ? "CONNECTED" : "OFFLINE") + '</span></div>' +
+        '<div class="activity-item"><strong>AI DECISION</strong><span>' + escapeHTML(signal + " · " + number(data.confidence, 0) + "%") + '</span></div>' +
+        '<div class="activity-item"><strong>LOGIC</strong><span>' + escapeHTML(String(first(logic.passed, "—")) + "/" + String(first(logic.total, 6)) + " PASSED") + '</span></div>' +
+        '<div class="activity-item"><strong>R:R</strong><span>' + escapeHTML(Number.isFinite(Number(rr)) ? number(rr, 2) + "R" : "—") + '</span></div>' +
+        '<div class="activity-item"><strong>AUTO-TRADER</strong><span>' + escapeHTML(status) + '</span></div>' +
+        '<div class="activity-item"><strong>POSITION</strong><span>' + escapeHTML(position) + '</span></div>';
+    }
   }
 
   async function refresh() {
