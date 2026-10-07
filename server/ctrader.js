@@ -4,7 +4,6 @@ const path = require("path");
 const { Pool } = require("pg");
 
 
-const openingRangeStrategy = require("./opening-range-strategy");
 let marketEngine = null;
 
 function setMarketEngine(engine) {
@@ -1368,14 +1367,6 @@ function connectOpenApi() {
             5
           );
 
-// Opening Range strategy: live XAUUSD M1 candles.
-subscribeLiveTrendbar(
-  ws,
-  state.accountId,
-  state.symbolId,
-  1
-);
-
           // ProtoOAGetTrendbarsReq
           // Request the latest 300 XAUUSD M5 candles.
           // Using toTimestamp + count avoids an unnecessarily
@@ -1386,7 +1377,6 @@ subscribeLiveTrendbar(
           const toTimestampM5 = Math.floor(now / (5 * 60000)) * (5 * 60000);
           const toTimestampM1 = Math.floor(now / 60000) * 60000;
           // Use count back from toTimestamp; avoid broker-sensitive from/to ranges.
-
           const historicalRequest = {
             ctidTraderAccountId: Number(state.accountId),
             symbolId: Number(state.symbolId),
@@ -1395,7 +1385,11 @@ subscribeLiveTrendbar(
             toTimestamp: toTimestampM5
           };
 
-// Resolve connection once the symbol and
+          // Request the M5 history required by the AI trader.
+          // Keep the request bounded and aligned to a completed M5 bar.
+          send(ws, 2137, historicalRequest);
+
+          // Resolve connection once the symbol and
           // live spot stream are established.
           if (!settled) {
             settled = true;
@@ -1439,29 +1433,8 @@ subscribeLiveTrendbar(
       .map(bar => trendbarToCandle(bar))
       .filter(Boolean);
 
-    openingRangeStrategy.setM5Candles(candles);
-
     console.log(
-      "AURIXA_STRATEGY_M5_HISTORY:",
-      candles.length
-    );
-  }
-
-  if (period === 1) {
-    const candles = bars
-      .map(bar => trendbarToCandle(bar))
-      .filter(Boolean);
-
-    persistHistoricalCandles(candles, period).catch(err =>
-      console.error("AURIXA M1 history save error:", err.message)
-    );
-
-    openingRangeStrategy.setHistoricalM1Candles(
-      candles
-    );
-
-    console.log(
-      "AURIXA_STRATEGY_M1_HISTORY:",
+      "AURIXA_AI_M5_HISTORY:",
       candles.length
     );
   }
