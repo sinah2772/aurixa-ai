@@ -9,27 +9,8 @@ const state = {
   lastUpdate: null,
   source: "CTRADER",
   timeframe: "5m",
-  error: null,
-
-  prediction: {
-    signal: "WAIT",
-    confidence: 0,
-    dataReady: false,
-    reason: "Waiting for cTrader M5 data"
-  }
+  error: null
 };
-
-function round(value, digits = 2) {
-  if (
-    value == null ||
-    !Number.isFinite(Number(value))
-  ) {
-    return null;
-  }
-
-  const p = 10 ** digits;
-  return Math.round(Number(value) * p) / p;
-}
 
 function normalizeTime(value) {
   const n = Number(value || 0);
@@ -371,10 +352,7 @@ function getState() {
       state.candles[
         state.candles.length - 1
       ]?.close ??
-      null,
-
-    prediction:
-      state.prediction
+      null
   };
 }
 
@@ -387,6 +365,5 @@ module.exports = {
   closeLiveCandle,
   setSpotPrice,
   setError,
-  reset,
-  calculatePrediction
+  reset
 };
