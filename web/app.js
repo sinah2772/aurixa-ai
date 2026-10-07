@@ -676,7 +676,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     updateSignal(liveAi);
     updateAutoTrader(autoStatus, autoPositions);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
-    updateActivity(liveAi, ctrader, autoStatus, autoPositions);\n    renderConfirmedSignalHistory(aiHistory);
+    updateActivity(liveAi, ctrader, autoStatus, autoPositions);
+    renderConfirmedSignalHistory(aiHistory);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
