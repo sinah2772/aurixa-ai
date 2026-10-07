@@ -19,7 +19,6 @@
     ctrader: "/api/ctrader/status",
     autoStatus: "/api/auto-trader/status",
     autoPositions: "/api/auto-trader/positions",
-    autoTrades: "/api/auto-trader/trades",
     aiDecision: "/api/ai/decision",
     aiHistory: "/api/ai/decision/history",
     marketHistory: "/api/market/history?limit=300"
@@ -489,7 +488,7 @@
     text("gateReason", reason);
   }
 
-  function updateAutoTrader(status, positions, trades) {
+  function updateAutoTrader(status, positions) {
     if (!status) return;
     const enabled = status.enabled === true;
     const demo = status.demoAccount === true && status.demoOnly === true;
@@ -500,10 +499,6 @@
     text("autoTradeStatus", state);
     text("autoTradeMode", demo ? "DEMO ONLY · AI V1" : "GUARDED · AI V1");
     text("autoTradePosition", positions?.count ? "OPEN" : "FLAT");
-
-    const rows = Array.isArray(trades?.trades) ? trades.trades : [];
-    const latest = rows[0];
-    text("autoTradeLastAction", latest ? String(first(latest.status, latest.direction, "—")).toUpperCase() : "—");
 
     const list = Array.isArray(positions?.positions) ? positions.positions : [];
     const p = list[0];
@@ -532,51 +527,6 @@
       text("autoTradeNotice", "Demo XAUUSD position is open.");
     }
 
-    const history = $("autoTradeHistory");
-    if (!history) return;
-    if (!rows.length) {
-      history.innerHTML = '<div class="empty-state">No demo trades recorded yet.</div>';
-      return;
-    }
-
-    history.innerHTML =
-      '<div class="auto-trade-table-wrap"><table class="auto-trade-table">' +
-      '<thead><tr>' +
-      '<th>TIME</th><th>SIDE</th><th>ENTRY</th><th>SL</th><th>TP</th>' +
-      '<th>EXIT</th><th>STATUS</th><th>RESULT</th><th>EXIT REASON</th><th>P/L</th><th></th>' +
-      '</tr></thead><tbody>' +
-      rows.slice(0, 20).map((t) => {
-        const direction = String(first(t.direction, "—")).toUpperCase();
-        const status = String(first(t.status, "—")).toUpperCase();
-        const resultClass = status.includes("WIN") ? "win" : status.includes("LOSS") ? "loss" : "neutral";
-        const resultText = status === "CLOSED_WIN" ? "WIN" :
-          status === "CLOSED_LOSS" ? "LOSS" :
-          status === "CLOSED_FLAT" ? "FLAT" :
-          status === "OPEN" || status === "PARTIAL" ? "OPEN" : "—";
-        const profit = first(t.profit);
-        const pnlText = profit === null || profit === undefined ? "—" : number(profit, 2);
-        const exitReason = String(first(t.exitReason, status.includes("CLOSED") ? "MANUAL/OTHER" : "—"));
-        const trace = t.id
-          ? '<a class="trade-trace-link" href="/api/auto-trader/trade-trace/' + encodeURIComponent(t.id) + '" target="_blank" rel="noopener">TRACE</a>'
-          : "";
-
-        return '<tr>' +
-          '<td><small>' + escapeHTML(formatTime(first(t.createdAt, t.openedAt))) + '</small>' +
-            (t.closedAt ? '<small class="trade-lifecycle">CLOSED ' + escapeHTML(formatTime(t.closedAt)) + '</small>' : '') + '</td>' +
-          '<td><strong class="' + direction.toLowerCase() + '">' + escapeHTML(direction) + '</strong></td>' +
-          '<td>' + escapeHTML(number(first(t.executionEntryPrice, t.plannedEntryPrice, t.signalEntryPrice), 2)) + '</td>' +
-          '<td>' + escapeHTML(number(first(t.plannedStopPrice), 2)) + '</td>' +
-          '<td>' + escapeHTML(number(first(t.plannedTakeProfitPrice), 2)) + '</td>' +
-          '<td>' + escapeHTML(number(first(t.closePrice), 2)) + '</td>' +
-          '<td><span class="trade-status">' + escapeHTML(status) + '</span></td>' +
-          '<td><span class="trade-result ' + resultClass + '">' + escapeHTML(resultText) + '</span></td>' +
-          '<td>' + escapeHTML(exitReason.replace(/_/g, " ")) + '</td>' +
-          '<td class="trade-pnl ' + resultClass + '">' + escapeHTML(pnlText) + '</td>' +
-          '<td>' + trace + '</td>' +
-        '</tr>';
-      }).join("") +
-      '</tbody></table></div>';
-  }
 
 
   function formatTime(value) {
@@ -656,7 +606,6 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       ctrader,
       autoStatus,
       autoPositions,
-      autoTrades,
       aiDecision,
       aiHistory,
     ] = await Promise.all([
@@ -665,7 +614,6 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       getJSON(API.ctrader),
       getJSON(API.autoStatus),
       getJSON(API.autoPositions),
-      getJSON(API.autoTrades),
       getJSON(API.aiDecision),
       getJSON(API.aiHistory + "?limit=20")
     ]);
@@ -681,7 +629,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
 
     const liveAi = aiDecision?.decision || aiDecision?.result || aiDecision || {};
     updateSignal(liveAi);
-    updateAutoTrader(autoStatus, autoPositions, autoTrades);
+    updateAutoTrader(autoStatus, autoPositions);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
 
