@@ -460,11 +460,23 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
         const decisionId=await auditAiDecision(decision);
         if(decision.executionEligible===true){
           const result=await autoTrader.executeAiDecision({...decision,decisionId},decisionId);
-          console.log("AURIXA AI EXECUTION:",JSON.stringify({decisionId,signal:decision.signal,executed:result.executed,reason:result.reason||null,orderId:result.orderId||null,positionId:result.positionId||null}));
+          console.log("AURIXA AI EXECUTION:",JSON.stringify({
+            decisionId,
+            signal:decision.signal,
+            executed:result.executed,
+            reason:result.reason||null,
+            orderId:result.orderId||null,
+            positionId:result.positionId||null,
+            openPositions:result.openPositions??null,
+            riskAmount:result.riskAmount??null,
+            volume:result.volume??null,
+            volumeMin:result.volumeMin??null,
+            volumeStep:result.volumeStep??null
+          }));
         }
         try{
           const sync=await autoTrader.syncOpenPositions();
-          if(sync.updated||sync.closed||sync.protected)console.log("AURIXA POSITION SYNC:",JSON.stringify(sync));
+          console.log("AURIXA POSITION SYNC:",JSON.stringify(sync));
         }catch(e){console.error("AURIXA position sync error:",e.message);}
       }catch(err){console.error("AURIXA AI Trader V1 loop error:",err.message);}
     }, 15000);
