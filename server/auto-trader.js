@@ -19,7 +19,11 @@ function config(){return{
  maxVolume:Math.max(1000,Math.floor(Number(process.env.AUTO_TRADING_MAX_VOLUME||1000))),
  volumeMin:Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_VOLUME_MIN||1000))),
  volumeStep:Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_VOLUME_STEP||1000))),
- breakevenR:Math.max(.75,Number(process.env.AUTO_TRADING_BREAKEVEN_R||1))
+ breakevenR:Math.max(.75,Number(process.env.AUTO_TRADING_BREAKEVEN_R||1)),
+ trailingEnabled:String(process.env.AUTO_TRADING_TRAILING_ENABLED||"true").toLowerCase()!=="false",
+ trailingTriggerR:Math.max(.5,Number(process.env.AUTO_TRADING_TRAILING_TRIGGER_R||1)),
+ trailingDistanceR:Math.max(.1,Number(process.env.AUTO_TRADING_TRAILING_DISTANCE_R||.5)),
+ trailingFixedDistance:Math.max(.1,Number(process.env.AUTO_TRADING_TRAILING_FIXED_DISTANCE||1.5))
 };}
 
 function getStatus(){
@@ -193,10 +197,60 @@ async function dryRunAiTrader(){
 }
 
 async function syncOpenPositions(){
-  if(typeof dbQuery!=="function"||!cTrader?.getOpenXAUUSDPositions)return {updated:0,closed:0,protectedCount:0};
-  const cfg=config(),positions=await cTrader.getOpenXAUUSDPositions();
+  if(!cTrader?.getOpenXAUUSDPositions)return {updated:0,closed:0,protectedCount:0,trailingUpdated:0};
+  const cfg=config();
+  const positions=await cTrader.getOpenXAUUSDPositions();
+  let updated=0,closed=0,protectedCount=0,trailingUpdated=0;
+
+  // Trail EVERY open XAUUSD position independently. This intentionally runs
+  // at the broker-position level so manually opened or previously untracked
+  // XAUUSD positions are protected too. Demo-only is enforced by cTrader.
+  if(cfg.trailingEnabled && typeof cTrader.modifyPositionProtection==="function"){
+    for(const pos of positions){
+      const positionId=pos?.positionId;
+      const td=pos?.tradeData||{};
+      const side=Number(td.tradeSide);
+      const direction=side===1?"BUY":side===2?"SELL":null;
+      const entry=Number(td.openPrice??td.price??pos.openPrice);
+      const status=cTrader.getCTraderStatus?.()||{};
+      const market=direction==="BUY"?Number(status.bid):Number(status.ask);
+      const current=Number.isFinite(market)?market:Number(pos.currentPrice??td.currentPrice??td.price);
+      if(!positionId||!direction||!Number.isFinite(entry)||!Number.isFinite(current))continue;
+
+      const tracked=await dbQuery?.(
+        "SELECT * FROM aurixa.auto_trades WHERE position_id=$1 AND status IN ('OPEN','PARTIAL') ORDER BY created_at DESC LIMIT 1",
+        [String(positionId)]
+      );
+      const trade=tracked?.rows?.[0]||null;
+      const baseRisk=trade?Math.abs(Number(trade.planned_entry_price)-Number(trade.planned_stop_price)):0;
+      const profitMove=direction==="BUY"?current-entry:entry-current;
+      const triggerDistance=baseRisk>0?baseRisk*cfg.trailingTriggerR:cfg.trailingFixedDistance;
+      const trailDistance=baseRisk>0?baseRisk*cfg.trailingDistanceR:cfg.trailingFixedDistance;
+      if(!Number.isFinite(profitMove)||profitMove<triggerDistance||!Number.isFinite(trailDistance)||trailDistance<=0)continue;
+
+      const candidate=direction==="BUY"?current-trailDistance:current+trailDistance;
+      const existingSL=Number(pos?.stopLoss??td?.stopLoss);
+      // Never loosen an existing stop. If broker did not return the current
+      // SL, the candidate is still valid and can establish the trailing SL.
+      const improves=!Number.isFinite(existingSL)
+        ? true
+        : direction==="BUY"?candidate>existingSL: candidate<existingSL;
+      if(!improves)continue;
+
+      try{
+        await cTrader.modifyPositionProtection(positionId,candidate,null);
+        trailingUpdated++;
+        console.log("AURIXA_TRAILING_STOP_UPDATED:",JSON.stringify({
+          positionId,direction,entry,current,profitMove,triggerDistance,trailDistance,stopLoss:candidate
+        }));
+      }catch(e){
+        console.warn("AURIXA_TRAILING_STOP_FAILED:",JSON.stringify({positionId,error:e.message}));
+      }
+    }
+  }
+
+  if(typeof dbQuery!=="function")return {updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length};
   const open=await dbQuery("SELECT * FROM aurixa.auto_trades WHERE status IN ('OPEN','PARTIAL') ORDER BY created_at DESC LIMIT 50");
-  let updated=0,closed=0,protectedCount=0;
   for(const t of open.rows){
     const pos=positions.find(p=>String(p?.positionId||"")===String(t.position_id||""));
     if(pos){
@@ -216,7 +270,7 @@ async function syncOpenPositions(){
       await dbQuery("UPDATE aurixa.auto_trades SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),close_price=$2,profit=COALESCE($3,profit),exit_reason=$4,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(closePrice)?closePrice:null,Number.isFinite(profit)?profit:null,reason]);closed++;
     }
   }
-  return {updated,closed,protectedCount,brokerPositions:positions.length};
+  return {updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length};
 }
 
 async function init(){
