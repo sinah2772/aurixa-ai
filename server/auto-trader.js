@@ -26,15 +26,9 @@ function config(){return{
  trailingFixedDistance:Math.max(.1,Number(process.env.AUTO_TRADING_TRAILING_FIXED_DISTANCE||1.5))
 };}
 
-function maxOpenPositionsConfig(){
- const raw=String(process.env.AURIXA_MAX_OPEN_POSITIONS||"3").trim().toLowerCase();
- const value=raw==="unlimited"?25:Math.floor(Number(raw));
- return Math.max(1,Math.min(25,Number.isFinite(value)?value:3));
-}
-
 function getStatus(){
  const cfg=config(),ct=cTrader?.getCTraderStatus?.()||{};
- return {enabled:cfg.enabled,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,maxOpenPositions:maxOpenPositionsConfig(),riskPercent:cfg.riskPercent,maxSpread:cfg.maxSpread,maxTradesPerDay:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:String(ct.symbolName||ct.symbol||"").toUpperCase()};
+ return {enabled:cfg.enabled,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"unlimited",riskPercent:cfg.riskPercent,maxSpread:cfg.maxSpread,maxTradesPerDay:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:String(ct.symbolName||ct.symbol||"").toUpperCase()};
 }
 
 async function executeAiDecision(decision, decisionId=null){
@@ -71,20 +65,10 @@ async function executeAiDecision(decision, decisionId=null){
   if(decision.signal==="SELL"&&(stop<=entry||target>=entry))return reject("SELL_PROTECTION_INVALID",{entry,stop,target});
   const riskDistance=Math.abs(entry-stop),targetDistance=Math.abs(target-entry),rr=targetDistance/Math.max(0.00001,riskDistance);
   if(!Number.isFinite(rr)||rr<2)return reject("REWARD_RISK_TOO_LOW",{rr,minRewardRisk:2});
-  const positions=await cTrader.getOpenXAUUSDPositions();
-  const maxOpenPositions=maxOpenPositionsConfig();
-  if(positions.length>=maxOpenPositions){
-    const openPositions=positions.map(p=>({
-      positionId:p?.positionId??null,
-      symbolId:p?.tradeData?.symbolId??null,
-      volume:p?.tradeData?.volume??null,
-      tradeSide:p?.tradeData?.tradeSide??null,
-      label:p?.tradeData?.label??p?.label??null,
-      comment:p?.tradeData?.comment??p?.comment??null,
-      status:p?.positionStatus??null
-    }));
-    return reject("MAX_OPEN_XAUUSD_POSITIONS_REACHED",{maxOpenPositions,openPositions:positions.length,positions:openPositions});
-  }
+  // No fixed XAUUSD position-count limit.
+  // Confirmed BUY/SELL signals may open additional demo positions.
+  // Balance/free-margin, risk sizing, spread, stale-signal, cooldown,
+  // daily-trade and demo-only protections remain enforced.
   if(typeof dbQuery==="function"){
     const dup=await dbQuery(`SELECT id, status, order_id, position_id
       FROM aurixa.auto_trades
