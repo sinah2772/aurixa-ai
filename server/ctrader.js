@@ -2090,22 +2090,64 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
   // protobuf doubles and must be sent as normal absolute prices.
   // 2107 is NOT the SL/TP amendment message; using it causes cTrader
   // to interpret the payload as an order amendment and disconnect.
+  // cTrader validates protection prices against the symbol's actual
+  // price precision. JavaScript floating-point arithmetic can produce
+  // values such as 4116.312500000001, which cTrader rejects as having
+  // more digits than allowed. Read the broker symbol definition and
+  // round both absolute prices to the broker's configured digits.
+  let protectionDigits = Number(state.symbolDigits);
+  try {
+    const symbolMsg = await request(
+      state.ws,
+      2116,
+      {
+        ctidTraderAccountId: Number(state.accountId),
+        symbolId: [Number(state.symbolId)]
+      },
+      10000
+    );
+    const rawSymbols = symbolMsg?.payload?.symbol;
+    const symbol = Array.isArray(rawSymbols)
+      ? (rawSymbols.find(s => Number(s?.symbolId) === Number(state.symbolId)) || rawSymbols[0] || {})
+      : (rawSymbols || symbolMsg?.payload || {});
+    const brokerDigits = Number(symbol.digits);
+    if (Number.isInteger(brokerDigits) && brokerDigits >= 0 && brokerDigits <= 10) {
+      protectionDigits = brokerDigits;
+      state.symbolDigits = brokerDigits;
+    }
+  } catch (err) {
+    console.warn("AURIXA_PROTECTION_SYMBOL_PRECISION_FALLBACK:", safeError(err));
+  }
+
+  if (!Number.isInteger(protectionDigits) || protectionDigits < 0 || protectionDigits > 10) {
+    protectionDigits = 2;
+  }
+
+  const roundPrice = (value) => {
+    if (!Number.isFinite(value)) return null;
+    const factor = 10 ** protectionDigits;
+    return Number((Math.round((value + Number.EPSILON) * factor) / factor).toFixed(protectionDigits));
+  };
+
+  const normalizedSL = roundPrice(requestedSL);
+  const normalizedTP = roundPrice(requestedTP);
+
   const payload = {
     ctidTraderAccountId: Number(state.accountId),
     positionId: pid
   };
-  if (Number.isFinite(requestedSL)) payload.stopLoss = requestedSL;
-  if (Number.isFinite(requestedTP)) payload.takeProfit = requestedTP;
+  if (Number.isFinite(normalizedSL)) payload.stopLoss = normalizedSL;
+  if (Number.isFinite(normalizedTP)) payload.takeProfit = normalizedTP;
 
   const matchesBrokerProtection = (position) => {
     if (!position) return false;
     const td = position.tradeData || {};
     const actualSL = Number(position.stopLoss ?? td.stopLoss);
     const actualTP = Number(position.takeProfit ?? td.takeProfit);
-    const slOk = !Number.isFinite(requestedSL) ||
-      (Number.isFinite(actualSL) && Math.abs(actualSL - requestedSL) < 0.00001);
-    const tpOk = !Number.isFinite(requestedTP) ||
-      (Number.isFinite(actualTP) && Math.abs(actualTP - requestedTP) < 0.00001);
+    const slOk = !Number.isFinite(normalizedSL) ||
+      (Number.isFinite(actualSL) && Math.abs(actualSL - normalizedSL) < 0.00001);
+    const tpOk = !Number.isFinite(normalizedTP) ||
+      (Number.isFinite(actualTP) && Math.abs(actualTP - normalizedTP) < 0.00001);
     return slOk && tpOk;
   };
 
@@ -2138,8 +2180,8 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
       const clientMsgId = send(state.ws, 2110, payload);
       console.log("AURIXA_PROTECTION_REQUEST_SENT:", JSON.stringify({
         positionId: pid,
-        stopLoss: requestedSL,
-        takeProfit: requestedTP,
+        stopLoss: normalizedSL,
+        takeProfit: normalizedTP,
         attempt,
         clientMsgId,
         payloadType: 2110
