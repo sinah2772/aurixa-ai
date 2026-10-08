@@ -65,9 +65,9 @@ async function executeAiDecision(decision, decisionId=null){
   if(decision.signal==="SELL"&&(stop<=entry||target>=entry))return reject("SELL_PROTECTION_INVALID",{entry,stop,target});
   const riskDistance=Math.abs(entry-stop),targetDistance=Math.abs(target-entry),rr=targetDistance/Math.max(0.00001,riskDistance);
   if(!Number.isFinite(rr)||rr<2)return reject("REWARD_RISK_TOO_LOW",{rr,minRewardRisk:2});
-  // No fixed XAUUSD position-count or daily-trade limit.
+  // No fixed XAUUSD position-count, daily-trade, or global cooldown limit.
   // Confirmed BUY/SELL signals may open additional demo positions.
-  // Balance/free-margin, risk sizing, spread, stale-signal, cooldown,
+  // Balance/free-margin, risk sizing, spread, stale-signal, broker-volume,
   // duplicate-signal, RR and demo-only protections remain enforced.
   if(typeof dbQuery==="function"){
     const dup=await dbQuery(`SELECT id, status, order_id, position_id
@@ -82,9 +82,10 @@ async function executeAiDecision(decision, decisionId=null){
     // Rejected attempts must not permanently consume a confirmed candle.
     // Only an actual/submitted trade attempt gates the same candle+direction.
     if(dup.rows.length)return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,reason:"AI_SIGNAL_ALREADY_GATED",strategySignalKey:key};
-    const last=await dbQuery(`SELECT MAX(created_at) FILTER(WHERE status IN ('OPEN','PARTIAL','CLOSED','SUBMITTED')) last_trade
-      FROM aurixa.auto_trades`);
-    if(last.rows[0]?.last_trade&&Date.now()-new Date(last.rows[0].last_trade).getTime()<cfg.cooldownMinutes*60000)return reject("TRADE_COOLDOWN_ACTIVE");
+    // No global cooldown gate: each confirmed candle+direction is independently
+    // deduplicated by strategy_signal_key. This prevents an older trade from
+    // blocking a new confirmed BUY/SELL signal.
+    // Risk, spread, RR, stale-signal, broker-volume and demo-only gates remain.
   }
   // Read the live demo account immediately before sizing the order.
   // Volume is derived from account balance + risk %, then constrained by
