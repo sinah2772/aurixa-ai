@@ -907,6 +907,35 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     );
   }
 
+  let openTradesRefreshBusy = false;
+
+  async function refreshOpenTrades() {
+    if (openTradesRefreshBusy) return;
+    openTradesRefreshBusy = true;
+
+    try {
+      const live = await getJSON(API.autoPositions);
+      if (live?.ok === true) {
+        renderOpenTrades(live);
+        // Keep the compact account/execution position display synchronized
+        // with the same broker snapshot used by OPEN TRADES.
+        updateAutoTrader(
+          {
+            enabled: true,
+            demoOnly: true,
+            demoAccount: true,
+            connected: true,
+            authorized: true,
+            positionLimit: "unlimited"
+          },
+          live
+        );
+      }
+    } finally {
+      openTradesRefreshBusy = false;
+    }
+  }
+
   async function refreshLiveChart() {
     try {
       const market = await getJSON(API.market);
@@ -949,9 +978,12 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }
 
     refresh();
+    refreshOpenTrades();
 
-    // Fast chart-only polling keeps the visible market line current
-    // without running the full dashboard refresh every second.
+    // OPEN TRADES is a dedicated live broker-position feed.
+    // Poll every 2 seconds so entry/current/P&L/SL/TP stay synchronized
+    // without waiting for the slower full dashboard refresh.
+    setInterval(refreshOpenTrades, 2000);
     setInterval(refreshLiveChart, 2000);
     setInterval(refresh, 5000);
   }
