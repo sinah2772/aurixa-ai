@@ -325,12 +325,35 @@ async function syncOpenPositions(){
       }catch(e){console.warn("AI breakeven:",e.message);}
       await dbQuery("UPDATE aurixa.auto_trades SET execution_entry_price=COALESCE(execution_entry_price,$2),status='OPEN',profit=$3,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(entry)?entry:null,Number.isFinite(pnl)?pnl:null]);updated++;
     }else{
+      // BROKER is the source of truth for closure. If a position disappears
+      // from the live cTrader position list, it was closed outside AURIXA
+      // (manual close, SL, TP, broker action, etc.). Reconcile the closing
+      // deal before marking the AURIXA trade CLOSED.
       let profit=null,closePrice=null,reason="BROKER_CLOSED";
       if(cTrader.getDealsByPositionId)try{
-        const deals=await cTrader.getDealsByPositionId(t.position_id),last=Array.isArray(deals)&&deals.length?deals.at(-1):null;
-        closePrice=Number(last?.executionPrice??last?.price);profit=Number(last?.netProfit??last?.profit);reason=String(last?.closeReason||reason);
-      }catch(e){}
-      await dbQuery("UPDATE aurixa.auto_trades SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),close_price=$2,profit=COALESCE($3,profit),exit_reason=$4,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(closePrice)?closePrice:null,Number.isFinite(profit)?profit:null,reason]);closed++;
+        const deals=await cTrader.getDealsByPositionId(t.position_id);
+        const closingDeals=(Array.isArray(deals)?deals:[]).filter(d=>{
+          const p=Number(d?.positionId);
+          const volume=Number(d?.volume);
+          return (!Number.isFinite(p)||String(p)===String(t.position_id)) && Number.isFinite(volume) && volume>0;
+        });
+        const last=closingDeals.length?closingDeals.at(-1):null;
+        closePrice=Number(last?.executionPrice??last?.price);
+        profit=Number(last?.netProfit??last?.profit);
+        reason=String(last?.closeReason||last?.dealStatus||reason);
+      }catch(e){
+        console.warn("AURIXA_CLOSE_RECONCILIATION_FAILED:",JSON.stringify({
+          positionId:t.position_id,error:e.message
+        }));
+      }
+      await dbQuery("UPDATE aurixa.auto_trades SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),close_price=$2,profit=COALESCE($3,profit),exit_reason=$4,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(closePrice)?closePrice:null,Number.isFinite(profit)?profit:null,reason]);
+      console.log("AURIXA_BROKER_POSITION_CLOSED:",JSON.stringify({
+        tradeId:t.id,positionId:t.position_id,reason,
+        closePrice:Number.isFinite(closePrice)?closePrice:null,
+        profit:Number.isFinite(profit)?profit:null,
+        detectedBy:"live cTrader position reconciliation"
+      }));
+      closed++;
     }
   }
   return {updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length};
