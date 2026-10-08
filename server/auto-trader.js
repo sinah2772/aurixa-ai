@@ -110,9 +110,39 @@ async function executeAiDecision(decision, decisionId=null){
   // treated volume cents as base units and therefore understated the
   // tradable volume by 100x, incorrectly rejecting valid confirmed signals.
   const volumeUnitScale=100;
-  const rawVolume=(riskAmount*volumeUnitScale)/riskDistance;
-  const volume=Math.min(configuredMax,Math.floor(rawVolume/brokerStep)*brokerStep);
-  const requiredRiskAtMinVolume=(brokerMin/volumeUnitScale)*riskDistance;
+  let executionRiskDistance=riskDistance;
+  let executionStop=stop;
+  let executionTarget=target;
+  let riskAdjustedForBrokerMinimum=false;
+  const rawVolume=(riskAmount*volumeUnitScale)/executionRiskDistance;
+  let volume=Math.min(configuredMax,Math.floor(rawVolume/brokerStep)*brokerStep);
+
+  // If the structure-based stop is slightly wider than the risk budget,
+  // do not throw away a confirmed signal. Use the broker minimum volume
+  // and pull the execution stop back to the largest distance that still
+  // fits the configured risk budget. This remains risk-first: it never
+  // increases the allowed loss above riskPercent. The AI engine's
+  // structure SL remains the planning reference, while this is the
+  // broker-executable protection distance.
+  if(volume<brokerMin){
+    const minVolumeRiskPerPrice=(brokerMin/volumeUnitScale);
+    const maxRiskDistance=(riskAmount*0.995)/minVolumeRiskPerPrice;
+    const minimumExecutableRisk=Number.isFinite(Number(decision.atr))
+      ? Number(decision.atr)*1.2
+      : 0;
+    if(Number.isFinite(maxRiskDistance) && maxRiskDistance>0 && maxRiskDistance>=minimumExecutableRisk){
+      executionRiskDistance=maxRiskDistance;
+      executionStop=decision.signal==="BUY"?entry-executionRiskDistance:entry+executionRiskDistance;
+      executionTarget=decision.signal==="BUY"
+        ? entry+executionRiskDistance*2
+        : entry-executionRiskDistance*2;
+      const adjustedRaw=(riskAmount*volumeUnitScale)/executionRiskDistance;
+      volume=Math.min(configuredMax,Math.floor(adjustedRaw/brokerStep)*brokerStep);
+      if(volume>=brokerMin) riskAdjustedForBrokerMinimum=true;
+    }
+  }
+
+  const requiredRiskAtMinVolume=(brokerMin/volumeUnitScale)*executionRiskDistance;
   if(volume<brokerMin){
     return reject("RISK_BUDGET_TOO_SMALL_FOR_BROKER_MIN_VOLUME",{
       accountBalance:balance,
@@ -121,6 +151,8 @@ async function executeAiDecision(decision, decisionId=null){
       riskPercent:cfg.riskPercent,
       riskAmount,
       riskDistance,
+      executionRiskDistance,
+      riskAdjustedForBrokerMinimum,
       volumeUnitScale,
       rawVolume,
       selectedVolume:0,
@@ -134,6 +166,8 @@ async function executeAiDecision(decision, decisionId=null){
     balance,equity:Number.isFinite(equity)?equity:null,
     freeMargin:Number.isFinite(freeMargin)?freeMargin:null,
     riskPercent:cfg.riskPercent,riskAmount,riskDistance,
+    executionRiskDistance,
+    riskAdjustedForBrokerMinimum,
     volumeUnitScale:100,
     brokerMinVolume:brokerMin,brokerVolumeStep:brokerStep,
     brokerMaxVolume:brokerMax,selectedVolume:volume
@@ -155,11 +189,11 @@ async function executeAiDecision(decision, decisionId=null){
     const actualEntry=Number(result.executionPrice);
     const protectionEntry=Number.isFinite(actualEntry)&&actualEntry>0?actualEntry:entry;
     const adjustedStop=decision.signal==="BUY"
-      ? protectionEntry-riskDistance
-      : protectionEntry+riskDistance;
+      ? protectionEntry-executionRiskDistance
+      : protectionEntry+executionRiskDistance;
     const adjustedTarget=decision.signal==="BUY"
-      ? protectionEntry+targetDistance
-      : protectionEntry-targetDistance;
+      ? protectionEntry+executionRiskDistance*2
+      : protectionEntry-executionRiskDistance*2;
     try{
       const protection=await cTrader.modifyPositionProtection(
         result.positionId,
@@ -192,12 +226,12 @@ async function executeAiDecision(decision, decisionId=null){
     await dbQuery(`INSERT INTO aurixa.auto_trades(decision_id,strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,order_id,position_id,client_msg_id,volume,stop_loss_distance,take_profit_distance,status,opened_at,execution_entry_price,gate_reason,risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price)
       VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $11 IN ('OPEN','PARTIAL') THEN NOW() ELSE NULL END,$12,'PASSED',$13,$14,$15,$16,$17)
       ON CONFLICT DO NOTHING`,
-      [decisionId,key,decision.signal,decision.entry,result.orderId||null,result.positionId||null,result.clientMsgId||null,volume,riskDistance,targetDistance,result.status||"SUBMITTED",result.executionPrice||entry,cfg.riskPercent,riskAmount,entry,stop,target]);
+      [decisionId,key,decision.signal,decision.entry,result.orderId||null,result.positionId||null,result.clientMsgId||null,volume,executionRiskDistance,executionRiskDistance*2,result.status||"SUBMITTED",result.executionPrice||entry,cfg.riskPercent,riskAmount,entry,executionStop,executionTarget]);
     await dbQuery(`UPDATE aurixa.auto_trades SET decision_id=$2,order_id=$3,position_id=$4,status=$5,execution_entry_price=$6,updated_at=NOW()
       WHERE strategy_signal_key=$1`,
       [key,decisionId,result.orderId||null,result.positionId||null,result.status||"SUBMITTED",result.executionPrice||entry]);
   }catch(e){console.error("AI trade record failed:",e.message);}
-  return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:stop,plannedTakeProfitPrice:target,...result};
+  return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:executionStop,plannedTakeProfitPrice:executionTarget,originalPlannedStopPrice:stop,originalPlannedTakeProfitPrice:target,riskAdjustedForBrokerMinimum,...result};
 }
 
 async function dryRunAiTrader(){
