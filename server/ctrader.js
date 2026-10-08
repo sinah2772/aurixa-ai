@@ -2077,8 +2077,9 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
   if (state.account?.isLive !== false) throw new Error("DEMO ACCOUNT REQUIRED");
 
   const pid = Number(positionId);
-  const requestedSL = Number(stopLoss);
+  const requestedSL = stopLoss == null ? null : Number(stopLoss);
   const requestedTP = takeProfit == null ? null : Number(takeProfit);
+
   if (!Number.isFinite(pid) || pid <= 0) throw new Error("Invalid position ID");
   if (!Number.isFinite(requestedSL) && !Number.isFinite(requestedTP)) {
     throw new Error("At least one protection value is required");
@@ -2091,15 +2092,52 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
   if (Number.isFinite(requestedSL)) payload.stopLoss = requestedSL;
   if (Number.isFinite(requestedTP)) payload.takeProfit = requestedTP;
 
-  // cTrader may apply the amendment while its response is delayed. Retry
-  // safely, then verify the broker's actual position state before reporting
-  // protection as successful.
+  const matchesBrokerProtection = (position) => {
+    if (!position) return false;
+    const td = position.tradeData || {};
+    const actualSL = Number(position.stopLoss ?? td.stopLoss);
+    const actualTP = Number(position.takeProfit ?? td.takeProfit);
+    const slOk = !Number.isFinite(requestedSL) ||
+      (Number.isFinite(actualSL) && Math.abs(actualSL - requestedSL) < 0.00001);
+    const tpOk = !Number.isFinite(requestedTP) ||
+      (Number.isFinite(actualTP) && Math.abs(actualTP - requestedTP) < 0.00001);
+    return slOk && tpOk;
+  };
+
   let lastError = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    if (!state.ws || state.ws.readyState !== 1) {
+      throw new Error("cTrader WebSocket is not connected");
+    }
+
     try {
-      await request(state.ws, 2107, payload, 10000, { waitForExecution: false });
-      lastError = null;
-      break;
+      const existing = await getOpenXAUUSDPositions(true);
+      const position = existing.find(p => Number(p?.positionId) === pid);
+      if (matchesBrokerProtection(position)) {
+        const td = position.tradeData || {};
+        return {
+          ok: true,
+          verified: true,
+          positionId: pid,
+          stopLoss: Number.isFinite(Number(position.stopLoss ?? td.stopLoss)) ? Number(position.stopLoss ?? td.stopLoss) : null,
+          takeProfit: Number.isFinite(Number(position.takeProfit ?? td.takeProfit)) ? Number(position.takeProfit ?? td.takeProfit) : null,
+          attempt: "pre-check"
+        };
+      }
+    } catch (err) {
+      lastError = err;
+    }
+
+    try {
+      const clientMsgId = send(state.ws, 2107, payload);
+      console.log("AURIXA_PROTECTION_REQUEST_SENT:", JSON.stringify({
+        positionId: pid,
+        stopLoss: requestedSL,
+        takeProfit: requestedTP,
+        attempt,
+        clientMsgId
+      }));
     } catch (err) {
       lastError = err;
       console.warn("AURIXA_PROTECTION_REQUEST_RETRY:", JSON.stringify({
@@ -2107,20 +2145,29 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
         attempt,
         error: safeError(err)
       }));
+      continue;
     }
 
-    try {
-      const positions = await getOpenXAUUSDPositions(true);
-      const position = positions.find(p => Number(p?.positionId) === pid);
-      if (position) {
-        const td = position.tradeData || {};
-        const actualSL = Number(position.stopLoss ?? td.stopLoss);
-        const actualTP = Number(position.takeProfit ?? td.takeProfit);
-        const slOk = !Number.isFinite(requestedSL) ||
-          (Number.isFinite(actualSL) && Math.abs(actualSL - requestedSL) < 0.00001);
-        const tpOk = !Number.isFinite(requestedTP) ||
-          (Number.isFinite(actualTP) && Math.abs(actualTP - requestedTP) < 0.00001);
-        if (slOk && tpOk) {
+    for (let check = 0; check < 8; check++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      try {
+        const positions = await getOpenXAUUSDPositions(true);
+        const position = positions.find(p => Number(p?.positionId) === pid);
+
+        if (matchesBrokerProtection(position)) {
+          const td = position.tradeData || {};
+          const actualSL = Number(position.stopLoss ?? td.stopLoss);
+          const actualTP = Number(position.takeProfit ?? td.takeProfit);
+
+          console.log("AURIXA_PROTECTION_VERIFIED:", JSON.stringify({
+            positionId: pid,
+            stopLoss: Number.isFinite(actualSL) ? actualSL : null,
+            takeProfit: Number.isFinite(actualTP) ? actualTP : null,
+            attempt,
+            check
+          }));
+
           return {
             ok: true,
             verified: true,
@@ -2130,37 +2177,16 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
             attempt
           };
         }
+      } catch (verifyErr) {
+        lastError = verifyErr;
       }
-    } catch (verifyErr) {
-      lastError = verifyErr;
     }
-  }
 
-  // Final broker-state verification after all attempts.
-  try {
-    const positions = await getOpenXAUUSDPositions(true);
-    const position = positions.find(p => Number(p?.positionId) === pid);
-    if (position) {
-      const td = position.tradeData || {};
-      const actualSL = Number(position.stopLoss ?? td.stopLoss);
-      const actualTP = Number(position.takeProfit ?? td.takeProfit);
-      const slOk = !Number.isFinite(requestedSL) ||
-        (Number.isFinite(actualSL) && Math.abs(actualSL - requestedSL) < 0.00001);
-      const tpOk = !Number.isFinite(requestedTP) ||
-        (Number.isFinite(actualTP) && Math.abs(actualTP - requestedTP) < 0.00001);
-      if (slOk && tpOk) {
-        return {
-          ok: true,
-          verified: true,
-          positionId: pid,
-          stopLoss: Number.isFinite(actualSL) ? actualSL : null,
-          takeProfit: Number.isFinite(actualTP) ? actualTP : null,
-          attempt: "final-verify"
-        };
-      }
-    }
-  } catch (verifyErr) {
-    lastError = verifyErr;
+    console.warn("AURIXA_PROTECTION_REQUEST_RETRY:", JSON.stringify({
+      positionId: pid,
+      attempt,
+      error: safeError(lastError || new Error("broker protection not verified"))
+    }));
   }
 
   throw new Error(
