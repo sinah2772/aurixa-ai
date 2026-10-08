@@ -231,6 +231,59 @@ async function syncOpenPositions(){
         [String(positionId)]
       );
       const trade=tracked?.rows?.[0]||null;
+
+      // Protection reconciliation: if an open broker position has lost or
+      // never received its SL/TP, restore both from the original trade plan
+      // using the ACTUAL fill price. This runs before trailing logic and does
+      // not wait for the position to reach profit.
+      if (trade && typeof cTrader.modifyPositionProtection==="function") {
+        const existingSL=Number(pos?.stopLoss ?? td?.stopLoss);
+        const existingTP=Number(pos?.takeProfit ?? td?.takeProfit);
+        const riskDistance=Number(trade.stop_loss_distance);
+        const targetDistance=Number(trade.take_profit_distance);
+        const plannedSL=Number(trade.planned_stop_price);
+        const plannedTP=Number(trade.planned_take_profit_price);
+
+        const slDistance=Number.isFinite(riskDistance) && riskDistance>0
+          ? riskDistance
+          : (Number.isFinite(plannedSL) ? Math.abs(Number(trade.planned_entry_price)-plannedSL) : NaN);
+        const tpDistance=Number.isFinite(targetDistance) && targetDistance>0
+          ? targetDistance
+          : (Number.isFinite(plannedTP) ? Math.abs(plannedTP-Number(trade.planned_entry_price)) : NaN);
+
+        const desiredSL=Number.isFinite(slDistance) && slDistance>0
+          ? (direction==="BUY" ? entry-slDistance : entry+slDistance)
+          : NaN;
+        const desiredTP=Number.isFinite(tpDistance) && tpDistance>0
+          ? (direction==="BUY" ? entry+tpDistance : entry-tpDistance)
+          : NaN;
+
+        const missingSL=!Number.isFinite(existingSL) || existingSL<=0;
+        const missingTP=!Number.isFinite(existingTP) || existingTP<=0;
+
+        if ((missingSL && Number.isFinite(desiredSL)) || (missingTP && Number.isFinite(desiredTP))) {
+          const repairSL=missingSL && Number.isFinite(desiredSL) ? desiredSL : null;
+          const repairTP=missingTP && Number.isFinite(desiredTP) ? desiredTP : null;
+          try {
+            const protection=await cTrader.modifyPositionProtection(
+              positionId,
+              repairSL,
+              repairTP
+            );
+            console.log("AURIXA_PROTECTION_REPAIRED:",JSON.stringify({
+              positionId,direction,entry,
+              stopLoss:repairSL,takeProfit:repairTP,protection
+            }));
+            protectedCount++;
+          } catch (e) {
+            console.error("AURIXA_PROTECTION_REPAIR_FAILED:",JSON.stringify({
+              positionId,direction,entry,stopLoss:repairSL,takeProfit:repairTP,
+              error:e.message
+            }));
+          }
+        }
+      }
+
       const baseRisk=trade?Math.abs(Number(trade.planned_entry_price)-Number(trade.planned_stop_price)):0;
       const profitMove=direction==="BUY"?current-entry:entry-current;
       const triggerDistance=baseRisk>0?baseRisk*cfg.trailingTriggerR:cfg.trailingFixedDistance;
