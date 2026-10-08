@@ -208,7 +208,7 @@ async function dryRunAiTrader(){
 async function syncOpenPositions(){
   if(!cTrader?.getOpenXAUUSDPositions)return {updated:0,closed:0,protectedCount:0,trailingUpdated:0};
   const cfg=config();
-  const positions=await cTrader.getOpenXAUUSDPositions();
+  const positions=await cTrader.getOpenXAUUSDPositions(true);
   let updated=0,closed=0,protectedCount=0,trailingUpdated=0;
 
   // Trail EVERY open XAUUSD position independently. This intentionally runs
@@ -247,8 +247,9 @@ async function syncOpenPositions(){
       if(!improves)continue;
 
       try{
-        await cTrader.modifyPositionProtection(positionId,candidate,null);
+        const result=await cTrader.modifyPositionProtection(positionId,candidate,null);
         trailingUpdated++;
+        console.log("AURIXA_TRAILING_STOP_VERIFIED:",JSON.stringify({positionId,direction,requestedStopLoss:candidate,result}));
         console.log("AURIXA_TRAILING_STOP_UPDATED:",JSON.stringify({
           positionId,direction,entry,current,profitMove,triggerDistance,trailDistance,stopLoss:candidate
         }));
