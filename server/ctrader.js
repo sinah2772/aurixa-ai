@@ -2085,12 +2085,19 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
     throw new Error("At least one protection value is required");
   }
 
+  // ProtoOAModifyPositionProtectionReq encodes price fields as integers.
+  // FxPro XAUUSD uses 5 decimal price scaling, so send broker integer
+  // prices while keeping the requested values as normal decimals for
+  // verification and UI.
+  const priceScale = 100000;
+  const brokerPrice = value => Math.round(Number(value) * priceScale);
+
   const payload = {
     ctidTraderAccountId: Number(state.accountId),
     positionId: pid
   };
-  if (Number.isFinite(requestedSL)) payload.stopLoss = requestedSL;
-  if (Number.isFinite(requestedTP)) payload.takeProfit = requestedTP;
+  if (Number.isFinite(requestedSL)) payload.stopLoss = brokerPrice(requestedSL);
+  if (Number.isFinite(requestedTP)) payload.takeProfit = brokerPrice(requestedTP);
 
   const matchesBrokerProtection = (position) => {
     if (!position) return false;
