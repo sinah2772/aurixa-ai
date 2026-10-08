@@ -2078,7 +2078,7 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
 
   const pid = Number(positionId);
   const requestedSL = Number(stopLoss);
-  const requestedTP = Number(takeProfit);
+  const requestedTP = takeProfit == null ? null : Number(takeProfit);
   if (!Number.isFinite(pid) || pid <= 0) throw new Error("Invalid position ID");
   if (!Number.isFinite(requestedSL) && !Number.isFinite(requestedTP)) {
     throw new Error("At least one protection value is required");
