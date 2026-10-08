@@ -243,13 +243,73 @@ app.get("/api/auto-trader/dry-run", async (req, res) => {
 
 app.get("/api/auto-trader/positions", async (req, res) => {
   try {
-    const positions = await require("./ctrader").inspectOpenXAUUSDPositions();
+    const ctrader = require("./ctrader");
+    const status = getCTraderStatus() || {};
 
+    // Read the broker position snapshot on every request, including
+    // protection orders, so the dashboard never relies on stale DB state.
+    const positions = await ctrader.getOpenXAUUSDPositions(true);
+
+    const bid = Number(status.bid);
+    const ask = Number(status.ask);
+
+    const livePositions = positions.map(position => {
+      const td = position?.tradeData || {};
+      const side = Number(td.tradeSide);
+      const direction = side === 1 ? "BUY" : side === 2 ? "SELL" : null;
+      const entry = Number(td.openPrice ?? td.price ?? position?.openPrice);
+      const volume = Number(td.volume ?? position?.volume);
+
+      // cTrader's live quote is the authoritative mark price:
+      // BUY positions are marked to bid, SELL positions to ask.
+      const currentPrice =
+        direction === "BUY" && Number.isFinite(bid) ? bid :
+        direction === "SELL" && Number.isFinite(ask) ? ask :
+        Number(position?.currentPrice ?? td.currentPrice ?? NaN);
+
+      const brokerPnl = Number(
+        position?.unrealizedNetProfit ??
+        td.unrealizedNetProfit ??
+        position?.netProfit ??
+        position?.profit ??
+        td.profit
+      );
+
+      // If cTrader does not include a floating P/L field in the position
+      // snapshot, calculate the live XAUUSD mark-to-market value from the
+      // live bid/ask and cTrader volume units.
+      const calculatedPnl =
+        direction &&
+        Number.isFinite(entry) &&
+        Number.isFinite(currentPrice) &&
+        Number.isFinite(volume)
+          ? (direction === "BUY" ? currentPrice - entry : entry - currentPrice) * volume
+          : null;
+
+      return {
+        ...position,
+        symbol: String(status.symbolName || status.symbol || "XAUUSD").toUpperCase(),
+        direction,
+        entryPrice: Number.isFinite(entry) ? entry : null,
+        currentPrice: Number.isFinite(currentPrice) ? currentPrice : null,
+        volume: Number.isFinite(volume) ? volume : null,
+        unrealizedNetProfit: Number.isFinite(brokerPnl)
+          ? brokerPnl
+          : calculatedPnl,
+        liveQuoteTimestamp: status.lastUpdate || new Date().toISOString()
+      };
+    });
+
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.json({
       ok: true,
       readOnly: true,
-      count: positions.length,
-      positions
+      live: true,
+      quoteUpdatedAt: status.lastUpdate || null,
+      bid: Number.isFinite(bid) ? bid : null,
+      ask: Number.isFinite(ask) ? ask : null,
+      count: livePositions.length,
+      positions: livePositions
     });
   } catch (err) {
     console.error("Auto-Trader position inspection error:", err);
@@ -257,6 +317,7 @@ app.get("/api/auto-trader/positions", async (req, res) => {
     res.status(500).json({
       ok: false,
       readOnly: true,
+      live: false,
       error: "Position inspection unavailable"
     });
   }
