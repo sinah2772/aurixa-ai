@@ -483,7 +483,7 @@
     }
 
     let reason = first(data.reason, "Waiting for AI Trader decision.");
-    if (hasPosition) reason = "One XAUUSD position is already open.";
+    if (hasPosition) reason = "XAUUSD position(s) currently open. New confirmed signals remain governed by the normal risk gates.";
     else if (!eligible) {
       const failed = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
       reason = failed.length ? "Blocked: " + failed.join(", ") : reason;
