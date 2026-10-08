@@ -501,10 +501,12 @@
 
     text("autoTradeStatus", state);
     const openCount = Number(first(positions?.count, Array.isArray(positions?.positions) ? positions.positions.length : 0));
-    const maxOpen = Number(first(status.maxOpenPositions, 3));
+    const maxOpenRaw = first(status.maxOpenPositions, status.positionLimit);
+    const unlimited = maxOpenRaw === "unlimited" || maxOpenRaw === "UNLIMITED" || maxOpenRaw == null;
+    const maxOpen = unlimited ? null : Number(maxOpenRaw);
     text("autoTradeMode", demo ? "DEMO ONLY · AI V1" : "GUARDED · AI V1");
-    text("gateMaxPositions", "MAX " + maxOpen + " POSITIONS");
-    text("autoTradePosition", openCount > 0 ? `OPEN ${openCount}/${maxOpen}` : `FLAT 0/${maxOpen}`);
+    text("gateMaxPositions", unlimited ? "POSITIONS UNLIMITED" : "MAX " + maxOpen + " POSITIONS");
+    text("autoTradePosition", openCount > 0 ? (unlimited ? `OPEN ${openCount}` : `OPEN ${openCount}/${maxOpen}`) : (unlimited ? "FLAT 0" : `FLAT 0/${maxOpen}`));
 
     const list = Array.isArray(positions?.positions) ? positions.positions : [];
     const p = list[0];
@@ -537,7 +539,90 @@
 
   }
 
-  function formatTime(value) {
+
+  function renderOpenTrades(data) {
+    const body = $("openTradesList");
+    const summary = $("openTradesSummary");
+    const updated = $("openTradesUpdated");
+    if (!body) return;
+
+    const positions = Array.isArray(data?.positions)
+      ? data.positions
+      : Array.isArray(data)
+        ? data
+        : [];
+
+    const xauusd = positions.filter(p => {
+      const symbol = String(first(
+        p?.symbol,
+        p?.symbolName,
+        p?.tradeData?.symbol,
+        "XAUUSD"
+      )).toUpperCase();
+      return symbol.includes("XAUUSD");
+    });
+
+    if (summary) summary.textContent = xauusd.length + " OPEN POSITIONS";
+
+    if (!xauusd.length) {
+      body.innerHTML = '<div class="empty">No open XAUUSD trades.</div>';
+      if (updated) updated.textContent = "Live cTrader position feed · " + new Date().toLocaleTimeString();
+      return;
+    }
+
+    body.innerHTML = xauusd.map(p => {
+      const td = p?.tradeData || {};
+      const sideNum = Number(first(td.tradeSide, p.tradeSide));
+      const direction = sideNum === 1
+        ? "BUY"
+        : sideNum === 2
+          ? "SELL"
+          : String(first(p.direction, "—")).toUpperCase();
+
+      const positionId = first(p.positionId, td.positionId, p.id);
+      const orderId = first(p.orderId, td.orderId);
+      const entry = first(p.openPrice, td.openPrice, td.price, p.entryPrice, p.price);
+      const current = first(p.currentPrice, td.currentPrice, p.price);
+      const volume = first(p.volume, td.volume);
+      const sl = first(p.stopLoss, td.stopLoss);
+      const tp = first(p.takeProfit, td.takeProfit);
+      const pnl = first(
+        p.unrealizedNetProfit,
+        td.unrealizedNetProfit,
+        p.netProfit,
+        p.profit
+      );
+      const opened = first(p.openTime, p.openedAt, td.openTime, td.openedAt);
+      const entryN = Number(entry);
+      const currentN = Number(current);
+      const slN = Number(sl);
+      const tpN = Number(tp);
+      const pnlN = Number(pnl);
+      const pnlClass = Number.isFinite(pnlN) ? (pnlN > 0 ? "profit" : pnlN < 0 ? "loss" : "flat") : "";
+      const sideClass = direction === "BUY" ? "buy" : direction === "SELL" ? "sell" : "flat";
+
+      return '<article class="open-trade-card">' +
+        '<div class="open-trade-top">' +
+          '<div><strong class="open-trade-direction ' + sideClass + '">' + escapeHTML(direction) + '</strong><span class="open-trade-symbol">XAUUSD</span></div>' +
+          '<strong class="open-trade-pnl ' + pnlClass + '">' + escapeHTML(Number.isFinite(pnlN) ? (pnlN > 0 ? "+" : "") + number(pnlN, 2) : "—") + '</strong>' +
+        '</div>' +
+        '<div class="open-trade-id">POSITION ' + escapeHTML(positionId ?? "—") + (orderId ? ' · ORDER ' + escapeHTML(orderId) : '') + '</div>' +
+        '<div class="open-trade-grid">' +
+          '<div><span>ENTRY</span><strong>' + escapeHTML(Number.isFinite(entryN) ? number(entryN, 2) : "—") + '</strong></div>' +
+          '<div><span>CURRENT</span><strong>' + escapeHTML(Number.isFinite(currentN) ? number(currentN, 2) : "—") + '</strong></div>' +
+          '<div><span>VOLUME</span><strong>' + escapeHTML(volume ?? "—") + '</strong></div>' +
+          '<div><span>STOP LOSS</span><strong>' + escapeHTML(Number.isFinite(slN) ? number(slN, 2) : "NOT SET") + '</strong></div>' +
+          '<div><span>TAKE PROFIT</span><strong>' + escapeHTML(Number.isFinite(tpN) ? number(tpN, 2) : "NOT SET") + '</strong></div>' +
+          '<div><span>OPENED</span><strong>' + escapeHTML(opened ? formatTime(opened) : "—") + '</strong></div>' +
+        '</div>' +
+        '<div class="open-trade-footer"><span>PROTECTION ' + (Number.isFinite(slN) ? "SL SET" : "SL MISSING") + (Number.isFinite(tpN) ? " · TP SET" : " · TP MISSING") + '</span><span>LIVE cTRADER</span></div>' +
+      '</article>';
+    }).join("");
+
+    if (updated) updated.textContent = "Live cTrader position feed · " + new Date().toLocaleTimeString();
+  }
+
+function formatTime(value) {
     if (!value) return "—";
 
     const d = new Date(value);
@@ -783,6 +868,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const liveAi = aiDecision?.decision || aiDecision?.result || aiDecision || {};
     updateSignal(liveAi);
     updateAutoTrader(autoStatus, autoPositions);
+    renderOpenTrades(autoPositions);
     updateAccountPanel(account, autoStatus, ctrader);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
