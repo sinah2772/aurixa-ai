@@ -56,8 +56,15 @@ function decide(candles,quote={}){
   const confidence=clamp(Math.round(40+(passedLogic/6)*35+(scoreGap/6)*15+Math.min(10,trendStrength*3)),0,95);
   const bid=n(quote.bid),ask=n(quote.ask),spread=bid!==null&&ask!==null&&ask>=bid?ask-bid:null,entry=side==="BUY"?ask:side==="SELL"?bid:last;
   const swingHigh=Math.max(...recent.map(c=>n(c.high))),swingLow=Math.min(...recent.map(c=>n(c.low)));
-  const swingRisk=side==="BUY"?Math.max(0,last-swingLow):side==="SELL"?Math.max(0,swingHigh-last):a*1.2;
-  const risk=Math.max(a*1.2,swingRisk*0.75),stop=side==="BUY"?entry-risk:side==="SELL"?entry+risk:null,target=side==="BUY"?entry+risk*MIN_RR:side==="SELL"?entry-risk*MIN_RR:null;
+  // Structure-based SL area: recent swing structure plus a small volatility buffer.
+  // The final risk distance also has a 1.2 ATR floor for XAUUSD.
+  const slBuffer=Math.max(a*0.15,0.25);
+  const structureStop=side==="BUY"?swingLow-slBuffer:side==="SELL"?swingHigh+slBuffer:null;
+  const minimumRisk=a*1.2;
+  const structureRisk=side==="BUY"?Math.max(0,entry-structureStop):side==="SELL"?Math.max(0,structureStop-entry):minimumRisk;
+  const risk=Math.max(minimumRisk,structureRisk);
+  const stop=side==="BUY"?entry-risk:side==="SELL"?entry+risk:null;
+  const target=side==="BUY"?entry+risk*MIN_RR:side==="SELL"?entry-risk*MIN_RR:null;
   const rawRR=side==="WAIT"?null:Math.abs(target-entry)/Math.max(0.00001,Math.abs(entry-stop));
   const rr=rawRR===null?null:Number(rawRR.toFixed(2));
   const qualityTrade=side!=="WAIT"&&passedLogic>=5&&(trendUp||trendDown);
