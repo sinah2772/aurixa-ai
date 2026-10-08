@@ -366,15 +366,26 @@ async function syncOpenPositions(){
       let profit=null,closePrice=null,reason="BROKER_CLOSED";
       if(cTrader.getDealsByPositionId)try{
         const deals=await cTrader.getDealsByPositionId(t.position_id);
-        const closingDeals=(Array.isArray(deals)?deals:[]).filter(d=>{
-          const p=Number(d?.positionId);
-          const volume=Number(d?.volume);
-          return (!Number.isFinite(p)||String(p)===String(t.position_id)) && Number.isFinite(volume) && volume>0;
-        });
-        const last=closingDeals.length?closingDeals.at(-1):null;
-        closePrice=Number(last?.executionPrice??last?.price);
-        profit=Number(last?.netProfit??last?.profit);
-        reason=String(last?.closeReason||last?.dealStatus||reason);
+        const closingDeals=(Array.isArray(deals)?deals:[])
+          .filter(d=>{
+            const p=Number(d?.positionId);
+            const status=Number(d?.dealStatus);
+            return (!Number.isFinite(p)||String(p)===String(t.position_id))
+              && Boolean(d?.closePositionDetail)
+              && (!Number.isFinite(status)||status===2||status===3);
+          })
+          .sort((a,b)=>Number(a?.executionTimestamp||0)-Number(b?.executionTimestamp||0));
+        const last=closingDeals.at(-1),detail=last?.closePositionDetail||null;
+        closePrice=Number(last?.executionPrice??last?.price??detail?.entryPrice);
+        if(detail){
+          const digits=Number.isFinite(Number(detail.moneyDigits))
+            ? Number(detail.moneyDigits)
+            : Number.isFinite(Number(last?.moneyDigits)) ? Number(last.moneyDigits) : 2;
+          const scale=10**Math.max(0,Math.min(12,digits));
+          const values=[Number(detail.grossProfit),Number(detail.swap),Number(detail.commission),Number(detail.pnlConversionFee)].filter(Number.isFinite);
+          if(values.length) profit=values.reduce((sum,v)=>sum+v,0)/scale;
+          reason="BROKER_CLOSED";
+        }
       }catch(e){
         console.warn("AURIXA_CLOSE_RECONCILIATION_FAILED:",JSON.stringify({
           positionId:t.position_id,error:e.message
@@ -390,6 +401,39 @@ async function syncOpenPositions(){
       closed++;
     }
   }
+  if(typeof dbQuery==="function" && cTrader.getDealsByPositionId){
+    try{
+      const missing=await dbQuery(`SELECT id,position_id FROM aurixa.auto_trades
+        WHERE status='CLOSED' AND position_id IS NOT NULL
+          AND (profit IS NULL OR close_price IS NULL)
+        ORDER BY closed_at DESC NULLS LAST,id DESC LIMIT 100`);
+      for(const t of missing.rows){
+        try{
+          const deals=await cTrader.getDealsByPositionId(t.position_id);
+          const closingDeals=(Array.isArray(deals)?deals:[])
+            .filter(d=>Boolean(d?.closePositionDetail) && (!Number.isFinite(Number(d?.dealStatus)) || Number(d.dealStatus)===2 || Number(d.dealStatus)===3))
+            .sort((a,b)=>Number(a?.executionTimestamp||0)-Number(b?.executionTimestamp||0));
+          const last=closingDeals.at(-1),detail=last?.closePositionDetail;
+          if(!detail) continue;
+          const digits=Number.isFinite(Number(detail.moneyDigits))?Number(detail.moneyDigits):Number.isFinite(Number(last?.moneyDigits))?Number(last.moneyDigits):2;
+          const scale=10**Math.max(0,Math.min(12,digits));
+          const values=[Number(detail.grossProfit),Number(detail.swap),Number(detail.commission),Number(detail.pnlConversionFee)].filter(Number.isFinite);
+          const realized=values.length?values.reduce((sum,v)=>sum+v,0)/scale:null;
+          const exitPrice=Number(last?.executionPrice??last?.price??detail?.entryPrice);
+          await dbQuery(`UPDATE aurixa.auto_trades
+            SET close_price=COALESCE(close_price,$2),profit=COALESCE(profit,$3),
+                exit_reason=COALESCE(exit_reason,'BROKER_CLOSED'),updated_at=NOW()
+            WHERE id=$1`,[t.id,Number.isFinite(exitPrice)?exitPrice:null,realized]);
+          console.log("AURIXA_CLOSED_TRADE_BACKFILLED:",JSON.stringify({tradeId:t.id,positionId:t.position_id,closePrice:Number.isFinite(exitPrice)?exitPrice:null,profit:realized}));
+        }catch(e){
+          console.warn("AURIXA_CLOSED_TRADE_BACKFILL_FAILED:",JSON.stringify({tradeId:t.id,positionId:t.position_id,error:e.message}));
+        }
+      }
+    }catch(e){
+      console.warn("AURIXA_CLOSED_TRADE_BACKFILL_QUERY_FAILED:",e.message);
+    }
+  }
+
   return {updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length};
 }
 
