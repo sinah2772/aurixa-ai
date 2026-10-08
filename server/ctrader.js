@@ -2085,19 +2085,17 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
     throw new Error("At least one protection value is required");
   }
 
-  // ProtoOAModifyPositionProtectionReq encodes price fields as integers.
-  // FxPro XAUUSD uses 5 decimal price scaling, so send broker integer
-  // prices while keeping the requested values as normal decimals for
-  // verification and UI.
-  const priceScale = 100000;
-  const brokerPrice = value => Math.round(Number(value) * priceScale);
-
+  // cTrader Open API uses ProtoOAAmendPositionSLTPReq (2110) for
+  // changing protection on an existing position. Price fields are
+  // protobuf doubles and must be sent as normal absolute prices.
+  // 2107 is NOT the SL/TP amendment message; using it causes cTrader
+  // to interpret the payload as an order amendment and disconnect.
   const payload = {
     ctidTraderAccountId: Number(state.accountId),
     positionId: pid
   };
-  if (Number.isFinite(requestedSL)) payload.stopLoss = brokerPrice(requestedSL);
-  if (Number.isFinite(requestedTP)) payload.takeProfit = brokerPrice(requestedTP);
+  if (Number.isFinite(requestedSL)) payload.stopLoss = requestedSL;
+  if (Number.isFinite(requestedTP)) payload.takeProfit = requestedTP;
 
   const matchesBrokerProtection = (position) => {
     if (!position) return false;
@@ -2137,13 +2135,14 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
     }
 
     try {
-      const clientMsgId = send(state.ws, 2107, payload);
+      const clientMsgId = send(state.ws, 2110, payload);
       console.log("AURIXA_PROTECTION_REQUEST_SENT:", JSON.stringify({
         positionId: pid,
         stopLoss: requestedSL,
         takeProfit: requestedTP,
         attempt,
-        clientMsgId
+        clientMsgId,
+        payloadType: 2110
       }));
     } catch (err) {
       lastError = err;
