@@ -1938,7 +1938,7 @@ async function getDealsByPositionId(positionId, fromTimestamp = null, toTimestam
   return Array.isArray(msg?.payload?.deal) ? msg.payload.deal : [];
 }
 
-async function getOpenXAUUSDPositions() {
+async function getOpenXAUUSDPositions(returnProtectionOrders = false) {
   if (!state.ws || state.ws.readyState !== 1) {
     throw new Error("cTrader WebSocket is not connected");
   }
@@ -1952,7 +1952,7 @@ async function getOpenXAUUSDPositions() {
     2124,
     {
       ctidTraderAccountId: Number(state.accountId),
-      returnProtectionOrders: false
+      returnProtectionOrders: Boolean(returnProtectionOrders)
     },
     10000
   );
@@ -2075,11 +2075,97 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
   if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
   if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
   if (state.account?.isLive !== false) throw new Error("DEMO ACCOUNT REQUIRED");
-  const payload={ctidTraderAccountId:Number(state.accountId),positionId:Number(positionId)};
-  if(Number.isFinite(Number(stopLoss))) payload.stopLoss=Number(stopLoss);
-  if(Number.isFinite(Number(takeProfit))) payload.takeProfit=Number(takeProfit);
-  await request(state.ws,2107,payload,20000,{waitForExecution:false});
-  return {ok:true,positionId:Number(positionId),stopLoss:payload.stopLoss??null,takeProfit:payload.takeProfit??null};
+
+  const pid = Number(positionId);
+  const requestedSL = Number(stopLoss);
+  const requestedTP = Number(takeProfit);
+  if (!Number.isFinite(pid) || pid <= 0) throw new Error("Invalid position ID");
+  if (!Number.isFinite(requestedSL) && !Number.isFinite(requestedTP)) {
+    throw new Error("At least one protection value is required");
+  }
+
+  const payload = {
+    ctidTraderAccountId: Number(state.accountId),
+    positionId: pid
+  };
+  if (Number.isFinite(requestedSL)) payload.stopLoss = requestedSL;
+  if (Number.isFinite(requestedTP)) payload.takeProfit = requestedTP;
+
+  // cTrader may apply the amendment while its response is delayed. Retry
+  // safely, then verify the broker's actual position state before reporting
+  // protection as successful.
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await request(state.ws, 2107, payload, 10000, { waitForExecution: false });
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+      console.warn("AURIXA_PROTECTION_REQUEST_RETRY:", JSON.stringify({
+        positionId: pid,
+        attempt,
+        error: safeError(err)
+      }));
+    }
+
+    try {
+      const positions = await getOpenXAUUSDPositions(true);
+      const position = positions.find(p => Number(p?.positionId) === pid);
+      if (position) {
+        const td = position.tradeData || {};
+        const actualSL = Number(position.stopLoss ?? td.stopLoss);
+        const actualTP = Number(position.takeProfit ?? td.takeProfit);
+        const slOk = !Number.isFinite(requestedSL) ||
+          (Number.isFinite(actualSL) && Math.abs(actualSL - requestedSL) < 0.00001);
+        const tpOk = !Number.isFinite(requestedTP) ||
+          (Number.isFinite(actualTP) && Math.abs(actualTP - requestedTP) < 0.00001);
+        if (slOk && tpOk) {
+          return {
+            ok: true,
+            verified: true,
+            positionId: pid,
+            stopLoss: Number.isFinite(actualSL) ? actualSL : null,
+            takeProfit: Number.isFinite(actualTP) ? actualTP : null,
+            attempt
+          };
+        }
+      }
+    } catch (verifyErr) {
+      lastError = verifyErr;
+    }
+  }
+
+  // Final broker-state verification after all attempts.
+  try {
+    const positions = await getOpenXAUUSDPositions(true);
+    const position = positions.find(p => Number(p?.positionId) === pid);
+    if (position) {
+      const td = position.tradeData || {};
+      const actualSL = Number(position.stopLoss ?? td.stopLoss);
+      const actualTP = Number(position.takeProfit ?? td.takeProfit);
+      const slOk = !Number.isFinite(requestedSL) ||
+        (Number.isFinite(actualSL) && Math.abs(actualSL - requestedSL) < 0.00001);
+      const tpOk = !Number.isFinite(requestedTP) ||
+        (Number.isFinite(actualTP) && Math.abs(actualTP - requestedTP) < 0.00001);
+      if (slOk && tpOk) {
+        return {
+          ok: true,
+          verified: true,
+          positionId: pid,
+          stopLoss: Number.isFinite(actualSL) ? actualSL : null,
+          takeProfit: Number.isFinite(actualTP) ? actualTP : null,
+          attempt: "final-verify"
+        };
+      }
+    }
+  } catch (verifyErr) {
+    lastError = verifyErr;
+  }
+
+  throw new Error(
+    `cTrader protection could not be verified for position ${pid}: ${safeError(lastError || new Error("unknown error"))}`
+  );
 }
 
 async function placeDemoMarketOrder({
@@ -2113,34 +2199,8 @@ async function placeDemoMarketOrder({
     throw new Error("Invalid cTrader volume");
   }
 
-  const openPositions = await getOpenXAUUSDPositions();
-
-  // Keep the cTrader-side safety gate aligned with the auto-trader's
-  // configured AURIXA_MAX_OPEN_POSITIONS value. Never allow more than
-  // 25 positions even if the environment is misconfigured.
-  const rawMaxOpenPositions = String(
-    process.env.AURIXA_MAX_OPEN_POSITIONS || "3"
-  ).trim().toLowerCase();
-  const configuredMaxOpenPositions =
-    rawMaxOpenPositions === "unlimited"
-      ? 25
-      : Math.floor(Number(rawMaxOpenPositions));
-  const maxOpenPositions = Math.max(
-    1,
-    Math.min(
-      25,
-      Number.isFinite(configuredMaxOpenPositions)
-        ? configuredMaxOpenPositions
-        : 3
-    )
-  );
-
-  if (openPositions.length >= maxOpenPositions) {
-    throw new Error(
-      "Maximum XAUUSD position limit reached (" + maxOpenPositions + ")"
-    );
-  }
-
+  // Intentionally no fixed open-position-count gate.
+  // Risk and demo-only protections are enforced before this function is called.
   const tradeSide =
     direction === "BUY"
       ? 1
