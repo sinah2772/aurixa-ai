@@ -2362,6 +2362,39 @@ async function placeDemoMarketOrder({
   }
 
   const executionType = Number(responsePayload.executionType);
+  // Only FILLED (3) and PARTIAL_FILL (4) confirm a market execution.
+  // Never treat an unknown/rejected execution event as an OPEN position.
+  if (![3, 4].includes(executionType)) {
+    throw new Error(`cTrader market order was not confirmed filled (executionType=${String(responsePayload.executionType)})`);
+  }
+  if (!positionId) {
+    throw new Error(`cTrader confirmed executionType=${executionType} but returned no positionId; outcome requires reconciliation (orderId=${String(orderId)})`);
+  }
+
+  let brokerConfirmed = false;
+  for (let check = 0; check < 6; check++) {
+    try {
+      const openPositions = await getOpenXAUUSDPositions(true);
+      if (openPositions.some(position => String(position?.positionId) === String(positionId))) {
+        brokerConfirmed = true;
+        break;
+      }
+    } catch (verifyError) {
+      console.warn("AURIXA_ORDER_POSITION_VERIFY_RETRY:", JSON.stringify({
+        orderId, positionId, check, error: safeError(verifyError)
+      }));
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  if (!brokerConfirmed) {
+    console.error("AURIXA_ORDER_EXECUTION_NOT_YET_VISIBLE_IN_BROKER_POSITIONS:", JSON.stringify({
+      orderId, positionId, executionType
+    }));
+  } else {
+    console.log("AURIXA_ORDER_EXECUTION_CONFIRMED:", JSON.stringify({
+      orderId, positionId, executionType, brokerConfirmed: true
+    }));
+  }
 
   return {
     status: executionType === 4 ? "PARTIAL" : "OPEN",
@@ -2369,6 +2402,8 @@ async function placeDemoMarketOrder({
     orderId,
     positionId,
     executionPrice,
+    brokerConfirmed,
+    executionType,
     volume: Number(volume),
     direction,
     stopLossDistance: Number(stopLossDistance),
