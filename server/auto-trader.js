@@ -10,6 +10,51 @@ const inFlightSignalKeys = new Set();
 
 function configure({ctrader,query,ai}){cTrader=ctrader;dbQuery=query;aiEngine=ai;}
 
+function isRealizedClosingDeal(deal, positionId) {
+  const dealPosition = Number(deal?.positionId);
+  const statusRaw = deal?.dealStatus;
+  const status = statusRaw == null || statusRaw === "" ? NaN : Number(statusRaw);
+  // cTrader ProtoOADealStatus: FILLED=1, PARTIALLY_FILLED=2.
+  // Status 3 is REJECTED and must never be counted as a realized close.
+  return (!Number.isFinite(dealPosition) || String(dealPosition) === String(positionId))
+    && Boolean(deal?.closePositionDetail)
+    && (!Number.isFinite(status) || status === 1 || status === 2);
+}
+
+function summarizeRealizedClosingDeals(deals, positionId) {
+  const closing = (Array.isArray(deals) ? deals : [])
+    .filter(deal => isRealizedClosingDeal(deal, positionId))
+    .sort((a,b) => Number(a?.executionTimestamp || 0) - Number(b?.executionTimestamp || 0));
+  if (!closing.length) return { profit: null, closePrice: null, closingDeals: 0 };
+
+  let totalProfit = 0;
+  let hasProfit = false;
+  let displayDigits = 2;
+  for (const deal of closing) {
+    const detail = deal?.closePositionDetail || {};
+    const rawDigits = detail.moneyDigits ?? deal.moneyDigits;
+    const digits = Number(rawDigits);
+    const moneyDigits = Number.isFinite(digits) ? Math.max(0, Math.min(12, digits)) : 2;
+    displayDigits = Math.max(displayDigits, moneyDigits);
+    const values = [detail.grossProfit, detail.swap, detail.commission, detail.pnlConversionFee]
+      .map(value => value == null || value === "" ? NaN : Number(value))
+      .filter(Number.isFinite);
+    if (values.length) {
+      totalProfit += values.reduce((sum, value) => sum + value, 0) / (10 ** moneyDigits);
+      hasProfit = true;
+    }
+  }
+  const last = closing[closing.length - 1];
+  const detail = last?.closePositionDetail || {};
+  const rawExit = last?.executionPrice ?? last?.price ?? detail.entryPrice;
+  const exitPrice = rawExit == null || rawExit === "" ? NaN : Number(rawExit);
+  return {
+    profit: hasProfit ? Number(totalProfit.toFixed(Math.min(8, displayDigits))) : null,
+    closePrice: Number.isFinite(exitPrice) && exitPrice > 0 ? exitPrice : null,
+    closingDeals: closing.length
+  };
+}
+
 async function executeAiDecision(decision, decisionId=null) {
   const key = `AURIXA_AI:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
   if (inFlightSignalKeys.has(key)) {
@@ -71,6 +116,33 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   if(cfg.demoOnly&&st.account?.isLive!==false)return reject(st.account?.isLive===true?"LIVE_ACCOUNT_BLOCKED":"ACCOUNT_ENVIRONMENT_UNKNOWN");
   if(!st.tradingPermission)return reject("TRADE_PERMISSION_REQUIRED");
   if(String(st.symbolName||st.symbol||"").toUpperCase()!=="XAUUSD")return reject("XAUUSD_NOT_READY");
+  // Fail closed if any existing XAUUSD broker position is missing either
+  // protection. Known AURIXA positions are repaired by syncOpenPositions;
+  // unknown/manual positions require an operator to set a safe SL/TP.
+  if(typeof cTrader.getOpenXAUUSDPositions==="function"){
+    try {
+      const brokerPositions=await cTrader.getOpenXAUUSDPositions(true);
+      const unprotected=(Array.isArray(brokerPositions)?brokerPositions:[]).filter(position=>{
+        const td=position?.tradeData||{};
+        const rawSL=position?.stopLoss ?? td.stopLoss;
+        const rawTP=position?.takeProfit ?? td.takeProfit;
+        const sl=rawSL==null||rawSL===""?NaN:Number(rawSL);
+        const tp=rawTP==null||rawTP===""?NaN:Number(rawTP);
+        return !Number.isFinite(sl)||sl<=0||!Number.isFinite(tp)||tp<=0;
+      });
+      if(unprotected.length){
+        console.error("AURIXA_ORDER_BLOCKED_UNPROTECTED_BROKER_POSITION:",JSON.stringify({
+          signal:decision.signal,
+          positionIds:unprotected.map(position=>position.positionId).filter(Boolean),
+          unprotectedCount:unprotected.length
+        }));
+        return reject("OPEN_POSITION_MISSING_SL_OR_TP",{unprotectedPositionIds:unprotected.map(position=>position.positionId).filter(Boolean)});
+      }
+    } catch(e) {
+      console.error("AURIXA_OPEN_POSITION_PROTECTION_CHECK_FAILED:",e.message);
+      return reject("OPEN_POSITION_PROTECTION_CHECK_FAILED",{error:e.message});
+    }
+  }
   const bid=Number(st.bid),ask=Number(st.ask);
   if(!Number.isFinite(bid)||!Number.isFinite(ask)||ask<=bid)return reject("LIVE_PRICE_UNAVAILABLE");
   const spread=ask-bid;if(spread>cfg.maxSpread)return reject("SPREAD_TOO_HIGH",{spread});
@@ -252,8 +324,11 @@ async function executeAiDecisionInternal(decision, decisionId=null){
         adjustedStop,
         adjustedTarget
       );
-      result.stopLoss=adjustedStop;
-      result.takeProfit=adjustedTarget;
+      if(protection?.verified!==true){
+        throw new Error("Broker did not confirm both SL and TP after order execution");
+      }
+      result.stopLoss=Number.isFinite(Number(protection.stopLoss))?Number(protection.stopLoss):adjustedStop;
+      result.takeProfit=Number.isFinite(Number(protection.takeProfit))?Number(protection.takeProfit):adjustedTarget;
       result.protectionStatus="SET";
       console.log("AURIXA_POST_FILL_PROTECTION:",JSON.stringify({
         positionId:result.positionId,
@@ -284,7 +359,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       WHERE id=$1`,
       [reservationId,decisionId,result.orderId||null,result.positionId||null,result.clientMsgId||null,
        result.status||"SUBMITTED",result.executionPrice||entry,
-       result.status==="CLOSED"?"PROTECTION_FAILURE_EMERGENCY_CLOSE":"PASSED",
+       result.status==="CLOSED"?"PROTECTION_FAILURE_EMERGENCY_CLOSE":(result.protectionStatus==="FAILED"?"PROTECTION_FAILED":"PASSED"),
        result.protectionError||null,result.closePrice||null,result.exitReason||null]);
   }catch(e){console.error("AI trade record update failed:",e.message);}
   return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:executionStop,plannedTakeProfitPrice:executionTarget,originalPlannedStopPrice:stop,originalPlannedTakeProfitPrice:target,riskAdjustedForBrokerMinimum,...result};
@@ -304,7 +379,7 @@ async function syncOpenPositions(){
   // Trail EVERY open XAUUSD position independently. This intentionally runs
   // at the broker-position level so manually opened or previously untracked
   // XAUUSD positions are protected too. Demo-only is enforced by cTrader.
-  if(cfg.trailingEnabled && typeof cTrader.modifyPositionProtection==="function"){
+  if(typeof cTrader.modifyPositionProtection==="function"){
     for(const pos of positions){
       const positionId=pos?.positionId;
       const td=pos?.tradeData||{};
@@ -320,13 +395,13 @@ async function syncOpenPositions(){
       };
       // ProtoOAReconcileRes places the actual position entry in position.price;
       // tradeData commonly has no openPrice/price field.
-      const entry=numericPrice(pos.price,td.openPrice,td.price,pos.openPrice,td.entryPrice);
+      let entry=numericPrice(pos.price,td.openPrice,td.price,pos.openPrice,td.entryPrice);
       const status=cTrader.getCTraderStatus?.()||{};
       const market=direction==="BUY"?numericPrice(status.bid):direction==="SELL"?numericPrice(status.ask):NaN;
       const current=Number.isFinite(market)?market:numericPrice(pos.currentPrice,td.currentPrice,td.price);
-      if(!positionId||!direction||!Number.isFinite(entry)||!Number.isFinite(current)){
-        console.warn("AURIXA_TRAILING_STOP_SKIPPED:",JSON.stringify({
-          positionId,direction,entry,current,reason:"POSITION_SIDE_OR_PRICE_UNAVAILABLE"
+      if(!positionId||!direction){
+        console.warn("AURIXA_PROTECTION_RECONCILIATION_SKIPPED:",JSON.stringify({
+          positionId,direction,reason:"POSITION_ID_OR_SIDE_UNAVAILABLE"
         }));
         continue;
       }
@@ -336,6 +411,7 @@ async function syncOpenPositions(){
         [String(positionId)]
       );
       const trade=tracked?.rows?.[0]||null;
+      if(!Number.isFinite(entry)) entry=numericPrice(trade?.execution_entry_price,trade?.planned_entry_price);
 
       // Protection reconciliation: if an open broker position has lost or
       // never received its SL/TP, restore both from the original trade plan
@@ -389,6 +465,13 @@ async function syncOpenPositions(){
         }
       }
 
+      if(!cfg.trailingEnabled) continue;
+      if(!Number.isFinite(entry)||!Number.isFinite(current)){
+        console.warn("AURIXA_TRAILING_STOP_SKIPPED:",JSON.stringify({
+          positionId,direction,entry,current,reason:"MARKET_OR_ENTRY_PRICE_UNAVAILABLE"
+        }));
+        continue;
+      }
       const plannedEntry=numericPrice(trade?.planned_entry_price,entry);
       const plannedStop=numericPrice(trade?.planned_stop_price);
       const storedRisk=numericPrice(trade?.stop_loss_distance);
@@ -452,26 +535,10 @@ async function syncOpenPositions(){
       if(cTrader.getDealsByPositionId)try{
         const dealFrom = new Date(t.opened_at || t.created_at || Date.now()-30*86400000).getTime();
           const deals=await cTrader.getDealsByPositionId(t.position_id, dealFrom, Date.now());
-        const closingDeals=(Array.isArray(deals)?deals:[])
-          .filter(d=>{
-            const p=Number(d?.positionId);
-            const status=Number(d?.dealStatus);
-            return (!Number.isFinite(p)||String(p)===String(t.position_id))
-              && Boolean(d?.closePositionDetail)
-              && (!Number.isFinite(status)||status===2||status===3);
-          })
-          .sort((a,b)=>Number(a?.executionTimestamp||0)-Number(b?.executionTimestamp||0));
-        const last=closingDeals.at(-1),detail=last?.closePositionDetail||null;
-        closePrice=Number(last?.executionPrice??last?.price??detail?.entryPrice);
-        if(detail){
-          const digits=Number.isFinite(Number(detail.moneyDigits))
-            ? Number(detail.moneyDigits)
-            : Number.isFinite(Number(last?.moneyDigits)) ? Number(last.moneyDigits) : 2;
-          const scale=10**Math.max(0,Math.min(12,digits));
-          const values=[Number(detail.grossProfit),Number(detail.swap),Number(detail.commission),Number(detail.pnlConversionFee)].filter(Number.isFinite);
-          if(values.length) profit=values.reduce((sum,v)=>sum+v,0)/scale;
-          reason="BROKER_CLOSED";
-        }
+        const summary=summarizeRealizedClosingDeals(deals,t.position_id);
+        closePrice=summary.closePrice;
+        profit=summary.profit;
+        if(summary.closingDeals>0) reason="BROKER_CLOSED";
       }catch(e){
         console.warn("AURIXA_CLOSE_RECONCILIATION_FAILED:",JSON.stringify({
           positionId:t.position_id,error:e.message
@@ -497,21 +564,13 @@ async function syncOpenPositions(){
         try{
           const dealFrom = new Date(t.opened_at || t.created_at || Date.now()-30*86400000).getTime();
           const deals=await cTrader.getDealsByPositionId(t.position_id, dealFrom, Date.now());
-          const closingDeals=(Array.isArray(deals)?deals:[])
-            .filter(d=>Boolean(d?.closePositionDetail) && (!Number.isFinite(Number(d?.dealStatus)) || Number(d.dealStatus)===2 || Number(d.dealStatus)===3))
-            .sort((a,b)=>Number(a?.executionTimestamp||0)-Number(b?.executionTimestamp||0));
-          const last=closingDeals.at(-1),detail=last?.closePositionDetail;
-          if(!detail) continue;
-          const digits=Number.isFinite(Number(detail.moneyDigits))?Number(detail.moneyDigits):Number.isFinite(Number(last?.moneyDigits))?Number(last.moneyDigits):2;
-          const scale=10**Math.max(0,Math.min(12,digits));
-          const values=[Number(detail.grossProfit),Number(detail.swap),Number(detail.commission),Number(detail.pnlConversionFee)].filter(Number.isFinite);
-          const realized=values.length?values.reduce((sum,v)=>sum+v,0)/scale:null;
-          const exitPrice=Number(last?.executionPrice??last?.price??detail?.entryPrice);
+          const summary=summarizeRealizedClosingDeals(deals,t.position_id);
+          if(summary.closingDeals===0) continue;
           await dbQuery(`UPDATE aurixa.auto_trades
-            SET close_price=COALESCE(close_price,$2),profit=COALESCE(profit,$3),
+            SET close_price=COALESCE(close_price,$2),profit=COALESCE($3,profit),
                 exit_reason=COALESCE(exit_reason,'BROKER_CLOSED'),updated_at=NOW()
-            WHERE id=$1`,[t.id,Number.isFinite(exitPrice)?exitPrice:null,realized]);
-          console.log("AURIXA_CLOSED_TRADE_BACKFILLED:",JSON.stringify({tradeId:t.id,positionId:t.position_id,closePrice:Number.isFinite(exitPrice)?exitPrice:null,profit:realized}));
+            WHERE id=$1`,[t.id,summary.closePrice,summary.profit]);
+          console.log("AURIXA_CLOSED_TRADE_BACKFILLED:",JSON.stringify({tradeId:t.id,positionId:t.position_id,closePrice:summary.closePrice,profit:summary.profit,closingDeals:summary.closingDeals}));
         }catch(e){
           console.warn("AURIXA_CLOSED_TRADE_BACKFILL_FAILED:",JSON.stringify({tradeId:t.id,positionId:t.position_id,error:e.message}));
         }
