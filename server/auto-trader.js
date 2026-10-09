@@ -252,13 +252,26 @@ async function syncOpenPositions(){
     for(const pos of positions){
       const positionId=pos?.positionId;
       const td=pos?.tradeData||{};
-      const side=Number(td.tradeSide);
+      const side=Number(td.tradeSide ?? pos?.tradeSide);
       const direction=side===1?"BUY":side===2?"SELL":null;
-      const entry=Number(td.openPrice??td.price??pos.openPrice);
+      const numericPrice=(...values)=>{
+        for(const value of values){
+          if(value===null||value===undefined||value==="")continue;
+          const n=Number(value);
+          if(Number.isFinite(n)&&n>0)return n;
+        }
+        return NaN;
+      };
+      const entry=numericPrice(td.openPrice,td.price,pos.openPrice);
       const status=cTrader.getCTraderStatus?.()||{};
-      const market=direction==="BUY"?Number(status.bid):Number(status.ask);
-      const current=Number.isFinite(market)?market:Number(pos.currentPrice??td.currentPrice??td.price);
-      if(!positionId||!direction||!Number.isFinite(entry)||!Number.isFinite(current))continue;
+      const market=direction==="BUY"?numericPrice(status.bid):direction==="SELL"?numericPrice(status.ask):NaN;
+      const current=Number.isFinite(market)?market:numericPrice(pos.currentPrice,td.currentPrice,td.price);
+      if(!positionId||!direction||!Number.isFinite(entry)||!Number.isFinite(current)){
+        console.warn("AURIXA_TRAILING_STOP_SKIPPED:",JSON.stringify({
+          positionId,direction,entry,current,reason:"POSITION_SIDE_OR_PRICE_UNAVAILABLE"
+        }));
+        continue;
+      }
 
       const tracked=await dbQuery?.(
         "SELECT * FROM aurixa.auto_trades WHERE position_id=$1 AND status IN ('OPEN','PARTIAL') ORDER BY created_at DESC LIMIT 1",
@@ -318,16 +331,23 @@ async function syncOpenPositions(){
         }
       }
 
-      const baseRisk=trade?Math.abs(Number(trade.planned_entry_price)-Number(trade.planned_stop_price)):0;
+      const plannedEntry=numericPrice(trade?.planned_entry_price,entry);
+      const plannedStop=numericPrice(trade?.planned_stop_price);
+      const storedRisk=numericPrice(trade?.stop_loss_distance);
+      const baseRisk=storedRisk>0?storedRisk:
+        (Number.isFinite(plannedStop)?Math.abs(plannedEntry-plannedStop):0);
       const profitMove=direction==="BUY"?current-entry:entry-current;
       const triggerDistance=baseRisk>0?baseRisk*cfg.trailingTriggerR:cfg.trailingFixedDistance;
       const trailDistance=baseRisk>0?baseRisk*cfg.trailingDistanceR:cfg.trailingFixedDistance;
       if(!Number.isFinite(profitMove)||profitMove<triggerDistance||!Number.isFinite(trailDistance)||trailDistance<=0)continue;
 
       const candidate=direction==="BUY"?current-trailDistance:current+trailDistance;
-      const existingSL=Number(pos?.stopLoss??td?.stopLoss);
-      // Never loosen an existing stop. If broker did not return the current
-      // SL, the candidate is still valid and can establish the trailing SL.
+      // Null/missing SL means no stop was reported. Number(null) is 0 in JS,
+      // which incorrectly prevented SELL trailing candidates (positive price < 0).
+      const rawExistingSL=pos?.stopLoss ?? td?.stopLoss;
+      const existingSL=rawExistingSL===null||rawExistingSL===undefined||rawExistingSL===""
+        ? NaN : Number(rawExistingSL);
+      // Never loosen an existing stop; an absent SL may be established by trailing.
       const improves=!Number.isFinite(existingSL)
         ? true
         : direction==="BUY"?candidate>existingSL: candidate<existingSL;
