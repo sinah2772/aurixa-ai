@@ -39,8 +39,29 @@ function summarizeRealizedClosingDeals(deals, positionId) {
     const digits = Number(rawDigits);
     const moneyDigits = Number.isFinite(digits) ? Math.max(0, Math.min(12, digits)) : 2;
     displayDigits = Math.max(displayDigits, moneyDigits);
-    const values = [detail.grossProfit, detail.swap, detail.commission, detail.pnlConversionFee]
-      .map(value => value == null || value === "" ? NaN : Number(value))
+    // cTrader versions/brokers may expose monetary fields either inside
+    // closePositionDetail or on the deal itself. Prefer the close-detail
+    // value and fall back to the deal-level value without double-counting.
+    const rawMoneyValues = [
+      detail.grossProfit ?? deal.grossProfit ?? deal.profit,
+      detail.swap ?? deal.swap,
+      detail.commission ?? deal.commission,
+      detail.pnlConversionFee ?? deal.pnlConversionFee
+    ];
+    const values = rawMoneyValues
+      .map(value => {
+        if (value == null || value === "") return NaN;
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) return numeric;
+        // protobuf Long values can arrive as {low, high} objects in some
+        // runtime configurations. Their decimal string is the safest fallback.
+        try {
+          const decimal = Number(value.toString());
+          return Number.isFinite(decimal) ? decimal : NaN;
+        } catch {
+          return NaN;
+        }
+      })
       .filter(Number.isFinite);
     if (values.length) {
       totalProfit += values.reduce((sum, value) => sum + value, 0) / (10 ** moneyDigits);
