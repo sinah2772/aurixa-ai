@@ -496,7 +496,7 @@ async function syncOpenPositions(){
                          exit_reason='AI_DIRECTION_REVERSAL',gate_reason='BROKER_CLOSE_CONFIRMED',
                          error=NULL,updated_at=NOW()
                      WHERE id=$1 AND status IN ('OPEN','PARTIAL')`,
-                    [trade.id,Number.isFinite(Number(closeResult.executionPrice))?Number(closeResult.executionPrice):null]
+                    [trade.id,closeResult.executionPrice==null||closeResult.executionPrice===""?null:(Number.isFinite(Number(closeResult.executionPrice))?Number(closeResult.executionPrice):null)]
                   );
                   console.log("AURIXA_REVERSAL_EXIT_CONFIRMED:",JSON.stringify({
                     tradeId:trade.id,positionId,closeOrderId:closeResult.orderId||null,
