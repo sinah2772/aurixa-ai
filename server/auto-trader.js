@@ -197,7 +197,15 @@ async function executeAiDecisionInternal(decision, decisionId=null){
         risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price
       )
       VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,$5,$6,$7,'SUBMITTED',$8,$9,$10,$11,$12)
-      ON CONFLICT DO NOTHING RETURNING id`,
+      ON CONFLICT (strategy_signal_key) DO UPDATE
+        SET decision_id=EXCLUDED.decision_id,volume=EXCLUDED.volume,
+            stop_loss_distance=EXCLUDED.stop_loss_distance,
+            take_profit_distance=EXCLUDED.take_profit_distance,
+            status='SUBMITTED',gate_reason=NULL,error=NULL,updated_at=NOW()
+        WHERE aurixa.auto_trades.status='REJECTED'
+          AND aurixa.auto_trades.order_id IS NULL
+          AND aurixa.auto_trades.position_id IS NULL
+      RETURNING id`,
       [decisionId,key,decision.signal,decision.entry,volume,executionRiskDistance,executionRiskDistance*2,cfg.riskPercent,riskAmount,entry,executionStop,executionTarget]);
     if(!reservation.rows.length) {
       return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"AI_SIGNAL_ALREADY_GATED",strategySignalKey:key};
