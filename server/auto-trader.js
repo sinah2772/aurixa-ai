@@ -262,7 +262,9 @@ async function syncOpenPositions(){
         }
         return NaN;
       };
-      const entry=numericPrice(td.openPrice,td.price,pos.openPrice);
+      // ProtoOAReconcileRes places the actual position entry in position.price;
+      // tradeData commonly has no openPrice/price field.
+      const entry=numericPrice(pos.price,td.openPrice,td.price,pos.openPrice,td.entryPrice);
       const status=cTrader.getCTraderStatus?.()||{};
       const market=direction==="BUY"?numericPrice(status.bid):direction==="SELL"?numericPrice(status.ask):NaN;
       const current=Number.isFinite(market)?market:numericPrice(pos.currentPrice,td.currentPrice,td.price);
