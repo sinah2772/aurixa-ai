@@ -483,10 +483,12 @@
     }
 
     let reason = first(data.reason, "Waiting for AI Trader decision.");
-    if (hasPosition) reason = "XAUUSD position(s) currently open. New confirmed signals remain governed by the normal risk gates.";
-    else if (!eligible) {
-      const failed = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
-      reason = failed.length ? "Blocked: " + failed.join(", ") : reason;
+    const failed = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => String(k).replaceAll("_", " ").toUpperCase());
+    if (hasPosition) {
+      reason = "OPEN POSITION GATE: " + Number(first(positions?.count, 0)) + " position(s) currently open.";
+      if (failed.length) reason += " OTHER BLOCKERS: " + failed.join(" · ");
+    } else if (!eligible) {
+      reason = failed.length ? "BLOCKED: " + failed.join(" · ") : reason;
     } else if (ready) reason = direction + " approved by AURIXA AI Trader V1.";
     text("gateReason", reason);
   }
@@ -505,10 +507,10 @@
     const unlimited = maxOpenRaw === "unlimited" || maxOpenRaw === "UNLIMITED" || maxOpenRaw == null;
     const maxOpen = unlimited ? null : Number(maxOpenRaw);
     text("autoTradeMode", demo ? "DEMO ONLY · AI V1" : "GUARDED · AI V1");
-    text("gateMaxPositions", unlimited ? "OPEN POSITIONS: UNLIMITED" : "MAX " + maxOpen + " POSITIONS");
-    text("gateRiskLimit", Number.isFinite(Number(status.riskPercent)) ? "RISK " + number(status.riskPercent, 2) + "%" : "RISK CONFIGURED IN BACKEND");
-    text("gateDailyLimit", status.dailyTradeLimit === "unlimited" || status.dailyTradeLimit === "UNLIMITED" ? "DAILY LIMIT: UNLIMITED" : Number.isFinite(Number(status.dailyTradeLimit)) ? "DAILY LIMIT " + status.dailyTradeLimit : "DAILY LIMIT BACKEND");
-    text("gateCooldown", Number.isFinite(Number(status.cooldownMinutes)) ? "COOLDOWN " + status.cooldownMinutes + " MIN" : "COOLDOWN BACKEND");
+    if (maxOpenRaw != null) text("gateMaxPositions", unlimited ? "OPEN POSITIONS: UNLIMITED" : "MAX " + maxOpen + " POSITIONS");
+    if (status.riskPercent != null) text("gateRiskLimit", "RISK " + number(status.riskPercent, 2) + "%");
+    if (status.dailyTradeLimit != null) text("gateDailyLimit", status.dailyTradeLimit === "unlimited" || status.dailyTradeLimit === "UNLIMITED" ? "DAILY LIMIT: UNLIMITED" : "DAILY LIMIT " + status.dailyTradeLimit);
+    if (status.cooldownMinutes != null) text("gateCooldown", "COOLDOWN " + status.cooldownMinutes + " MIN");
     text("autoTradePosition", openCount > 0 ? (unlimited ? `OPEN ${openCount}` : `OPEN ${openCount}/${maxOpen}`) : (unlimited ? "FLAT 0" : `FLAT 0/${maxOpen}`));
 
     const list = Array.isArray(positions?.positions) ? positions.positions : [];
