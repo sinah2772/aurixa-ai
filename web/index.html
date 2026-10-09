@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261007-frontend-fix">
+  <link rel="stylesheet" href="/style.css?v=20261010-phase5">
   </head>
 <body>
 <div class="app">
@@ -128,7 +128,7 @@
       <div class="gate-head"><div><div id="gateDecision" class="gate-decision wait">WAIT</div><div id="gateReason" class="gate-reason">Waiting for AI TRADER to meet the execution gate.</div></div><div class="gate-badge">DEMO ONLY</div></div>
       <div class="gate-conditions"><div class="gate-condition"><span>MARKET</span><strong id="gateMarket">WAIT</strong></div><div class="gate-condition"><span>AI TRADER SIGNAL</span><strong id="gateSignal">WAIT</strong></div><div class="gate-condition"><span>LOGIC QUALITY</span><strong id="gateQuality">WAIT</strong></div><div class="gate-condition"><span>POSITION</span><strong id="gatePosition">CHECKING</strong></div></div>
       <div class="gate-levels"><div class="gate-level"><span>ENTRY</span><strong id="gateEntry">—</strong></div><div class="gate-level"><span>STOP LOSS</span><strong id="gateSL">—</strong></div><div class="gate-level"><span>TAKE PROFIT</span><strong id="gateTP">—</strong></div><div class="gate-level"><span>R:R</span><strong id="gateRR">2R PLAN</strong></div></div>
-      <div class="gate-rules"><span>RISK 0.5%</span><span id="gateMaxPositions">MAX 3 POSITIONS</span><span>1:2 MIN R:R</span><span>WAIT = NO TRADE</span></div>
+      <div class="gate-rules"><span id="gateRiskLimit">RISK FROM BACKEND</span><span id="gateMaxPositions">LOADING POSITION LIMIT</span><span id="gateDailyLimit">DAILY LIMIT FROM BACKEND</span><span id="gateCooldown">COOLDOWN FROM BACKEND</span></div>
     </section>
 
 
@@ -182,6 +182,7 @@
         <div class="account-stat"><span>BREAKEVEN</span><strong id="performanceFlat">0</strong></div>
         <div class="account-stat"><span>REALIZED P&amp;L</span><strong id="performancePnl">—</strong></div>
       </div>
+      <div id="performanceSample" class="notice">Waiting for verified closed-trade results...</div>
     </section>
 
     <!-- ACCOUNT & EXECUTION -->
@@ -194,7 +195,7 @@
         <div class="account-stat"><span>CONNECTION</span><strong id="ctraderConnection">DISCONNECTED</strong></div>
         <div class="account-stat"><span>LAST UPDATE</span><strong id="lastUpdate">—</strong></div>
         <div class="account-stat"><span>AUTO-TRADER</span><strong id="autoTradeStatus">OFF</strong></div>
-        <div class="account-stat"><span>POSITIONS</span><strong id="autoTradePosition">FLAT 0/3</strong></div>
+        <div class="account-stat"><span>POSITIONS</span><strong id="autoTradePosition">LOADING BROKER POSITIONS</strong></div>
       </div>
       <div class="position-card">
         <div class="position-title">OPEN XAUUSD POSITION</div>
@@ -271,6 +272,6 @@
 
   </main>
 </div>
-<script defer src="/app.js?v=20261007-frontend-fix"></script>
+<script defer src="/app.js?v=20261010-phase5"></script>
 </body>
 </html>
