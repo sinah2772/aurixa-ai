@@ -1927,10 +1927,14 @@ async function getDealsByPositionId(positionId, fromTimestamp = null, toTimestam
     positionId: pid
   };
 
-  if (Number.isFinite(Number(fromTimestamp))) {
+  // null means "not supplied"; Number(null) is 0, which previously
+  // sent an invalid 0-to-0 history window and prevented closed-deal P/L recovery.
+  if (fromTimestamp !== null && fromTimestamp !== undefined && fromTimestamp !== "" &&
+      Number.isFinite(Number(fromTimestamp))) {
     payload.fromTimestamp = Number(fromTimestamp);
   }
-  if (Number.isFinite(Number(toTimestamp))) {
+  if (toTimestamp !== null && toTimestamp !== undefined && toTimestamp !== "" &&
+      Number.isFinite(Number(toTimestamp))) {
     payload.toTimestamp = Number(toTimestamp);
   }
 
