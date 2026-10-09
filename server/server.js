@@ -286,10 +286,11 @@ app.get("/api/auto-trader/positions", async (req, res) => {
           ? (direction === "BUY" ? currentPrice - entry : entry - currentPrice) * volume
           : null;
 
-      // Protection is read from this fresh broker position snapshot, never
-      // inferred from the planned SL/TP stored in our database.
-      const rawSL = position?.stopLoss ?? td.stopLoss;
-      const rawTP = position?.takeProfit ?? td.takeProfit;
+      // Actual protection must come only from the current cTrader position
+      // snapshot. Never fall back to planned/stored trade SL/TP: missing broker
+      // fields must remain unconfirmed rather than being shown as protected.
+      const rawSL = position?.stopLoss;
+      const rawTP = position?.takeProfit;
       const actualSL = rawSL == null || rawSL === "" ? null : Number(rawSL);
       const actualTP = rawTP == null || rawTP === "" ? null : Number(rawTP);
       const hasSL = Number.isFinite(actualSL) && actualSL > 0;
