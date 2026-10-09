@@ -580,7 +580,43 @@ async function syncOpenPositions(){
     }
   }
 
-  return {updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length};
+  // Final broker-side audit after repairs/trailing amendments. This counts
+  // protections from a fresh cTrader response rather than assuming a request
+  // succeeded. The order gate uses the same broker fields before any new entry.
+  let protectionAudit = {
+    checked: positions.length,
+    fullyProtected: 0,
+    missingStopLoss: [],
+    missingTakeProfit: [],
+    error: null
+  };
+  try {
+    const auditedPositions = await cTrader.getOpenXAUUSDPositions(true);
+    protectionAudit.checked = auditedPositions.length;
+    for (const position of auditedPositions) {
+      const td = position?.tradeData || {};
+      const rawSL = position?.stopLoss ?? td.stopLoss;
+      const rawTP = position?.takeProfit ?? td.takeProfit;
+      const sl = rawSL == null || rawSL === "" ? NaN : Number(rawSL);
+      const tp = rawTP == null || rawTP === "" ? NaN : Number(rawTP);
+      if (Number.isFinite(sl) && sl > 0 && Number.isFinite(tp) && tp > 0) {
+        protectionAudit.fullyProtected++;
+      } else {
+        if (!Number.isFinite(sl) || sl <= 0) protectionAudit.missingStopLoss.push(position.positionId);
+        if (!Number.isFinite(tp) || tp <= 0) protectionAudit.missingTakeProfit.push(position.positionId);
+      }
+    }
+    console.log("AURIXA_BROKER_PROTECTION_AUDIT:", JSON.stringify({
+      accountId: cTrader.getCTraderStatus?.()?.accountId || null,
+      ...protectionAudit,
+      unprotectedCount: new Set([...protectionAudit.missingStopLoss,...protectionAudit.missingTakeProfit]).size
+    }));
+  } catch (e) {
+    protectionAudit.error = e.message;
+    console.error("AURIXA_BROKER_PROTECTION_AUDIT_FAILED:", JSON.stringify({error:e.message}));
+  }
+
+  return {updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length,protectionAudit};
 }
 
 async function init(){
