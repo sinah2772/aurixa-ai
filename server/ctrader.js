@@ -2456,21 +2456,66 @@ async function closeXAUUSDPosition(positionId, volume) {
   );
 
   const payload = response?.payload || {};
+  const executionType = Number(payload.executionType);
+  if (![3, 4].includes(executionType)) {
+    throw new Error(`cTrader close was not confirmed executed (executionType=${String(payload.executionType)})`);
+  }
+
+  const orderId =
+    payload.order?.orderId ||
+    payload.orderId ||
+    null;
+  const executionPrice =
+    payload.deal?.executionPrice ||
+    payload.order?.executionPrice ||
+    payload.position?.price ||
+    null;
+
+  // A successful-looking execution event is not enough: verify from a fresh
+  // broker position snapshot that the position is actually gone. Full-volume
+  // reversal exits must not be marked CLOSED while cTrader still reports it.
+  let brokerConfirmed = false;
+  let remainingVolume = null;
+  for (let check = 0; check < 10; check++) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+      const positions = await getOpenXAUUSDPositions(true);
+      const stillOpen = positions.find(position => String(position?.positionId) === String(pid));
+      if (!stillOpen) {
+        brokerConfirmed = true;
+        break;
+      }
+      const td = stillOpen.tradeData || {};
+      const rawRemaining = stillOpen.volume ?? td.volume;
+      remainingVolume = rawRemaining == null || rawRemaining === "" ? null : Number(rawRemaining);
+    } catch (verifyError) {
+      console.warn("AURIXA_CLOSE_VERIFY_RETRY:", JSON.stringify({
+        positionId: pid, orderId, check, error: safeError(verifyError)
+      }));
+    }
+  }
+
+  if (!brokerConfirmed) {
+    console.error("AURIXA_CLOSE_NOT_CONFIRMED_BY_BROKER:", JSON.stringify({
+      positionId: pid, orderId, executionType, remainingVolume
+    }));
+    throw new Error(`cTrader close execution was received but broker still reports position ${pid} open`);
+  }
+
+  console.log("AURIXA_CLOSE_CONFIRMED_BY_BROKER:", JSON.stringify({
+    positionId: pid, orderId, executionType, executionPrice,
+    brokerConfirmed: true, remainingVolume: null
+  }));
 
   return {
     status: "CLOSED",
     clientMsgId: response?.clientMsgId || null,
     positionId: pid,
     volume: vol,
-    orderId:
-      payload.order?.orderId ||
-      payload.orderId ||
-      null,
-    executionPrice:
-      payload.deal?.executionPrice ||
-      payload.order?.executionPrice ||
-      payload.position?.price ||
-      null
+    orderId,
+    executionPrice,
+    executionType,
+    brokerConfirmed: true
   };
 }
 
