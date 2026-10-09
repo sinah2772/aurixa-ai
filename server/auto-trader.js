@@ -7,6 +7,9 @@
 
 let cTrader=null, dbQuery=null, aiEngine=null;
 const inFlightSignalKeys = new Set();
+const reversalConfirmations = new Map();
+const reversalCloseAttempts = new Map();
+const profitDetectedPositions = new Set();
 
 function configure({ctrader,query,ai}){cTrader=ctrader;dbQuery=query;aiEngine=ai;}
 
@@ -82,7 +85,10 @@ function config(){return{
  trailingEnabled:String(process.env.AUTO_TRADING_TRAILING_ENABLED||"true").toLowerCase()!=="false",
  trailingTriggerR:Math.max(.5,Number(process.env.AUTO_TRADING_TRAILING_TRIGGER_R||1)),
  trailingDistanceR:Math.max(.1,Number(process.env.AUTO_TRADING_TRAILING_DISTANCE_R||.5)),
- trailingFixedDistance:Math.max(.1,Number(process.env.AUTO_TRADING_TRAILING_FIXED_DISTANCE||1.5))
+ trailingFixedDistance:Math.max(.1,Number(process.env.AUTO_TRADING_TRAILING_FIXED_DISTANCE||1.5)),
+ exitReversalEnabled:String(process.env.AUTO_TRADING_REVERSAL_EXIT_ENABLED||"true").toLowerCase()!=="false",
+ exitReversalMinConfidence:Math.max(65,Math.min(95,Number(process.env.AUTO_TRADING_REVERSAL_MIN_CONFIDENCE||70))),
+ exitReversalConfirmMs:Math.max(10000,Number(process.env.AUTO_TRADING_REVERSAL_CONFIRM_MS||15000))
 };}
 
 function getStatus(){
@@ -375,6 +381,17 @@ async function syncOpenPositions(){
   const cfg=config();
   const positions=await cTrader.getOpenXAUUSDPositions(true);
   let updated=0,closed=0,protectedCount=0,trailingUpdated=0;
+  const liveStatus=cTrader.getCTraderStatus?.()||{};
+  const liveCandles=cTrader.getMarketCandles?.()||[];
+  const exitDecision=cfg.exitReversalEnabled ? (aiEngine?.decide(liveCandles,liveStatus)||null) : null;
+  const now=Date.now();
+  const eligibleReversal=Boolean(
+    exitDecision?.executionEligible===true &&
+    ["BUY","SELL"].includes(exitDecision.signal) &&
+    Number(exitDecision.confidence)>=cfg.exitReversalMinConfidence &&
+    ((exitDecision.signal==="BUY" && exitDecision.trend==="BULLISH") ||
+     (exitDecision.signal==="SELL" && exitDecision.trend==="BEARISH"))
+  );
 
   // Trail EVERY open XAUUSD position independently. This intentionally runs
   // at the broker-position level so manually opened or previously untracked
@@ -412,6 +429,96 @@ async function syncOpenPositions(){
       );
       const trade=tracked?.rows?.[0]||null;
       if(!Number.isFinite(entry)) entry=numericPrice(trade?.execution_entry_price,trade?.planned_entry_price);
+
+      // Record the transition into unrealized profit once per broker position.
+      // Trailing only moves a stop in the protective direction and its broker
+      // confirmation is required before the update is logged as successful.
+      if(Number.isFinite(entry)&&Number.isFinite(current)){
+        const profitMoveNow=direction==="BUY"?current-entry:entry-current;
+        if(profitMoveNow>0&&!profitDetectedPositions.has(String(positionId))){
+          profitDetectedPositions.add(String(positionId));
+          console.log("AURIXA_POSITION_PROFIT_DETECTED:",JSON.stringify({
+            positionId,direction,entry,current,profitMove:profitMoveNow,
+            accountId:liveStatus.accountId||null
+          }));
+        }else if(profitMoveNow<=0){
+          profitDetectedPositions.delete(String(positionId));
+        }
+      }
+
+      // Exit only AURIXA-tracked positions after a high-confidence, fully
+      // eligible opposite signal is stable across consecutive monitor cycles.
+      // Manual/untracked positions are never direction-closed automatically.
+      if(trade && cfg.exitReversalEnabled){
+        const pidKey=String(positionId);
+        const opposite=eligibleReversal && exitDecision.signal!==direction;
+        if(!opposite){
+          reversalConfirmations.delete(pidKey);
+        }else{
+          const prior=reversalConfirmations.get(pidKey);
+          if(!prior || prior.signal!==exitDecision.signal){
+            reversalConfirmations.set(pidKey,{
+              signal:exitDecision.signal,
+              firstSeenAt:now,
+              candleTime:exitDecision.candleTime||null
+            });
+            console.log("AURIXA_REVERSAL_EXIT_CANDIDATE:",JSON.stringify({
+              positionId,positionDirection:direction,oppositeSignal:exitDecision.signal,
+              confidence:exitDecision.confidence,trend:exitDecision.trend,
+              candleTime:exitDecision.candleTime||null,
+              confirmMs:cfg.exitReversalConfirmMs
+            }));
+          }else if(now-prior.firstSeenAt>=cfg.exitReversalConfirmMs){
+            const lastAttempt=reversalCloseAttempts.get(pidKey)||0;
+            if(now-lastAttempt>=30000){
+              const rawVolume=pos?.volume??td?.volume;
+              const closeVolume=rawVolume==null||rawVolume===""?NaN:Number(rawVolume);
+              if(!Number.isInteger(closeVolume)||closeVolume<=0){
+                console.error("AURIXA_REVERSAL_EXIT_BLOCKED:",JSON.stringify({
+                  positionId,reason:"BROKER_POSITION_VOLUME_UNAVAILABLE"
+                }));
+              }else{
+                reversalCloseAttempts.set(pidKey,now);
+                console.log("AURIXA_REVERSAL_EXIT_SUBMITTED:",JSON.stringify({
+                  positionId,positionDirection:direction,oppositeSignal:exitDecision.signal,
+                  confidence:exitDecision.confidence,trend:exitDecision.trend,
+                  closeVolume,reason:"CONFIRMED_MARKET_DIRECTION_REVERSAL"
+                }));
+                try{
+                  const closeResult=await cTrader.closeXAUUSDPosition(positionId,closeVolume);
+                  if(closeResult?.brokerConfirmed!==true){
+                    throw new Error("Broker did not confirm that the position was fully closed");
+                  }
+                  await dbQuery(
+                    `UPDATE aurixa.auto_trades
+                     SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),
+                         close_price=COALESCE($2,close_price),
+                         exit_reason='AI_DIRECTION_REVERSAL',gate_reason='BROKER_CLOSE_CONFIRMED',
+                         error=NULL,updated_at=NOW()
+                     WHERE id=$1 AND status IN ('OPEN','PARTIAL')`,
+                    [trade.id,Number.isFinite(Number(closeResult.executionPrice))?Number(closeResult.executionPrice):null]
+                  );
+                  console.log("AURIXA_REVERSAL_EXIT_CONFIRMED:",JSON.stringify({
+                    tradeId:trade.id,positionId,closeOrderId:closeResult.orderId||null,
+                    closePrice:closeResult.executionPrice??null,
+                    brokerConfirmed:true,reason:"AI_DIRECTION_REVERSAL"
+                  }));
+                  reversalConfirmations.delete(pidKey);
+                  reversalCloseAttempts.delete(pidKey);
+                  profitDetectedPositions.delete(pidKey);
+                  closed++;
+                  continue;
+                }catch(closeError){
+                  console.error("AURIXA_REVERSAL_EXIT_UNCONFIRMED:",JSON.stringify({
+                    tradeId:trade.id,positionId,error:closeError.message,
+                    retryAfterMs:30000
+                  }));
+                }
+              }
+            }
+          }
+        }
+      }
 
       // Protection reconciliation: if an open broker position has lost or
       // never received its SL/TP, restore both from the original trade plan
@@ -616,6 +723,10 @@ async function syncOpenPositions(){
     console.error("AURIXA_BROKER_PROTECTION_AUDIT_FAILED:", JSON.stringify({error:e.message}));
   }
 
+  const livePositionIds=new Set(positions.map(p=>String(p?.positionId||"")));
+  for(const key of reversalConfirmations.keys()) if(!livePositionIds.has(key)) reversalConfirmations.delete(key);
+  for(const key of reversalCloseAttempts.keys()) if(!livePositionIds.has(key)) reversalCloseAttempts.delete(key);
+  for(const key of profitDetectedPositions) if(!livePositionIds.has(key)) profitDetectedPositions.delete(key);
   return {updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length,protectionAudit};
 }
 
