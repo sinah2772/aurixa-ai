@@ -803,11 +803,25 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     if (!body) return;
     const trades = Array.isArray(data?.trades) ? data.trades : [];
     const closed = trades.filter(t => String(t?.status || "").toUpperCase() === "CLOSED");
-    if (summary) summary.textContent = closed.length + " CLOSED TRADES";
     if (!closed.length) {
+      if (summary) summary.textContent = "0 CLOSED TRADES";
       body.innerHTML = '<div class="empty">No closed trades yet.</div>';
       return;
     }
+
+    const realizedValues = closed
+      .map(t => t.profit === null || t.profit === undefined || t.profit === "" ? null : Number(t.profit))
+      .filter(v => Number.isFinite(v));
+    const pendingPnl = closed.length - realizedValues.length;
+    const netPnl = realizedValues.reduce((sum, value) => sum + value, 0);
+    if (summary) {
+      const netLabel = realizedValues.length
+        ? " · NET " + (netPnl > 0 ? "+" : "") + number(netPnl, 2)
+        : "";
+      const pendingLabel = pendingPnl ? " · " + pendingPnl + " P/L PENDING" : "";
+      summary.textContent = closed.length + " CLOSED TRADES" + netLabel + pendingLabel;
+    }
+
     body.innerHTML = closed.map(t => {
       const direction = String(t.direction || "").toUpperCase();
       const toNumber = value => {
@@ -818,7 +832,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       const entry = toNumber(first(t.executionEntryPrice, t.plannedEntryPrice, t.signalEntryPrice));
       const exit = toNumber(t.closePrice);
       const pnl = toNumber(t.profit);
-      const result = pnl === null ? "RESULT UNAVAILABLE" : (pnl > 0 ? "PROFIT" : pnl < 0 ? "LOSS" : "BREAKEVEN");
+      const result = pnl === null ? "P/L PENDING" : (pnl > 0 ? "PROFIT" : pnl < 0 ? "LOSS" : "BREAKEVEN");
       const cls = result === "PROFIT" ? "history-buy" : result === "LOSS" ? "history-sell" : "";
       const opened = formatTime(t.openedAt || t.createdAt);
       const closedAt = formatTime(t.closedAt);
