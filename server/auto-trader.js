@@ -187,16 +187,45 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     brokerMinVolume:brokerMin,brokerVolumeStep:brokerStep,
     brokerMaxVolume:brokerMax,selectedVolume:volume
   }));
-  // ENTRY-FIRST EXECUTION:
-  // Send the market order without waiting for SL/TP calculation at the
-  // broker. The first priority is to get the XAUUSD position opened.
+  // Reserve the signal durably BEFORE sending an order. The unique key also
+  // protects against overlapping timer cycles and multiple service instances.
+  let reservationId=null;
+  try {
+    const reservation=await dbQuery(`INSERT INTO aurixa.auto_trades(
+        decision_id,strategy,strategy_signal_key,symbol,timeframe,direction,
+        signal_entry_price,volume,stop_loss_distance,take_profit_distance,status,
+        risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price
+      )
+      VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,$5,$6,$7,'SUBMITTED',$8,$9,$10,$11,$12)
+      ON CONFLICT DO NOTHING RETURNING id`,
+      [decisionId,key,decision.signal,decision.entry,volume,executionRiskDistance,executionRiskDistance*2,cfg.riskPercent,riskAmount,entry,executionStop,executionTarget]);
+    if(!reservation.rows.length) {
+      return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"AI_SIGNAL_ALREADY_GATED",strategySignalKey:key};
+    }
+    reservationId=reservation.rows[0].id;
+  } catch(e) {
+    console.error("AURIXA_TRADE_RESERVATION_FAILED:",JSON.stringify({strategySignalKey:key,error:e.message}));
+    return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_RESERVATION_FAILED",error:e.message};
+  }
+
+  // An order timeout has an unknown outcome: do not automatically retry the
+  // same signal because cTrader may already have filled it.
   let result;
   try{
     result=await cTrader.placeDemoMarketOrder({
       direction:decision.signal,
       volume
     });
-  }catch(e){return reject("CTRADER_ORDER_REJECTED",{error:e.message});}
+  }catch(e){
+    try {
+      await dbQuery("UPDATE aurixa.auto_trades SET error=$2,gate_reason='CTRADER_ORDER_OUTCOME_UNKNOWN',updated_at=NOW() WHERE id=$1",
+        [reservationId,e.message]);
+    } catch(recordError) {
+      console.error("AURIXA_ORDER_OUTCOME_RECORD_FAILED:",recordError.message);
+    }
+    console.error("AURIXA_CTRADER_ORDER_OUTCOME_UNKNOWN:",JSON.stringify({reservationId,strategySignalKey:key,error:e.message}));
+    return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"CTRADER_ORDER_OUTCOME_UNKNOWN",error:e.message,strategySignalKey:key};
+  }
 
   // Only after cTrader confirms the position do we attach protection.
   // Protection is based on the actual fill price, not the pre-order quote.
@@ -237,15 +266,19 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     }
   }
 
-  if(typeof dbQuery==="function")try{
-    await dbQuery(`INSERT INTO aurixa.auto_trades(decision_id,strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,order_id,position_id,client_msg_id,volume,stop_loss_distance,take_profit_distance,status,opened_at,execution_entry_price,gate_reason,risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price)
-      VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $11 IN ('OPEN','PARTIAL') THEN NOW() ELSE NULL END,$12,'PASSED',$13,$14,$15,$16,$17)
-      ON CONFLICT DO NOTHING`,
-      [decisionId,key,decision.signal,decision.entry,result.orderId||null,result.positionId||null,result.clientMsgId||null,volume,executionRiskDistance,executionRiskDistance*2,result.status||"SUBMITTED",result.executionPrice||entry,cfg.riskPercent,riskAmount,entry,executionStop,executionTarget]);
-    await dbQuery(`UPDATE aurixa.auto_trades SET decision_id=$2,order_id=$3,position_id=$4,status=$5,execution_entry_price=$6,updated_at=NOW()
-      WHERE strategy_signal_key=$1`,
-      [key,decisionId,result.orderId||null,result.positionId||null,result.status||"SUBMITTED",result.executionPrice||entry]);
-  }catch(e){console.error("AI trade record failed:",e.message);}
+  try{
+    await dbQuery(`UPDATE aurixa.auto_trades
+      SET decision_id=$2,order_id=$3,position_id=$4,client_msg_id=$5,status=$6,
+          execution_entry_price=$7,gate_reason=$8,error=$9,
+          closed_at=CASE WHEN $6='CLOSED' THEN COALESCE(closed_at,NOW()) ELSE closed_at END,
+          close_price=COALESCE($10,close_price),
+          exit_reason=COALESCE($11,exit_reason),updated_at=NOW()
+      WHERE id=$1`,
+      [reservationId,decisionId,result.orderId||null,result.positionId||null,result.clientMsgId||null,
+       result.status||"SUBMITTED",result.executionPrice||entry,
+       result.status==="CLOSED"?"PROTECTION_FAILURE_EMERGENCY_CLOSE":"PASSED",
+       result.protectionError||null,result.closePrice||null,result.exitReason||null]);
+  }catch(e){console.error("AI trade record update failed:",e.message);}
   return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:executionStop,plannedTakeProfitPrice:executionTarget,originalPlannedStopPrice:stop,originalPlannedTakeProfitPrice:target,riskAdjustedForBrokerMinimum,...result};
 }
 
