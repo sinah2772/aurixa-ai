@@ -536,7 +536,7 @@
       text("autoPositionCurrent", number(current, 2));
       text("autoPositionVolume", volume ?? "—");
       text("autoPositionSL", number(sl, 2));
-      text("autoPositionPnl", number(pnl, 2));
+      text("autoPositionPnl", pnl === null || pnl === undefined || pnl === "" || !Number.isFinite(Number(pnl)) ? "—" : number(pnl, 2));
       text("autoTradeNotice", "Demo XAUUSD position is open.");
     }
 
@@ -604,7 +604,7 @@
       const currentN = Number(current);
       const slN = Number(sl);
       const tpN = Number(tp);
-      const pnlN = Number(pnl);
+      const pnlN = pnl === null || pnl === undefined || pnl === "" ? NaN : Number(pnl);
       const pnlClass = Number.isFinite(pnlN) ? (pnlN > 0 ? "profit" : pnlN < 0 ? "loss" : "flat") : "";
       const sideClass = direction === "BUY" ? "buy" : direction === "SELL" ? "sell" : "flat";
 
