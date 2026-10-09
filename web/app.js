@@ -19,7 +19,7 @@
     ctrader: "/api/ctrader/status",
     autoStatus: "/api/auto-trader/status",
     autoPositions: "/api/auto-trader/positions",
-    autoTrades: "/api/auto-trader/trades?limit=50",
+    autoTrades: "/api/auto-trader/trades?limit=100",
     account: "/api/auto-trader/account",
     aiDecision: "/api/ai/decision",
     aiHistory: "/api/ai/decision/history",
@@ -390,7 +390,7 @@
       ? String(logic.passed) + "/" + String(first(logic.total,6)) + " PASSED"
       : "—");
 
-    const failed = blocked.map(k => labels[k] || k).slice(0,4);
+    const failed = blocked.map(k => labels[k] || String(k).replaceAll("_", " ").toUpperCase());
     const logicFailed = Array.isArray(logic.failed) ? logic.failed.join(" · ").toUpperCase() : "";
     let reason;
     if (signal === "WAIT") {
@@ -468,7 +468,7 @@
     text("gateMarket", gates.dataReady === false ? "NO DATA" : (gates.spreadAllowed === false ? "SPREAD BLOCKED" : "READY"));
     text("gateSignal", direction);
     const failedGates = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
-    text("gateQuality", failedGates.length ? "BLOCKED · " + failedGates.slice(0,2).join(" / ").toUpperCase() : "PASSED");
+    text("gateQuality", failedGates.length ? "BLOCKED · " + failedGates.map(k => String(k).replaceAll("_", " ").toUpperCase()).join(" / ") : "PASSED");
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
     text("gateEntry", number(first(data.entry, data.entryPrice), 2));
     text("gateSL", number(first(data.stopLoss, data.stop), 2));
@@ -505,7 +505,10 @@
     const unlimited = maxOpenRaw === "unlimited" || maxOpenRaw === "UNLIMITED" || maxOpenRaw == null;
     const maxOpen = unlimited ? null : Number(maxOpenRaw);
     text("autoTradeMode", demo ? "DEMO ONLY · AI V1" : "GUARDED · AI V1");
-    text("gateMaxPositions", unlimited ? "POSITIONS UNLIMITED" : "MAX " + maxOpen + " POSITIONS");
+    text("gateMaxPositions", unlimited ? "OPEN POSITIONS: UNLIMITED" : "MAX " + maxOpen + " POSITIONS");
+    text("gateRiskLimit", Number.isFinite(Number(status.riskPercent)) ? "RISK " + number(status.riskPercent, 2) + "%" : "RISK CONFIGURED IN BACKEND");
+    text("gateDailyLimit", status.dailyTradeLimit === "unlimited" || status.dailyTradeLimit === "UNLIMITED" ? "DAILY LIMIT: UNLIMITED" : Number.isFinite(Number(status.dailyTradeLimit)) ? "DAILY LIMIT " + status.dailyTradeLimit : "DAILY LIMIT BACKEND");
+    text("gateCooldown", Number.isFinite(Number(status.cooldownMinutes)) ? "COOLDOWN " + status.cooldownMinutes + " MIN" : "COOLDOWN BACKEND");
     text("autoTradePosition", openCount > 0 ? (unlimited ? `OPEN ${openCount}` : `OPEN ${openCount}/${maxOpen}`) : (unlimited ? "FLAT 0" : `FLAT 0/${maxOpen}`));
 
     const list = Array.isArray(positions?.positions) ? positions.positions : [];
@@ -584,8 +587,10 @@
       const entry = first(p.openPrice, td.openPrice, td.price, p.entryPrice, p.price);
       const current = first(p.currentPrice, td.currentPrice, p.price);
       const volume = first(p.volume, td.volume);
-      const sl = first(p.stopLoss, td.stopLoss);
-      const tp = first(p.takeProfit, td.takeProfit);
+      const brokerProtection = p.brokerProtection || {};
+      const sl = first(brokerProtection.stopLoss, p.stopLoss, td.stopLoss);
+      const tp = first(brokerProtection.takeProfit, p.takeProfit, td.takeProfit);
+      const protectionStatus = String(first(brokerProtection.status, "UNKNOWN")).toUpperCase();
       const pnl = first(
         p.unrealizedNetProfit,
         td.unrealizedNetProfit,
@@ -615,7 +620,7 @@
           '<div><span>TAKE PROFIT</span><strong>' + escapeHTML(Number.isFinite(tpN) ? number(tpN, 2) : "NOT SET") + '</strong></div>' +
           '<div><span>OPENED</span><strong>' + escapeHTML(opened ? formatTime(opened) : "—") + '</strong></div>' +
         '</div>' +
-        '<div class="open-trade-footer"><span>PROTECTION ' + (Number.isFinite(slN) ? "SL SET" : "SL MISSING") + (Number.isFinite(tpN) ? " · TP SET" : " · TP MISSING") + '</span><span>LIVE cTRADER</span></div>' +
+        '<div class="open-trade-footer"><span>BROKER PROTECTION ' + escapeHTML(protectionStatus) + ' · ' + (Number.isFinite(slN) ? "SL " + number(slN, 2) : "SL MISSING") + ' · ' + (Number.isFinite(tpN) ? "TP " + number(tpN, 2) : "TP MISSING") + '</span><span>LIVE cTRADER SNAPSHOT</span></div>' +
       '</article>';
     }).join("");
 
@@ -788,13 +793,20 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
   function updatePerformance(trades) {
     const rows = Array.isArray(trades?.trades) ? trades.trades : [];
     const closed = rows.filter(t => String(t?.status || "").toUpperCase() === "CLOSED");
-    let wins=0, losses=0, flat=0, pnl=0;
-    for (const t of closed) { const p=Number(t.profit); if(!Number.isFinite(p)) continue; pnl+=p; if(p>0)wins++; else if(p<0)losses++; else flat++; }
+    // Match Trade History: only numeric realized P/L is included in statistics.
+    const verified = closed
+      .map(t => t.profit === null || t.profit === undefined || t.profit === "" ? null : Number(t.profit))
+      .filter(v => Number.isFinite(v));
+    let wins=0, losses=0, flat=0;
+    const pnl=verified.reduce((sum,p) => sum+p, 0);
+    for (const p of verified) { if(p>0)wins++; else if(p<0)losses++; else flat++; }
     const evaluated=wins+losses+flat;
+    const pending=closed.length-evaluated;
     const winRate=evaluated?wins/evaluated*100:null;
     text("performanceWins", wins); text("performanceLosses", losses); text("performanceFlat", flat);
     text("performanceWinRate", winRate===null?"—":number(winRate,1)+"%");
-    text("performancePnl", Number.isFinite(pnl)?((pnl>0?"+":"")+number(pnl,2)):"—");
+    text("performancePnl", evaluated ? ((pnl>0?"+":"")+number(pnl,2)) : "—");
+    text("performanceSample", "LAST " + rows.length + " TRADES · " + evaluated + " WITH RECORDED P/L · " + pending + " P/L PENDING");
   }
 
   function renderClosedTradeHistory(data) {
