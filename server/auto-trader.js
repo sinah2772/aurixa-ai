@@ -387,7 +387,8 @@ async function syncOpenPositions(){
       // deal before marking the AURIXA trade CLOSED.
       let profit=null,closePrice=null,reason="BROKER_CLOSED";
       if(cTrader.getDealsByPositionId)try{
-        const deals=await cTrader.getDealsByPositionId(t.position_id);
+        const dealFrom = new Date(t.opened_at || t.created_at || Date.now()-30*86400000).getTime();
+          const deals=await cTrader.getDealsByPositionId(t.position_id, dealFrom, Date.now());
         const closingDeals=(Array.isArray(deals)?deals:[])
           .filter(d=>{
             const p=Number(d?.positionId);
@@ -425,13 +426,14 @@ async function syncOpenPositions(){
   }
   if(typeof dbQuery==="function" && cTrader.getDealsByPositionId){
     try{
-      const missing=await dbQuery(`SELECT id,position_id FROM aurixa.auto_trades
+      const missing=await dbQuery(`SELECT id,position_id,opened_at,created_at FROM aurixa.auto_trades
         WHERE status='CLOSED' AND position_id IS NOT NULL
           AND (profit IS NULL OR close_price IS NULL)
         ORDER BY closed_at DESC NULLS LAST,id DESC LIMIT 100`);
       for(const t of missing.rows){
         try{
-          const deals=await cTrader.getDealsByPositionId(t.position_id);
+          const dealFrom = new Date(t.opened_at || t.created_at || Date.now()-30*86400000).getTime();
+          const deals=await cTrader.getDealsByPositionId(t.position_id, dealFrom, Date.now());
           const closingDeals=(Array.isArray(deals)?deals:[])
             .filter(d=>Boolean(d?.closePositionDetail) && (!Number.isFinite(Number(d?.dealStatus)) || Number(d.dealStatus)===2 || Number(d.dealStatus)===3))
             .sort((a,b)=>Number(a?.executionTimestamp||0)-Number(b?.executionTimestamp||0));
