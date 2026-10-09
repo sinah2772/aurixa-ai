@@ -286,6 +286,16 @@ app.get("/api/auto-trader/positions", async (req, res) => {
           ? (direction === "BUY" ? currentPrice - entry : entry - currentPrice) * volume
           : null;
 
+      // Protection is read from this fresh broker position snapshot, never
+      // inferred from the planned SL/TP stored in our database.
+      const rawSL = position?.stopLoss ?? td.stopLoss;
+      const rawTP = position?.takeProfit ?? td.takeProfit;
+      const actualSL = rawSL == null || rawSL === "" ? null : Number(rawSL);
+      const actualTP = rawTP == null || rawTP === "" ? null : Number(rawTP);
+      const hasSL = Number.isFinite(actualSL) && actualSL > 0;
+      const hasTP = Number.isFinite(actualTP) && actualTP > 0;
+      const protectionStatus = hasSL && hasTP ? "PROTECTED" : hasSL || hasTP ? "PARTIAL" : "UNPROTECTED";
+
       return {
         ...position,
         symbol: String(status.symbolName || status.symbol || "XAUUSD").toUpperCase(),
@@ -293,6 +303,17 @@ app.get("/api/auto-trader/positions", async (req, res) => {
         entryPrice: Number.isFinite(entry) ? entry : null,
         currentPrice: Number.isFinite(currentPrice) ? currentPrice : null,
         volume: Number.isFinite(volume) ? volume : null,
+        stopLoss: hasSL ? actualSL : null,
+        takeProfit: hasTP ? actualTP : null,
+        brokerProtection: {
+          source: "CTRADER_LIVE_POSITION_SNAPSHOT",
+          status: protectionStatus,
+          stopLoss: hasSL ? actualSL : null,
+          takeProfit: hasTP ? actualTP : null,
+          stopLossSet: hasSL,
+          takeProfitSet: hasTP,
+          checkedAt: status.lastUpdate || new Date().toISOString()
+        },
         unrealizedNetProfit: Number.isFinite(brokerPnl)
           ? brokerPnl
           : calculatedPnl,
