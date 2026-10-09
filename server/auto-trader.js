@@ -6,8 +6,22 @@
  */
 
 let cTrader=null, dbQuery=null, aiEngine=null;
+const inFlightSignalKeys = new Set();
 
 function configure({ctrader,query,ai}){cTrader=ctrader;dbQuery=query;aiEngine=ai;}
+
+async function executeAiDecision(decision, decisionId=null) {
+  const key = `AURIXA_AI:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
+  if (inFlightSignalKeys.has(key)) {
+    return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision?.signal||null,reason:"AI_SIGNAL_ALREADY_IN_FLIGHT",strategySignalKey:key};
+  }
+  inFlightSignalKeys.add(key);
+  try {
+    return await executeAiDecisionInternal(decision, decisionId);
+  } finally {
+    inFlightSignalKeys.delete(key);
+  }
+}
 function config(){return{
  enabled:String(process.env.AUTO_TRADING||"false").toLowerCase()==="true",
  demoOnly:String(process.env.AUTO_TRADING_DEMO_ONLY||"true").toLowerCase()!=="false",
@@ -31,7 +45,7 @@ function getStatus(){
  return {enabled:cfg.enabled,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"unlimited",riskPercent:cfg.riskPercent,maxSpread:cfg.maxSpread,dailyTradeLimit:"unlimited",cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:String(ct.symbolName||ct.symbol||"").toUpperCase()};
 }
 
-async function executeAiDecision(decision, decisionId=null){
+async function executeAiDecisionInternal(decision, decisionId=null){
   const cfg=config();
   const key=`AURIXA_AI:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
   const reject=async(reason,extra={})=>{
@@ -48,6 +62,7 @@ async function executeAiDecision(decision, decisionId=null){
     return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision?.signal||null,reason,...extra};
   };
   if(!cfg.enabled)return reject("AUTO_TRADING_DISABLED");
+  if(typeof dbQuery!=="function")return reject("TRADE_DATABASE_UNAVAILABLE");
   if(!decision||!["BUY","SELL"].includes(decision.signal)||decision.executionEligible!==true)return reject("AI_DECISION_NOT_ELIGIBLE");
   const t=Number(decision.candleTime),ts=t<1e11?t*1000:t;
   if(!Number.isFinite(ts)||Date.now()-ts<0||Date.now()-ts>cfg.maxSignalAgeMinutes*60000)return reject("AI_SIGNAL_STALE");
@@ -311,8 +326,8 @@ async function syncOpenPositions(){
         const missingTP=!Number.isFinite(existingTP) || existingTP<=0;
 
         if ((missingSL && Number.isFinite(desiredSL)) || (missingTP && Number.isFinite(desiredTP))) {
-          const repairSL=missingSL && Number.isFinite(desiredSL) ? desiredSL : null;
-          const repairTP=missingTP && Number.isFinite(desiredTP) ? desiredTP : null;
+          const repairSL=missingSL && Number.isFinite(desiredSL) ? desiredSL : (Number.isFinite(existingSL) && existingSL>0 ? existingSL : null);
+          const repairTP=missingTP && Number.isFinite(desiredTP) ? desiredTP : (Number.isFinite(existingTP) && existingTP>0 ? existingTP : null);
           try {
             const protection=await cTrader.modifyPositionProtection(
               positionId,
@@ -373,10 +388,17 @@ async function syncOpenPositions(){
   for(const t of open.rows){
     const pos=positions.find(p=>String(p?.positionId||"")===String(t.position_id||""));
     if(pos){
-      const td=pos.tradeData||{},entry=Number(td.openPrice??td.price??t.execution_entry_price),current=Number(pos.currentPrice??td.currentPrice??td.price),pnl=Number(pos.unrealizedNetProfit??td.unrealizedNetProfit??pos.netProfit);
+      const td=pos.tradeData||{},liveStatus=cTrader.getCTraderStatus?.()||{};
+      const entry=Number(pos.price??td.openPrice??td.price??t.execution_entry_price);
+      const current=Number((t.direction==="BUY"?liveStatus.bid:liveStatus.ask)??pos.currentPrice??td.currentPrice??td.price);
+      const pnl=Number(pos.unrealizedNetProfit??td.unrealizedNetProfit??pos.netProfit);
       const risk=Math.abs(Number(t.planned_entry_price)-Number(t.planned_stop_price)),move=t.direction==="BUY"?current-entry:entry-current,rVal=risk>0?move/risk:0;
+      const rawSL=pos.stopLoss??td.stopLoss;
+      const currentSL=rawSL==null||rawSL===""?NaN:Number(rawSL);
+      const stopAlreadyAtOrBeyondBreakeven=Number.isFinite(currentSL)&&(t.direction==="BUY"?currentSL>=entry:currentSL<=entry);
       if(t.breakeven_applied!==true&&rVal>=cfg.breakevenR&&cTrader.modifyPositionProtection)try{
-        await cTrader.modifyPositionProtection(t.position_id,entry,Number(t.planned_take_profit_price));
+        // Never move a profit-protecting trailing stop backward to entry.
+        if(!stopAlreadyAtOrBeyondBreakeven) await cTrader.modifyPositionProtection(t.position_id,entry,Number(t.planned_take_profit_price));
         await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);protectedCount++;
       }catch(e){console.warn("AI breakeven:",e.message);}
       await dbQuery("UPDATE aurixa.auto_trades SET execution_entry_price=COALESCE(execution_entry_price,$2),status='OPEN',profit=$3,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(entry)?entry:null,Number.isFinite(pnl)?pnl:null]);updated++;
