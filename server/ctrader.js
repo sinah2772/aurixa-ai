@@ -183,7 +183,7 @@ async function reconcileTradeExecution(payload) {
 
   if (executionType === 3) {
     tradeStatus = "OPEN";
-  } else if (executionType === 11) {
+  } else if (executionType === 4) {
     tradeStatus = "PARTIAL";
   }
 
@@ -1044,9 +1044,9 @@ function connectOpenApi() {
                 Number(pending.payloadType) === 2111
               )
             ) {
-              // 3 = ORDER_FILLED
-              // 11 = ORDER_PARTIAL_FILL
-              if (executionType === 3 || executionType === 11) {
+              // cTrader: 3 = ORDER_FILLED, 4 = ORDER_PARTIAL_FILL.
+              // Type 11 is not a partial-fill confirmation.
+              if (executionType === 3 || executionType === 4) {
                 clearTimeout(pending.timer);
                 pendingRequests.delete(responseClientMsgId);
                 pending.resolve(msg);
@@ -2133,8 +2133,8 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
     return Number((Math.round((value + Number.EPSILON) * factor) / factor).toFixed(protectionDigits));
   };
 
-  const normalizedSL = roundPrice(requestedSL);
-  const normalizedTP = roundPrice(requestedTP);
+  let normalizedSL = roundPrice(requestedSL);
+  let normalizedTP = roundPrice(requestedTP);
 
   const payload = {
     ctidTraderAccountId: Number(state.accountId),
@@ -2165,6 +2165,30 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
     try {
       const existing = await getOpenXAUUSDPositions(true);
       const position = existing.find(p => Number(p?.positionId) === pid);
+      if (!position) {
+        lastError = new Error(`Position ${pid} is not present in the broker's open-position list`);
+        continue;
+      }
+
+      // A null argument means preserve the other protection, not remove it.
+      // Merge the requested field with the currently broker-reported value
+      // so an SL-only trail cannot accidentally clear an existing TP (or vice versa).
+      const td = position.tradeData || {};
+      const rawCurrentSL = position.stopLoss ?? td.stopLoss;
+      const rawCurrentTP = position.takeProfit ?? td.takeProfit;
+      const currentSL = rawCurrentSL == null || rawCurrentSL === "" ? NaN : Number(rawCurrentSL);
+      const currentTP = rawCurrentTP == null || rawCurrentTP === "" ? NaN : Number(rawCurrentTP);
+      if (!Number.isFinite(normalizedSL) && Number.isFinite(currentSL) && currentSL > 0) {
+        normalizedSL = roundPrice(currentSL);
+      }
+      if (!Number.isFinite(normalizedTP) && Number.isFinite(currentTP) && currentTP > 0) {
+        normalizedTP = roundPrice(currentTP);
+      }
+      if (Number.isFinite(normalizedSL)) payload.stopLoss = normalizedSL;
+      else delete payload.stopLoss;
+      if (Number.isFinite(normalizedTP)) payload.takeProfit = normalizedTP;
+      else delete payload.takeProfit;
+
       if (matchesBrokerProtection(position)) {
         const td = position.tradeData || {};
         return {
@@ -2340,7 +2364,7 @@ async function placeDemoMarketOrder({
   const executionType = Number(responsePayload.executionType);
 
   return {
-    status: executionType === 11 ? "PARTIAL" : "OPEN",
+    status: executionType === 4 ? "PARTIAL" : "OPEN",
     clientMsgId: response?.clientMsgId || null,
     orderId,
     positionId,
