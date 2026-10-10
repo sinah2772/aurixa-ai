@@ -5,6 +5,8 @@
  * Demo-only by default. The AI engine decides; this module enforces execution gates.
  */
 
+const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile } = require("./symbol-support");
+
 let cTrader=null, dbQuery=null, aiEngine=null;
 const inFlightSignalKeys = new Set();
 const reversalConfirmations = new Map();
@@ -80,7 +82,9 @@ function summarizeRealizedClosingDeals(deals, positionId) {
 }
 
 async function executeAiDecision(decision, decisionId=null) {
-  const key = `AURIXA_AI:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
+  const currentSymbol = cTrader?.getCTraderStatus?.()?.symbolName || cTrader?.getCTraderStatus?.()?.symbol || "XAUUSD";
+  const symbol = normalizeSymbolName(decision?.symbol || currentSymbol);
+  const key = `AURIXA_AI:${symbol}:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
   if (inFlightSignalKeys.has(key)) {
     return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision?.signal||null,reason:"AI_SIGNAL_ALREADY_IN_FLIGHT",strategySignalKey:key};
   }
@@ -114,18 +118,22 @@ function config(){return{
 
 function getStatus(){
  const cfg=config(),ct=cTrader?.getCTraderStatus?.()||{};
- return {enabled:cfg.enabled,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"unlimited",riskPercent:cfg.riskPercent,maxSpread:cfg.maxSpread,dailyTradeLimit:"unlimited",cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:String(ct.symbolName||ct.symbol||"").toUpperCase()};
+ return {enabled:cfg.enabled,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"unlimited",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:"unlimited",cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||"")};
 }
 
 async function executeAiDecisionInternal(decision, decisionId=null){
   const cfg=config();
-  const key=`AURIXA_AI:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
+  const statusAtStart=cTrader?.getCTraderStatus?.()||{};
+  const activeSymbol=normalizeSymbolName(statusAtStart.symbolName||statusAtStart.symbol||"");
+  const decisionSymbol=normalizeSymbolName(decision?.symbol||activeSymbol);
+  const symbolProfile=getSymbolProfile(decisionSymbol);
+  const key=`AURIXA_AI:${decisionSymbol}:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
   const reject=async(reason,extra={})=>{
     if(typeof dbQuery==="function")try{
       await dbQuery(`INSERT INTO aurixa.auto_trades(decision_id,strategy,strategy_signal_key,symbol,timeframe,direction,signal_entry_price,volume,status,gate_reason,error)
-        VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,0,'REJECTED',$5,$6)
+        VALUES ($1,'AURIXA_AI_TRADER_V1',$2,$7,'5m',$3,$4,0,'REJECTED',$5,$6)
         ON CONFLICT DO NOTHING`,
-        [decisionId,key,decision?.signal||"BUY",decision?.entry||null,reason,extra.error||null]);
+        [decisionId,key,decision?.signal||"BUY",decision?.entry||null,reason,extra.error||null,decisionSymbol]);
     await dbQuery(`UPDATE aurixa.auto_trades
       SET decision_id=$2,status='REJECTED',gate_reason=$3,error=$4,updated_at=NOW()
       WHERE strategy_signal_key=$1`,
@@ -138,11 +146,12 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   if(!decision||!["BUY","SELL"].includes(decision.signal)||decision.executionEligible!==true)return reject("AI_DECISION_NOT_ELIGIBLE");
   const t=Number(decision.candleTime),ts=t<1e11?t*1000:t;
   if(!Number.isFinite(ts)||Date.now()-ts<0||Date.now()-ts>cfg.maxSignalAgeMinutes*60000)return reject("AI_SIGNAL_STALE");
-  const st=cTrader?.getCTraderStatus?.();
+  const st=statusAtStart;
   if(!st?.connected||!st?.authorized)return reject("CTRADER_NOT_READY");
   if(cfg.demoOnly&&st.account?.isLive!==false)return reject(st.account?.isLive===true?"LIVE_ACCOUNT_BLOCKED":"ACCOUNT_ENVIRONMENT_UNKNOWN");
   if(!st.tradingPermission)return reject("TRADE_PERMISSION_REQUIRED");
-  if(String(st.symbolName||st.symbol||"").toUpperCase()!=="XAUUSD")return reject("XAUUSD_NOT_READY");
+  if(!isSupportedSymbol(activeSymbol)||!symbolProfile)return reject("UNSUPPORTED_SYMBOL");
+  if(decisionSymbol!==activeSymbol)return reject("DECISION_SYMBOL_MISMATCH",{decisionSymbol,activeSymbol});
   // Fail closed if any existing XAUUSD broker position is missing either
   // protection. Known AURIXA positions are repaired by syncOpenPositions;
   // unknown/manual positions require an operator to set a safe SL/TP.
@@ -172,7 +181,10 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   }
   const bid=Number(st.bid),ask=Number(st.ask);
   if(!Number.isFinite(bid)||!Number.isFinite(ask)||ask<=bid)return reject("LIVE_PRICE_UNAVAILABLE");
-  const spread=ask-bid;if(spread>cfg.maxSpread)return reject("SPREAD_TOO_HIGH",{spread});
+  const spread=ask-bid;
+  const symbolMaxSpread=Number(symbolProfile.maxSpread);
+  const maxAllowedSpread=Number.isFinite(symbolMaxSpread)?Math.min(cfg.maxSpread,symbolMaxSpread):cfg.maxSpread;
+  if(spread>maxAllowedSpread)return reject("SPREAD_TOO_HIGH",{spread,maxAllowedSpread,symbol:decisionSymbol});
   const entry=decision.signal==="BUY"?ask:bid,stop=Number(decision.stopLoss),target=Number(decision.takeProfit);
   if(!Number.isFinite(stop)||!Number.isFinite(target))return reject("AI_SL_TP_MISSING");
   if(decision.signal==="BUY"&&(stop>=entry||target<=entry))return reject("BUY_PROTECTION_INVALID",{entry,stop,target});
@@ -209,7 +221,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   const equity=Number(account?.equity);
   const freeMargin=Number(account?.freeMargin);
   if(!Number.isFinite(balance)||balance<=0)return reject("INVALID_ACCOUNT_BALANCE");
-  const volumeRules=await cTrader.getXAUUSDVolumeConstraints?.();
+  const volumeRules=await (cTrader.getActiveSymbolVolumeConstraints||cTrader.getXAUUSDVolumeConstraints)?.();
   const brokerMin=Number(volumeRules?.minVolume);
   const brokerStep=Number(volumeRules?.stepVolume);
   const brokerMax=Number(volumeRules?.maxVolume);
@@ -242,7 +254,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     const minVolumeRiskPerPrice=(brokerMin/volumeUnitScale);
     const maxRiskDistance=(riskAmount*0.995)/minVolumeRiskPerPrice;
     const minimumExecutableRisk=Number.isFinite(Number(decision.atr))
-      ? Number(decision.atr)*1.2
+      ? Number(decision.atr)*Number(symbolProfile.minStopAtr||1.2)
       : 0;
     if(Number.isFinite(maxRiskDistance) && maxRiskDistance>0 && maxRiskDistance>=minimumExecutableRisk){
       executionRiskDistance=maxRiskDistance;
@@ -295,7 +307,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
         signal_entry_price,volume,stop_loss_distance,take_profit_distance,status,
         risk_percent,risk_amount,planned_entry_price,planned_stop_price,planned_take_profit_price
       )
-      VALUES ($1,'AURIXA_AI_TRADER_V1',$2,'XAUUSD','5m',$3,$4,$5,$6,$7,'SUBMITTED',$8,$9,$10,$11,$12)
+      VALUES ($1,'AURIXA_AI_TRADER_V1',$2,$13,'5m',$3,$4,$5,$6,$7,'SUBMITTED',$8,$9,$10,$11,$12)
       ON CONFLICT (strategy_signal_key) DO UPDATE
         SET decision_id=EXCLUDED.decision_id,volume=EXCLUDED.volume,
             stop_loss_distance=EXCLUDED.stop_loss_distance,
@@ -305,7 +317,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
           AND aurixa.auto_trades.order_id IS NULL
           AND aurixa.auto_trades.position_id IS NULL
       RETURNING id`,
-      [decisionId,key,decision.signal,decision.entry,volume,executionRiskDistance,executionRiskDistance*2,cfg.riskPercent,riskAmount,entry,executionStop,executionTarget]);
+      [decisionId,key,decision.signal,decision.entry,volume,executionRiskDistance,executionRiskDistance*2,cfg.riskPercent,riskAmount,entry,executionStop,executionTarget,decisionSymbol]);
     if(!reservation.rows.length) {
       return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"AI_SIGNAL_ALREADY_GATED",strategySignalKey:key};
     }
