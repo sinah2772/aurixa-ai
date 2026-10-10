@@ -64,6 +64,11 @@
     return null;
   }
 
+  function priceDigits(symbol) {
+    const key = String(symbol || "XAUUSD").toUpperCase().replace(/[\/\s_-]/g, "");
+    return ({XAUUSD:2, EURUSD:5, NZDUSD:5, USDCHF:5, USDCAD:5, AUDUSD:5, USDJPY:3, GBPUSD:5, XAGUSD:3, BTCUSD:2})[key] ?? 2;
+  }
+
   function number(v, digits = 2) {
     const n = Number(v);
 
@@ -523,7 +528,7 @@
       text("autoPositionVolume", "—");
       text("autoPositionSL", "—");
       text("autoPositionPnl", "—");
-      text("autoTradeNotice", state === "READY" ? "Demo auto-trader is armed. No XAUUSD position is open." : state);
+      text("autoTradeNotice", state === "READY" ? "Demo auto-trader is armed. No " + String(first(status?.symbol, "selected-symbol")) + " position is open." : state);
     } else {
       const side = Number(p?.tradeData?.tradeSide) === 1 ? "BUY" : Number(p?.tradeData?.tradeSide) === 2 ? "SELL" : first(p.direction, "—");
       const entry = first(p?.tradeData?.openPrice, p?.tradeData?.price, p?.price, p?.entryPrice);
@@ -537,7 +542,7 @@
       text("autoPositionVolume", volume ?? "—");
       text("autoPositionSL", number(sl, 2));
       text("autoPositionPnl", pnl === null || pnl === undefined || pnl === "" || !Number.isFinite(Number(pnl)) ? "—" : number(pnl, 2));
-      text("autoTradeNotice", "Demo XAUUSD position is open.");
+      text("autoTradeNotice", "Demo " + String(first(status?.symbol, "selected-symbol")) + " position is open.");
     }
 
 
@@ -557,25 +562,19 @@
         ? data
         : [];
 
-    const xauusd = positions.filter(p => {
-      const symbol = String(first(
-        p?.symbol,
-        p?.symbolName,
-        p?.tradeData?.symbol,
-        "XAUUSD"
-      )).toUpperCase();
-      return symbol.includes("XAUUSD");
-    });
+    const activeSymbol = String(first(data?.symbol, $("instrument")?.textContent, "XAUUSD")).toUpperCase().replace(/[\/\s_-]/g, "");
+    const digits = priceDigits(activeSymbol);
+    const activePositions = positions;
 
-    if (summary) summary.textContent = xauusd.length + " OPEN POSITIONS";
+    if (summary) summary.textContent = activePositions.length + " OPEN POSITIONS · " + activeSymbol;
 
-    if (!xauusd.length) {
-      body.innerHTML = '<div class="empty">No open XAUUSD trades.</div>';
+    if (!activePositions.length) {
+      body.innerHTML = '<div class="empty">No open positions for ' + escapeHTML(activeSymbol) + '.</div>';
       if (updated) updated.textContent = "Live cTrader position feed · " + new Date().toLocaleTimeString();
       return;
     }
 
-    body.innerHTML = xauusd.map(p => {
+    body.innerHTML = activePositions.map(p => {
       const td = p?.tradeData || {};
       const sideNum = Number(first(td.tradeSide, p.tradeSide));
       const direction = sideNum === 1
@@ -610,16 +609,16 @@
 
       return '<article class="open-trade-card">' +
         '<div class="open-trade-top">' +
-          '<div><strong class="open-trade-direction ' + sideClass + '">' + escapeHTML(direction) + '</strong><span class="open-trade-symbol">XAUUSD</span></div>' +
+          '<div><strong class="open-trade-direction ' + sideClass + '">' + escapeHTML(direction) + '</strong><span class="open-trade-symbol">' + escapeHTML(activeSymbol) + '</span></div>' +
           '<strong class="open-trade-pnl ' + pnlClass + '">' + escapeHTML(Number.isFinite(pnlN) ? (pnlN > 0 ? "+" : "") + number(pnlN, 2) : "—") + '</strong>' +
         '</div>' +
         '<div class="open-trade-id">POSITION ' + escapeHTML(positionId ?? "—") + (orderId ? ' · ORDER ' + escapeHTML(orderId) : '') + '</div>' +
         '<div class="open-trade-grid">' +
-          '<div><span>ENTRY</span><strong>' + escapeHTML(Number.isFinite(entryN) ? number(entryN, 2) : "—") + '</strong></div>' +
-          '<div><span>CURRENT</span><strong>' + escapeHTML(Number.isFinite(currentN) ? number(currentN, 2) : "—") + '</strong></div>' +
+          '<div><span>ENTRY</span><strong>' + escapeHTML(Number.isFinite(entryN) ? number(entryN, digits) : "—") + '</strong></div>' +
+          '<div><span>CURRENT</span><strong>' + escapeHTML(Number.isFinite(currentN) ? number(currentN, digits) : "—") + '</strong></div>' +
           '<div><span>VOLUME</span><strong>' + escapeHTML(volume ?? "—") + '</strong></div>' +
-          '<div><span>STOP LOSS</span><strong>' + escapeHTML(Number.isFinite(slN) ? number(slN, 2) : "NOT SET") + '</strong></div>' +
-          '<div><span>TAKE PROFIT</span><strong>' + escapeHTML(Number.isFinite(tpN) ? number(tpN, 2) : "NOT SET") + '</strong></div>' +
+          '<div><span>STOP LOSS</span><strong>' + escapeHTML(Number.isFinite(slN) ? number(slN, digits) : "NOT SET") + '</strong></div>' +
+          '<div><span>TAKE PROFIT</span><strong>' + escapeHTML(Number.isFinite(tpN) ? number(tpN, digits) : "NOT SET") + '</strong></div>' +
           '<div><span>OPENED</span><strong>' + escapeHTML(opened ? formatTime(opened) : "—") + '</strong></div>' +
         '</div>' +
         '<div class="open-trade-footer"><span>BROKER PROTECTION ' + escapeHTML(protectionStatus) + ' · ' + (Number.isFinite(slN) ? "SL " + number(slN, 2) : "SL MISSING") + ' · ' + (Number.isFinite(tpN) ? "TP " + number(tpN, 2) : "TP MISSING") + '</span><span>LIVE cTRADER SNAPSHOT</span></div>' +
@@ -660,7 +659,7 @@ function formatTime(value) {
     const source = candles.filter(c => c && [c.open,c.high,c.low,c.close].every(v => Number.isFinite(Number(v)))).slice(-120);
     if (source.length < 2) return;
     let canvas = container.querySelector("canvas");
-    if (!canvas) { container.innerHTML=""; canvas=document.createElement("canvas"); canvas.setAttribute("aria-label","cTrader live XAUUSD M5 candlestick chart"); canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.display="block"; container.appendChild(canvas); }
+    if (!canvas) { container.innerHTML=""; canvas=document.createElement("canvas"); canvas.setAttribute("aria-label","cTrader live selected-symbol M5 candlestick chart"); canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.display="block"; container.appendChild(canvas); }
     const rect=container.getBoundingClientRect(), dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1)), width=Math.max(320,Math.floor(rect.width||640)), height=Math.max(260,Math.floor(rect.height||420));
     canvas.width=Math.floor(width*dpr); canvas.height=Math.floor(height*dpr);
     const ctx=canvas.getContext("2d"); if(!ctx)return; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle="#080a0d"; ctx.fillRect(0,0,width,height);
