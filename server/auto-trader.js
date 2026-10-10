@@ -183,7 +183,9 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   if(!Number.isFinite(bid)||!Number.isFinite(ask)||ask<=bid)return reject("LIVE_PRICE_UNAVAILABLE");
   const spread=ask-bid;
   const symbolMaxSpread=Number(symbolProfile.maxSpread);
-  const maxAllowedSpread=Number.isFinite(symbolMaxSpread)?Math.min(cfg.maxSpread,symbolMaxSpread):cfg.maxSpread;
+  const symbolSpreadOverride=Number(process.env["AUTO_TRADING_MAX_SPREAD_"+decisionSymbol]);
+  const configuredSpread=Number.isFinite(symbolSpreadOverride)&&symbolSpreadOverride>0?symbolSpreadOverride:(decisionSymbol==="XAUUSD"?cfg.maxSpread:symbolMaxSpread);
+  const maxAllowedSpread=Number.isFinite(symbolMaxSpread)?Math.min(configuredSpread,symbolMaxSpread):configuredSpread;
   if(spread>maxAllowedSpread)return reject("SPREAD_TOO_HIGH",{spread,maxAllowedSpread,symbol:decisionSymbol});
   const entry=decision.signal==="BUY"?ask:bid,stop=Number(decision.stopLoss),target=Number(decision.takeProfit);
   if(!Number.isFinite(stop)||!Number.isFinite(target))return reject("AI_SL_TP_MISSING");
