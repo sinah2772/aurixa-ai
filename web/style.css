@@ -9,6 +9,7 @@
   --red: #ff5b65;
   --yellow: #e7c85b;
   --blue: #65a9ff;
+  --control-border: #344154;
 }
 
 * {
@@ -1620,3 +1621,15 @@ main > .panel,.dashboard-grid > .panel{min-width:0}
   .open-trade-direction { font-size: 21px; }
   .open-trade-pnl { font-size: 17px; }
 }
+
+.manual-control-panel { margin-bottom: 16px; }
+.manual-control-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); color:var(--muted); font-size:12px; }
+.manual-control-row strong { color:var(--text); }
+.manual-control-row select { min-width:140px; padding:10px 12px; border:1px solid var(--control-border); border-radius:8px; background:var(--panel2); color:var(--text); }
+.manual-control-actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding-top:16px; }
+.manual-trading-button { padding:12px 16px; border:1px solid var(--control-border); border-radius:9px; background:var(--panel2); color:var(--text); font-weight:800; cursor:pointer; }
+.manual-trading-button.enabled { border-color:var(--green); color:var(--green); }
+.manual-trading-button:disabled { opacity:.55; cursor:wait; }
+#manualAutoTradingStatus { font-size:12px; color:var(--muted); }
+#manualAutoTradingStatus.ready { color:var(--green); }
+#manualAutoTradingStatus.blocked { color:var(--red); }
