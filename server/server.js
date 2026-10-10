@@ -296,7 +296,7 @@ app.get("/api/auto-trader/positions", async (req, res) => {
       const td = position?.tradeData || {};
       const side = Number(td.tradeSide);
       const direction = side === 1 ? "BUY" : side === 2 ? "SELL" : null;
-      const entry = Number(td.openPrice ?? td.price ?? position?.openPrice);
+      const entry = Number(position?.price ?? td.openPrice ?? td.price ?? position?.openPrice);
       const volume = Number(td.volume ?? position?.volume);
 
       // cTrader's live quote is the authoritative mark price:
@@ -313,17 +313,6 @@ app.get("/api/auto-trader/positions", async (req, res) => {
         position?.profit ??
         td.profit
       );
-
-      // If cTrader does not include a floating P/L field in the position
-      // snapshot, calculate the live XAUUSD mark-to-market value from the
-      // live bid/ask and cTrader volume units.
-      const calculatedPnl =
-        direction &&
-        Number.isFinite(entry) &&
-        Number.isFinite(currentPrice) &&
-        Number.isFinite(volume)
-          ? (direction === "BUY" ? currentPrice - entry : entry - currentPrice) * volume
-          : null;
 
       // Actual protection must come only from the current cTrader position
       // snapshot. Never fall back to planned/stored trade SL/TP: missing broker
@@ -354,9 +343,9 @@ app.get("/api/auto-trader/positions", async (req, res) => {
           takeProfitSet: hasTP,
           checkedAt: status.lastUpdate || new Date().toISOString()
         },
-        unrealizedNetProfit: Number.isFinite(brokerPnl)
-          ? brokerPnl
-          : calculatedPnl,
+        // Never invent floating P/L from price difference × broker volume;
+        // volume units and account-currency conversion vary by symbol.
+        unrealizedNetProfit: Number.isFinite(brokerPnl) ? brokerPnl : null,
         liveQuoteTimestamp: status.lastUpdate || new Date().toISOString()
       };
     });
