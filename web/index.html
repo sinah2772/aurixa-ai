@@ -15,7 +15,7 @@
   <header class="topbar">
     <div>
       <div class="brand">AURIXA AI</div>
-      <div class="subtitle">XAUUSD MARKET INTELLIGENCE</div>
+      <div class="subtitle">MULTI-MARKET INTELLIGENCE · cTRADER DEMO</div>
     </div>
     <div class="live-badge">
       <span class="dot"></span> LIVE
@@ -60,7 +60,7 @@
       <div class="manual-control-row">
         <label for="tradingSymbol">TRADING SYMBOL</label>
         <select id="tradingSymbol" aria-label="Trading symbol">
-          <option value="XAUUSD" selected>XAUUSD</option>
+          <option value="" selected disabled>Loading broker symbols…</option>
         </select>
       </div>
       <div class="manual-control-row">
@@ -70,7 +70,7 @@
         <button id="manualAutoTradingButton" type="button" class="manual-trading-button" aria-pressed="false">ENABLE AUTO-TRADING</button>
         <strong id="manualAutoTradingStatus" role="status" aria-live="polite">CHECKING STATUS…</strong>
       </div>
-      <p class="notice">Auto-trading starts only after you enable it. XAUUSD signals must pass the backend risk and protection checks. Turning it off stops new entries; it does not close existing positions.</p>
+      <p class="notice">Auto-trading starts only after you enable it. Only broker-discovered supported symbols are selectable. Switching symbols requires the active symbol to be flat; changing symbol disables auto-trading. Turning it off stops new entries; it does not close existing positions.</p>
     </section>
 
     <div class="dashboard-grid">
@@ -217,7 +217,7 @@
         <div class="account-stat"><span>POSITIONS</span><strong id="autoTradePosition">LOADING BROKER POSITIONS</strong></div>
       </div>
       <div class="position-card">
-        <div class="position-title">OPEN XAUUSD POSITION</div>
+        <div class="position-title" id="activePositionTitle">OPEN POSITION · SELECTED SYMBOL</div>
         <div class="position-grid">
           <div><span>DIRECTION</span><strong id="autoPositionDirection">FLAT</strong></div>
           <div><span>ENTRY</span><strong id="autoPositionEntry">—</strong></div>
@@ -236,12 +236,12 @@
       <div class="history-board-title">
         <div>
           <div class="section-title">OPEN TRADES</div>
-          <div class="section-heading">LIVE XAUUSD POSITIONS</div>
+          <div class="section-heading">LIVE POSITIONS · SELECTED SYMBOL</div>
         </div>
         <span id="openTradesSummary">0 OPEN POSITIONS</span>
       </div>
       <div id="openTradesList" class="open-trades-list">
-        <div class="empty">No open XAUUSD trades.</div>
+        <div class="empty">No open positions for the selected symbol.</div>
       </div>
       <div id="openTradesUpdated" class="open-trades-updated">Waiting for live cTrader position data...</div>
     </section>
@@ -269,7 +269,7 @@
 
       <div class="mode-row">
         <span>AUTO TRADING</span>
-        <strong class="enabled">ENABLED · DEMO ONLY</strong>
+        <strong class="enabled">MANUAL START REQUIRED · DEMO ONLY</strong>
       </div>
 
       <div class="mode-row">
@@ -278,7 +278,7 @@
       </div>
 
       <div class="notice">
-        AURIXA AI auto trading is enabled for the demo/paper account only. Live accounts are blocked.
+        Auto-trading is OFF after each restart and must be manually enabled. Live accounts are blocked.
       </div>
     </section>
 
@@ -286,7 +286,7 @@
     <section class="system-footer">
       <span class="dot"></span>
       <strong id="systemStatus">SYSTEM ONLINE</strong>
-      <div>AURIXA AI · AI TRADER V1 · XAUUSD M5</div>
+      <div>AURIXA AI · AI TRADER V1 · ACTIVE SYMBOL M5</div>
     </section>
 
   </main>
