@@ -5,6 +5,8 @@
  * Produces an auditable decision; execution remains in the trade executor.
  */
 
+const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile } = require("./symbol-support");
+
 const MIN_BARS = 50;
 const MIN_CONFIDENCE = Math.max(55, Math.min(90, Number(process.env.AI_MIN_CONFIDENCE || 65)));
 const MIN_RR = Math.max(1.5, Number(process.env.AI_MIN_RR || 2));
@@ -27,17 +29,26 @@ function rsi(v,p=14){
   for(let i=v.length-p;i<v.length;i++){const d=v[i]-v[i-1];if(d>=0)g+=d;else l-=d;}
   if(l===0)return 100;return 100-(100/(1+(g/p)/(l/p)));
 }
-function wait(reason,extra={}){return {engine:"AURIXA_AI_TRADER_V1",version:"1.3.0",symbol:"XAUUSD",timeframe:"M5",signal:"WAIT",confidence:0,executionEligible:false,blockedBy:[reason],reasons:[reason],...extra,generatedAt:new Date().toISOString()};}
+function wait(reason,extra={},symbol="XAUUSD"){return {engine:"AURIXA_AI_TRADER_V1",version:"1.4.0",symbol,timeframe:"M5",signal:"WAIT",confidence:0,executionEligible:false,blockedBy:[reason],reasons:[reason],...extra,generatedAt:new Date().toISOString()};}
 
 function decide(candles,quote={}){
+  const symbol=normalizeSymbolName(quote.symbolName||quote.symbol||"XAUUSD");
+  const profile=getSymbolProfile(symbol);
+  if(!isSupportedSymbol(symbol)||!profile)return wait("Unsupported trading symbol",{symbol},symbol);
+  const minAtr=Number(process.env["AI_MIN_ATR_"+symbol]||(symbol==="XAUUSD"?process.env.AI_MIN_ATR:"")||profile.minAtr);
+  const maxAtr=Number(process.env["AI_MAX_ATR_"+symbol]||(symbol==="XAUUSD"?process.env.AI_MAX_ATR:"")||profile.maxAtr);
+  const maxSpread=Number(process.env["AI_MAX_SPREAD_"+symbol]||(symbol==="XAUUSD"?process.env.AI_MAX_SPREAD:"")||profile.maxSpread);
+  const rawDigits=quote.symbolDigits;
+  const digits=rawDigits!==null&&rawDigits!==undefined&&Number.isInteger(Number(rawDigits))&&Number(rawDigits)>=0&&Number(rawDigits)<=10?Number(rawDigits):profile.digits;
+  const roundPrice=value=>Number.isFinite(Number(value))?Number(Number(value).toFixed(digits)):null;
   const clean=Array.isArray(candles)?candles.filter(c=>c&&[c.open,c.high,c.low,c.close].every(v=>n(v)!==null)).slice(-300):[];
-  if(clean.length<MIN_BARS)return wait("Waiting for "+MIN_BARS+" real XAUUSD candles",{bars:clean.length,candleCount:clean.length});
+  if(clean.length<MIN_BARS)return wait("Waiting for "+MIN_BARS+" real "+symbol+" candles",{bars:clean.length,candleCount:clean.length},symbol);
   const closes=clean.map(c=>n(c.close)),e9=ema(closes,9),e21=ema(closes,21),e50=ema(closes,50),r=rsi(closes,14),a=atr(clean,14),last=closes.at(-1),prev=closes.at(-2);
-  if([e9,e21,e50,r,a,last,prev].some(v=>v===null))return wait("Indicators unavailable",{candleCount:clean.length});
+  if([e9,e21,e50,r,a,last,prev].some(v=>v===null))return wait("Indicators unavailable",{candleCount:clean.length},symbol);
   const recent=clean.slice(-20),range=Math.max(...recent.map(c=>n(c.high)))-Math.min(...recent.map(c=>n(c.low)));
   const body=Math.abs(last-prev),avgBody=recent.slice(0,-1).reduce((s,c)=>s+Math.abs(n(c.close)-n(c.open)),0)/Math.max(1,recent.length-1);
   const bodyQuality=avgBody>0?body/avgBody:0,atrRatio=a>0?range/(a*20):0;
-  const volatilityAllowed=a>=Number(process.env.AI_MIN_ATR||0.8)&&a<=Number(process.env.AI_MAX_ATR||15);
+  const volatilityAllowed=a>=minAtr&&a<=maxAtr;
   const candleQualityAllowed=bodyQuality>=Number(process.env.AI_MIN_BODY_RATIO||0.25);
   const trendUp=e9>e21&&e21>e50,trendDown=e9<e21&&e21<e50,trendStrength=Math.abs(e9-e50)/(a||1);
   const regime=trendStrength>=1?(trendUp?"TREND_UP":trendDown?"TREND_DOWN":"TRANSITION"):(atrRatio>1.35?"VOLATILE":"RANGE");
@@ -54,24 +65,24 @@ function decide(candles,quote={}){
   const passedLogic=Object.values(logicChecks).filter(Boolean).length;
   const failedLogic=Object.entries(logicChecks).filter(([,v])=>!v).map(([k])=>k);
   const confidence=clamp(Math.round(40+(passedLogic/6)*35+(scoreGap/6)*15+Math.min(10,trendStrength*3)),0,95);
-  const bid=n(quote.bid),ask=n(quote.ask),spread=bid!==null&&ask!==null&&ask>=bid?ask-bid:null,entry=side==="BUY"?ask:side==="SELL"?bid:last;
+  const bid=n(quote.bid),ask=n(quote.ask),spread=bid!==null&&ask!==null&&ask>=bid?ask-bid:null,entry=roundPrice(side==="BUY"?ask:side==="SELL"?bid:last);
   const swingHigh=Math.max(...recent.map(c=>n(c.high))),swingLow=Math.min(...recent.map(c=>n(c.low)));
   // Structure-based SL area: recent swing structure plus a small volatility buffer.
   // The final risk distance also has a 1.2 ATR floor for XAUUSD.
-  const slBuffer=Math.max(a*0.15,0.25);
+  const slBuffer=Math.max(a*0.15,profile.stopBuffer);
   const structureStop=side==="BUY"?swingLow-slBuffer:side==="SELL"?swingHigh+slBuffer:null;
-  const minimumRisk=a*1.2;
+  const minimumRisk=a*profile.minStopAtr;
   const structureRisk=side==="BUY"?Math.max(0,entry-structureStop):side==="SELL"?Math.max(0,structureStop-entry):minimumRisk;
   const risk=Math.max(minimumRisk,structureRisk);
-  const stop=side==="BUY"?entry-risk:side==="SELL"?entry+risk:null;
-  const target=side==="BUY"?entry+risk*MIN_RR:side==="SELL"?entry-risk*MIN_RR:null;
+  const stop=roundPrice(side==="BUY"?entry-risk:side==="SELL"?entry+risk:null);
+  const target=roundPrice(side==="BUY"?entry+risk*MIN_RR:side==="SELL"?entry-risk*MIN_RR:null);
   const rawRR=side==="WAIT"?null:Math.abs(target-entry)/Math.max(0.00001,Math.abs(entry-stop));
   const rr=rawRR===null?null:Number(rawRR.toFixed(2));
   const qualityTrade=side!=="WAIT"&&passedLogic>=5&&(trendUp||trendDown);
   const lastUpdate=quote.lastUpdate?Date.parse(quote.lastUpdate):NaN,quoteFresh=Number.isFinite(lastUpdate)&&Date.now()-lastUpdate<=30000;
-  const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=Number(process.env.AI_MAX_SPREAD||0.60),volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
+  const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=maxSpread,volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
   const blockedBy=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k),signal=side!=="WAIT"&&blockedBy.length===0?side:"WAIT";
-  return {engine:"AURIXA_AI_TRADER_V1",version:"1.3.0",symbol:"XAUUSD",timeframe:"M5",signal,confidence,price:last,entry,stopLoss:stop,takeProfit:target,
+  return {engine:"AURIXA_AI_TRADER_V1",version:"1.4.0",symbol,timeframe:"M5",priceDigits:digits,atrProfile:{min:minAtr,max:maxAtr,maxSpread},signal,confidence,price:roundPrice(last),entry,stopLoss:stop,takeProfit:target,
     slArea:side==="BUY"
       ? {type:"SUPPORT",low:Number(swingLow.toFixed(2)),high:Number((swingLow+slBuffer).toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
       : side==="SELL"
