@@ -1410,9 +1410,9 @@ function connectOpenApi() {
           );
 
           const eventSymbolId = Number(payload.symbolId);
-          const scale = 100000;
-          const eventBid = payload.bid !== undefined ? Number(payload.bid) / scale : undefined;
-          const eventAsk = payload.ask !== undefined ? Number(payload.ask) / scale : undefined;
+          const marketPriceScale = 100000;
+          const eventBid = payload.bid !== undefined ? Number(payload.bid) / marketPriceScale : undefined;
+          const eventAsk = payload.ask !== undefined ? Number(payload.ask) / marketPriceScale : undefined;
           multiSymbolMarket.updateQuote(eventSymbolId, eventBid, eventAsk, payload.timestamp);
           if (Array.isArray(payload.trendbar)) {
             for (const bar of payload.trendbar) {
