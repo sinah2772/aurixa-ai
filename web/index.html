@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
   <link rel="stylesheet" href="/style.css?v=20261010-phase5">
+  <link rel="stylesheet" href="/multi-market-ui.css?v=20261011-1">
   </head>
 <body>
 <div class="app">
@@ -18,7 +19,7 @@
       <div class="subtitle">MULTI-MARKET INTELLIGENCE · cTRADER DEMO</div>
     </div>
     <div class="live-badge">
-      <span class="dot"></span> LIVE
+      <span class="dot"></span> CONNECTING
     </div>
   </header>
 
@@ -36,8 +37,8 @@
 
         <div class="market-meta">
           <span class="market-tag">M5</span>
-          <span id="marketSession" class="market-tag market-open">MARKET OPEN</span>
-          <span id="dataStatus" class="market-tag live">LIVE</span>
+          <span id="marketSession" class="market-tag market-stale">CHECKING MARKET</span>
+          <span id="dataStatus" class="market-tag">CHECKING</span>
         </div>
       </div>
 
@@ -300,7 +301,7 @@
 
   </main>
 </div>
-<script defer src="/manual-control.js?v=20261011-1"></script>
-<script defer src="/app.js?v=20261010-phase6"></script>
+<script defer src="/manual-control.js?v=20261011-2"></script>
+<script defer src="/app.js?v=20261011-1"></script>
 </body>
 </html>
