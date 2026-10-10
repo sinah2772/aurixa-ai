@@ -1310,13 +1310,19 @@ function connectOpenApi() {
           );
 
           const requestedDefault = normalizeSymbolName(process.env.CTRADER_DEFAULT_SYMBOL || "XAUUSD");
-          const symbol = findAvailableSymbol(requestedDefault);
-
+          let symbol = findAvailableSymbol(requestedDefault);
           if (!symbol) {
-            throw new Error(
-              "Configured default symbol is not available. Supported broker symbols: " +
-              getSupportedSymbols().map(item => item.symbolName).join(", ")
-            );
+            const discovered = getSupportedSymbols();
+            symbol = discovered[0] || null;
+            if (symbol) {
+              console.warn("AURIXA_DEFAULT_SYMBOL_FALLBACK:", JSON.stringify({
+                requested: requestedDefault,
+                selected: symbol.symbolName
+              }));
+            }
+          }
+          if (!symbol) {
+            throw new Error("None of the ten supported symbols were discovered on this cTrader account");
           }
 
           state.symbolId = Number(symbol.symbolId);
@@ -1799,7 +1805,7 @@ function registerCTrader(app) {
 
       state.symbolId = symbolId;
       state.symbolName = symbol.symbolName;
-      state.symbolDigits = Number.isFinite(Number(symbol.digits))
+      state.symbolDigits = symbol.digits != null && Number.isFinite(Number(symbol.digits))
         ? Number(symbol.digits)
         : 5;
       state.bid = null;
@@ -2079,7 +2085,7 @@ async function getXAUUSDVolumeConstraints() {
   const symbol = Array.isArray(rawSymbols)
     ? (rawSymbols.find(s => Number(s?.symbolId) === Number(state.symbolId)) || rawSymbols[0] || {})
     : (rawSymbols || msg?.payload || {});
-  const brokerDigits = Number(symbol.digits);
+  const brokerDigits = symbol.digits == null ? NaN : Number(symbol.digits);
   if (Number.isInteger(brokerDigits) && brokerDigits >= 0 && brokerDigits <= 10) {
     state.symbolDigits = brokerDigits;
   }
