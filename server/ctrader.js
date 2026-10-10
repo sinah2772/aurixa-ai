@@ -92,7 +92,7 @@ function rememberSymbols(symbols) {
     availableSymbols.set(name, {
       symbolId: Number(symbol.symbolId),
       symbolName: String(symbol.symbolName),
-      digits: Number.isFinite(Number(symbol.digits))
+      digits: symbol.digits != null && Number.isFinite(Number(symbol.digits))
         ? Number(symbol.digits)
         : null
     });
