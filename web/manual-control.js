@@ -115,7 +115,7 @@
       if (data.symbol && canonical(data.symbol) !== selectedSymbol) {
         await refreshSymbols(data.symbol);
       }
-      render(enabled ? "ENABLED · " + (data.symbol || selectedSymbol || "NO SYMBOL") : "OFF · MANUAL START REQUIRED",
+      render(enabled ? "ENABLED · DEMO ONLY · ALL MARKETS SCANNED" : "OFF · MANUAL START REQUIRED",
         enabled && demoReady && data.connected && data.authorized ? "ready" : "");
     } catch (error) {
       render("STATUS / SYMBOL DISCOVERY UNAVAILABLE", "blocked");
