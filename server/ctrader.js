@@ -1342,8 +1342,14 @@ function connectOpenApi() {
           });
           const now = Date.now();
           const toTimestampM5 = Math.floor(now / (5 * 60000)) * (5 * 60000);
+          // cTrader throttles bursts of Open API messages. Pace subscriptions
+          // and historical requests so every discovered symbol gets its own
+          // history response instead of silently falling back to one live bar.
+          const requestGap = () => new Promise(resolve => setTimeout(resolve, 350));
+          await requestGap();
           for (const item of discoveredSymbols) {
             subscribeLiveTrendbar(ws, state.accountId, item.symbolId, 5);
+            await requestGap();
             send(ws, 2137, {
               ctidTraderAccountId: Number(state.accountId),
               symbolId: Number(item.symbolId),
@@ -1351,6 +1357,7 @@ function connectOpenApi() {
               count: 288,
               toTimestamp: toTimestampM5
             });
+            await requestGap();
           }
 
           // Resolve connection once the symbol and
