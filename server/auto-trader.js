@@ -123,9 +123,9 @@ function getStatus(){
 
 async function executeAiDecisionInternal(decision, decisionId=null){
   const cfg=config();
-  const statusAtStart=cTrader?.getCTraderStatus?.()||{};
+  const decisionSymbol=normalizeSymbolName(decision?.symbol||"");
+  const statusAtStart=cTrader?.getCTraderStatusForSymbol?.(decisionSymbol)||cTrader?.getCTraderStatus?.()||{};
   const activeSymbol=normalizeSymbolName(statusAtStart.symbolName||statusAtStart.symbol||"");
-  const decisionSymbol=normalizeSymbolName(decision?.symbol||activeSymbol);
   const symbolProfile=getSymbolProfile(decisionSymbol);
   const key=`AURIXA_AI:${decisionSymbol}:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
   const reject=async(reason,extra={})=>{
@@ -157,7 +157,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   // unknown/manual positions require an operator to set a safe SL/TP.
   if(typeof cTrader.getOpenXAUUSDPositions==="function"){
     try {
-      const brokerPositions=await cTrader.getOpenXAUUSDPositions(true);
+      const brokerPositions=await cTrader.getOpenXAUUSDPositions(true, decisionSymbol);
       const unprotected=(Array.isArray(brokerPositions)?brokerPositions:[]).filter(position=>{
         const td=position?.tradeData||{};
         const rawSL=position?.stopLoss ?? td.stopLoss;
@@ -223,7 +223,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   const equity=Number(account?.equity);
   const freeMargin=Number(account?.freeMargin);
   if(!Number.isFinite(balance)||balance<=0)return reject("INVALID_ACCOUNT_BALANCE");
-  const volumeRules=await (cTrader.getActiveSymbolVolumeConstraints||cTrader.getXAUUSDVolumeConstraints)?.();
+  const volumeRules=await (cTrader.getSymbolVolumeConstraints||cTrader.getActiveSymbolVolumeConstraints||cTrader.getXAUUSDVolumeConstraints)?.(decisionSymbol);
   const brokerMin=Number(volumeRules?.minVolume);
   const brokerStep=Number(volumeRules?.stepVolume);
   const brokerMax=Number(volumeRules?.maxVolume);
@@ -232,17 +232,28 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   }
   const configuredMax=Number.isFinite(brokerMax)&&brokerMax>0?Math.min(cfg.maxVolume,brokerMax):cfg.maxVolume;
   const riskAmount=balance*cfg.riskPercent/100;
-  // cTrader Open API volume is sent in "cents": 1000 means 10 base
-  // units. Convert the risk budget into the same volume scale before
-  // normalizing to the broker's min/step/max. The previous calculation
-  // treated volume cents as base units and therefore understated the
-  // tradable volume by 100x, incorrectly rejecting valid confirmed signals.
+  // cTrader volume is expressed in hundredths of the instrument's base units.
+  // Convert quote-currency P/L into the demo account's assumed USD risk budget
+  // for USD-quoted pairs. USDJPY/USDCHF/USDCAD require a fresh inverse conversion
+  // quote; if it is unavailable, fail closed rather than silently mis-size risk.
   const volumeUnitScale=100;
+  const quoteCurrency=decisionSymbol.slice(-3);
+  let quoteToUsdRate=1;
+  if (quoteCurrency !== "USD") {
+    const conversion = cTrader.getMultiSymbolMarket?.("USD" + quoteCurrency);
+    const conversionMid = Number(conversion?.mid);
+    const conversionTime = conversion?.lastUpdate ? Date.parse(conversion.lastUpdate) : NaN;
+    if (!conversion || !Number.isFinite(conversionMid) || conversionMid <= 0 ||
+        !Number.isFinite(conversionTime) || Date.now() - conversionTime > 30000) {
+      return reject("ACCOUNT_CURRENCY_CONVERSION_UNAVAILABLE", {symbol:decisionSymbol,quoteCurrency});
+    }
+    quoteToUsdRate = 1 / conversionMid;
+  }
   let executionRiskDistance=riskDistance;
   let executionStop=stop;
   let executionTarget=target;
   let riskAdjustedForBrokerMinimum=false;
-  const rawVolume=(riskAmount*volumeUnitScale)/executionRiskDistance;
+  const rawVolume=(riskAmount*volumeUnitScale)/(executionRiskDistance*quoteToUsdRate);
   let volume=Math.min(configuredMax,Math.floor(rawVolume/brokerStep)*brokerStep);
 
   // If the structure-based stop is slightly wider than the risk budget,
@@ -254,7 +265,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   // broker-executable protection distance.
   if(volume<brokerMin){
     const minVolumeRiskPerPrice=(brokerMin/volumeUnitScale);
-    const maxRiskDistance=(riskAmount*0.995)/minVolumeRiskPerPrice;
+    const maxRiskDistance=(riskAmount*0.995)/(minVolumeRiskPerPrice*quoteToUsdRate);
     const minimumExecutableRisk=Number.isFinite(Number(decision.atr))
       ? Number(decision.atr)*Number(symbolProfile.minStopAtr||1.2)
       : 0;
@@ -264,13 +275,13 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       executionTarget=decision.signal==="BUY"
         ? entry+executionRiskDistance*2
         : entry-executionRiskDistance*2;
-      const adjustedRaw=(riskAmount*volumeUnitScale)/executionRiskDistance;
+      const adjustedRaw=(riskAmount*volumeUnitScale)/(executionRiskDistance*quoteToUsdRate);
       volume=Math.min(configuredMax,Math.floor(adjustedRaw/brokerStep)*brokerStep);
       if(volume>=brokerMin) riskAdjustedForBrokerMinimum=true;
     }
   }
 
-  const requiredRiskAtMinVolume=(brokerMin/volumeUnitScale)*executionRiskDistance;
+  const requiredRiskAtMinVolume=(brokerMin/volumeUnitScale)*executionRiskDistance*quoteToUsdRate;
   if(volume<brokerMin){
     return reject("RISK_BUDGET_TOO_SMALL_FOR_BROKER_MIN_VOLUME",{
       accountBalance:balance,
@@ -293,7 +304,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   console.log("AURIXA ACCOUNT VOLUME CHECK:",JSON.stringify({
     balance,equity:Number.isFinite(equity)?equity:null,
     freeMargin:Number.isFinite(freeMargin)?freeMargin:null,
-    riskPercent:cfg.riskPercent,riskAmount,riskDistance,
+    riskPercent:cfg.riskPercent,riskAmount,riskDistance,quoteToUsdRate,
     executionRiskDistance,
     riskAdjustedForBrokerMinimum,
     volumeUnitScale:100,
@@ -335,7 +346,8 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   try{
     result=await cTrader.placeDemoMarketOrder({
       direction:decision.signal,
-      volume
+      volume,
+      symbol:decisionSymbol
     });
   }catch(e){
     try {
@@ -363,7 +375,8 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       const protection=await cTrader.modifyPositionProtection(
         result.positionId,
         adjustedStop,
-        adjustedTarget
+        adjustedTarget,
+        decisionSymbol
       );
       if(protection?.verified!==true){
         throw new Error("Broker did not confirm both SL and TP after order execution");
@@ -411,16 +424,18 @@ async function dryRunAiTrader(){
   return {dryRun:true,wouldExecute:Boolean(decision?.executionEligible),orderSubmitted:false,strategy:"AURIXA_AI_TRADER_V1",decision,reason:decision?.executionEligible?"AI_SIGNAL_READY_NO_ORDER_SUBMITTED":"AI_WAIT_OR_BLOCKED"};
 }
 
-async function syncOpenPositions(){
-  if(!cTrader?.getOpenXAUUSDPositions)return {updated:0,closed:0,protectedCount:0,trailingUpdated:0};
+async function syncOpenPositions(symbolName=null){
+  const liveDefault=cTrader?.getCTraderStatus?.()||{};
+  const targetSymbol=normalizeSymbolName(symbolName||liveDefault.symbolName||liveDefault.symbol||"");
+  if(!cTrader?.getOpenXAUUSDPositions)return {symbol:targetSymbol,updated:0,closed:0,protectedCount:0,trailingUpdated:0};
   const cfg=config();
-  const positions=await cTrader.getOpenXAUUSDPositions(true);
+  const positions=await cTrader.getOpenXAUUSDPositions(true,targetSymbol);
   let updated=0,closed=0,protectedCount=0,trailingUpdated=0;
-  const liveStatus=cTrader.getCTraderStatus?.()||{};
-  const liveCandles=cTrader.getMarketCandles?.()||[];
+  const liveStatus=cTrader.getCTraderStatusForSymbol?.(targetSymbol)||liveDefault;
+  const liveCandles=cTrader.getMultiSymbolMarket?.(targetSymbol)?.candles||cTrader.getMarketCandles?.()||[];
   const marketDecision=aiEngine?.decide(liveCandles,liveStatus)||null;
   const exitDecision=cfg.exitReversalEnabled ? marketDecision : null;
-  const activeProfile=getSymbolProfile(liveStatus.symbolName||liveStatus.symbol);
+  const activeProfile=getSymbolProfile(targetSymbol||liveStatus.symbolName||liveStatus.symbol);
   const now=Date.now();
   const eligibleReversal=Boolean(
     exitDecision?.executionEligible===true &&
@@ -450,7 +465,7 @@ async function syncOpenPositions(){
       // ProtoOAReconcileRes places the actual position entry in position.price;
       // tradeData commonly has no openPrice/price field.
       let entry=numericPrice(pos.price,td.openPrice,td.price,pos.openPrice,td.entryPrice);
-      const status=cTrader.getCTraderStatus?.()||{};
+      const status=cTrader.getCTraderStatusForSymbol?.(targetSymbol)||cTrader.getCTraderStatus?.()||{};
       const market=direction==="BUY"?numericPrice(status.bid):direction==="SELL"?numericPrice(status.ask):NaN;
       const current=Number.isFinite(market)?market:numericPrice(pos.currentPrice,td.currentPrice,td.price);
       if(!positionId||!direction){
@@ -522,7 +537,7 @@ async function syncOpenPositions(){
                   closeVolume,reason:"CONFIRMED_MARKET_DIRECTION_REVERSAL"
                 }));
                 try{
-                  const closeResult=await cTrader.closeXAUUSDPosition(positionId,closeVolume);
+                  const closeResult=await cTrader.closeXAUUSDPosition(positionId,closeVolume,targetSymbol);
                   if(closeResult?.brokerConfirmed!==true){
                     throw new Error("Broker did not confirm that the position was fully closed");
                   }
@@ -593,7 +608,8 @@ async function syncOpenPositions(){
             const protection=await cTrader.modifyPositionProtection(
               positionId,
               repairSL,
-              repairTP
+              repairTP,
+              targetSymbol
             );
             console.log("AURIXA_PROTECTION_REPAIRED:",JSON.stringify({
               positionId,direction,entry,
@@ -644,7 +660,7 @@ async function syncOpenPositions(){
       if(!improves)continue;
 
       try{
-        const result=await cTrader.modifyPositionProtection(positionId,candidate,null);
+        const result=await cTrader.modifyPositionProtection(positionId,candidate,null,targetSymbol);
         trailingUpdated++;
         console.log("AURIXA_TRAILING_STOP_VERIFIED:",JSON.stringify({positionId,direction,requestedStopLoss:candidate,result}));
         console.log("AURIXA_TRAILING_STOP_UPDATED:",JSON.stringify({
@@ -657,11 +673,11 @@ async function syncOpenPositions(){
   }
 
   if(typeof dbQuery!=="function")return {updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length};
-  const open=await dbQuery("SELECT * FROM aurixa.auto_trades WHERE status IN ('OPEN','PARTIAL') ORDER BY created_at DESC LIMIT 50");
+  const open=await dbQuery("SELECT * FROM aurixa.auto_trades WHERE status IN ('OPEN','PARTIAL') AND symbol=$1 ORDER BY created_at DESC LIMIT 100",[targetSymbol]);
   for(const t of open.rows){
     const pos=positions.find(p=>String(p?.positionId||"")===String(t.position_id||""));
     if(pos){
-      const td=pos.tradeData||{},liveStatus=cTrader.getCTraderStatus?.()||{};
+      const td=pos.tradeData||{},liveStatus=cTrader.getCTraderStatusForSymbol?.(targetSymbol)||cTrader.getCTraderStatus?.()||{};
       const entry=Number(pos.price??td.openPrice??td.price??t.execution_entry_price);
       const current=Number((t.direction==="BUY"?liveStatus.bid:liveStatus.ask)??pos.currentPrice??td.currentPrice??td.price);
       const pnl=Number(pos.unrealizedNetProfit??td.unrealizedNetProfit??pos.netProfit);
@@ -671,7 +687,7 @@ async function syncOpenPositions(){
       const stopAlreadyAtOrBeyondBreakeven=Number.isFinite(currentSL)&&(t.direction==="BUY"?currentSL>=entry:currentSL<=entry);
       if(t.breakeven_applied!==true&&rVal>=cfg.breakevenR&&cTrader.modifyPositionProtection)try{
         // Never move a profit-protecting trailing stop backward to entry.
-        if(!stopAlreadyAtOrBeyondBreakeven) await cTrader.modifyPositionProtection(t.position_id,entry,Number(t.planned_take_profit_price));
+        if(!stopAlreadyAtOrBeyondBreakeven) await cTrader.modifyPositionProtection(t.position_id,entry,Number(t.planned_take_profit_price),targetSymbol);
         await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);protectedCount++;
       }catch(e){console.warn("AI breakeven:",e.message);}
       await dbQuery("UPDATE aurixa.auto_trades SET execution_entry_price=COALESCE(execution_entry_price,$2),status='OPEN',profit=$3,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(entry)?entry:null,Number.isFinite(pnl)?pnl:null]);updated++;
@@ -740,7 +756,7 @@ async function syncOpenPositions(){
     error: null
   };
   try {
-    const auditedPositions = await cTrader.getOpenXAUUSDPositions(true);
+    const auditedPositions = await cTrader.getOpenXAUUSDPositions(true,targetSymbol);
     protectionAudit.checked = auditedPositions.length;
     for (const position of auditedPositions) {
       const td = position?.tradeData || {};
@@ -769,7 +785,7 @@ async function syncOpenPositions(){
   for(const key of reversalConfirmations.keys()) if(!livePositionIds.has(key)) reversalConfirmations.delete(key);
   for(const key of reversalCloseAttempts.keys()) if(!livePositionIds.has(key)) reversalCloseAttempts.delete(key);
   for(const key of profitDetectedPositions) if(!livePositionIds.has(key)) profitDetectedPositions.delete(key);
-  return {updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length,protectionAudit};
+  return {symbol:targetSymbol,updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length,protectionAudit};
 }
 
 async function init(){

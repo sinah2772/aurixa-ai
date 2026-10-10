@@ -223,6 +223,31 @@ app.get("/api/auto-trader/status", (req, res) => {
   }
 });
 
+app.get("/api/auto-trader/multi-symbol-status", (req, res) => {
+  try {
+    const ctrader = require("./ctrader");
+    const markets = ctrader.getMultiSymbolMarkets().map(market => {
+      const quoteTime = market.lastUpdate ? Date.parse(market.lastUpdate) : NaN;
+      const quoteFresh = Number.isFinite(quoteTime) && Date.now() - quoteTime <= 30000;
+      const ready = Boolean(
+        ctrader.getCTraderStatusForSymbol(market.symbol)?.connected &&
+        ctrader.getCTraderStatusForSymbol(market.symbol)?.authorized &&
+        market.candleCount >= 50 && quoteFresh &&
+        Number.isFinite(Number(market.bid)) && Number.isFinite(Number(market.ask)) &&
+        Number(market.ask) > Number(market.bid)
+      );
+      return { ...market, quoteFresh, ready,
+        reason: ready ? "READY" : market.candleCount < 50 ? "WAITING_FOR_M5_HISTORY" :
+          !quoteFresh ? "WAITING_FOR_FRESH_QUOTE" : "MARKET_DATA_UNAVAILABLE" };
+    });
+    res.set("Cache-Control", "no-store");
+    res.json({ ok:true, enabled:autoTrader.getStatus().enabled, demoOnly:true,
+      discovered:markets.length, readyCount:markets.filter(m=>m.ready).length, markets });
+  } catch (err) {
+    res.status(500).json({ok:false,error:"MULTI_SYMBOL_STATUS_UNAVAILABLE"});
+  }
+});
+
 // Manual auto-trading control. Defaults to OFF after each process start.
 // Enabling is allowed only on a connected, authorized demo account with
 // broker trading permission. Only explicitly supported and broker-discovered symbols can be armed.
@@ -628,31 +653,53 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
   }
 
     setInterval(async () => {
-      try {
-        const state=marketEngine.getState()||{},ct=getCTraderStatus()||{};
-        const decision=aiTraderEngine.decide(Array.isArray(state.candles)?state.candles:[],ct);
-        const decisionId=await auditAiDecision(decision);
-        if(decision.executionEligible===true){
-          const result=await autoTrader.executeAiDecision({...decision,decisionId},decisionId);
-          console.log("AURIXA AI EXECUTION:",JSON.stringify({
-            decisionId,
-            signal:decision.signal,
-            executed:result.executed,
-            reason:result.reason||null,
-            orderId:result.orderId||null,
-            positionId:result.positionId||null,
-            openPositions:result.openPositions??null,
-            riskAmount:result.riskAmount??null,
-            volume:result.volume??null,
-            volumeMin:result.volumeMin??null,
-            volumeStep:result.volumeStep??null
+      const ctrader = require("./ctrader");
+      const supported = ctrader.getSupportedSymbols();
+      for (const item of supported) {
+        const symbol = item.canonicalName;
+        try {
+          const market = ctrader.getMultiSymbolMarket(symbol);
+          const ct = ctrader.getCTraderStatusForSymbol(symbol);
+          const quoteTime = ct?.lastUpdate ? Date.parse(ct.lastUpdate) : NaN;
+          const quoteFresh = Number.isFinite(quoteTime) && Date.now() - quoteTime <= 30000;
+          if (!market || !Array.isArray(market.candles) || market.candles.length < 50 ||
+              !Number.isFinite(Number(ct?.bid)) || !Number.isFinite(Number(ct?.ask)) ||
+              Number(ct.ask) <= Number(ct.bid) || !quoteFresh) {
+            console.log("AURIXA_MULTI_SYMBOL_WAIT:", JSON.stringify({
+              symbol, candleCount: market?.candles?.length || 0, quoteFresh,
+              reason: !market ? "MARKET_NOT_REGISTERED" :
+                (market.candles.length < 50 ? "INSUFFICIENT_M5_HISTORY" :
+                (!quoteFresh ? "QUOTE_STALE" : "QUOTE_UNAVAILABLE"))
+            }));
+            continue;
+          }
+          const decision = aiTraderEngine.decide(market.candles, ct);
+          const decisionId = await auditAiDecision(decision);
+          if (decision.executionEligible === true) {
+            const result = await autoTrader.executeAiDecision({...decision, decisionId}, decisionId);
+            console.log("AURIXA_MULTI_SYMBOL_EXECUTION:", JSON.stringify({
+              symbol, decisionId, signal: decision.signal, executed: result.executed,
+              reason: result.reason || null, orderId: result.orderId || null,
+              positionId: result.positionId || null, riskAmount: result.riskAmount ?? null,
+              volume: result.volume ?? null, protectionStatus: result.protectionStatus || null
+            }));
+          }
+        } catch (err) {
+          console.error("AURIXA_MULTI_SYMBOL_LOOP_ERROR:", JSON.stringify({symbol,error:err.message}));
+        }
+      }
+      // Reconcile every symbol independently so each open position keeps its
+      // own quote, SL/TP repair, break-even and trailing-stop context.
+      for (const item of supported) {
+        try {
+          const sync = await autoTrader.syncOpenPositions(item.canonicalName);
+          console.log("AURIXA_MULTI_SYMBOL_POSITION_SYNC:", JSON.stringify(sync));
+        } catch (err) {
+          console.error("AURIXA_MULTI_SYMBOL_POSITION_SYNC_ERROR:", JSON.stringify({
+            symbol:item.canonicalName,error:err.message
           }));
         }
-        try{
-          const sync=await autoTrader.syncOpenPositions();
-          console.log("AURIXA POSITION SYNC:",JSON.stringify(sync));
-        }catch(e){console.error("AURIXA position sync error:",e.message);}
-      }catch(err){console.error("AURIXA AI Trader V1 loop error:",err.message);}
+      }
     }, 15000);
 });
 app.get("/api/auto-trader/trade-trace/:id", async (req, res) => {

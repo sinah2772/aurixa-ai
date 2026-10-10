@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 const { normalizeSymbolName: normalizeCanonicalSymbol, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMBOLS } = require("./symbol-support");
+const multiSymbolMarket = require("./multi-symbol-market");
 
 
 let marketEngine = null;
@@ -97,6 +98,7 @@ function rememberSymbols(symbols) {
         : null
     });
   }
+  multiSymbolMarket.registerSymbols(getSupportedSymbols());
 }
 
 function findAvailableSymbol(name) {
@@ -1331,43 +1333,25 @@ function connectOpenApi() {
             ? Number(symbol.digits)
             : (getSymbolProfile(symbol.symbolName)?.digits ?? 5);
 
-          // ProtoOASubscribeSpotsReq
+          const discoveredSymbols = getSupportedSymbols();
+          // Every discovered supported symbol receives an independent live stream.
           send(ws, 2127, {
             ctidTraderAccountId: Number(state.accountId),
-            symbolId: [state.symbolId],
+            symbolId: discoveredSymbols.map(item => Number(item.symbolId)),
             subscribeToSpotTimestamp: true
           });
-
-          // ProtoOASubscribeLiveTrendbarReq
-          // Subscribe to live XAUUSD M5 candles once per connection.
-          subscribeLiveTrendbar(
-            ws,
-            state.accountId,
-            state.symbolId,
-            5
-          );
-
-          // ProtoOAGetTrendbarsReq
-          // Request the latest 300 XAUUSD M5 candles.
-          // Using toTimestamp + count avoids an unnecessarily
-          // wide historical time range.
-          // cTrader requires a valid bounded period. Align both ends to
-          // the minute boundary and keep the M1 request within 24 hours.
           const now = Date.now();
           const toTimestampM5 = Math.floor(now / (5 * 60000)) * (5 * 60000);
-          const toTimestampM1 = Math.floor(now / 60000) * 60000;
-          // Use count back from toTimestamp; avoid broker-sensitive from/to ranges.
-          const historicalRequest = {
-            ctidTraderAccountId: Number(state.accountId),
-            symbolId: Number(state.symbolId),
-            period: 5,
-            count: 288,
-            toTimestamp: toTimestampM5
-          };
-
-          // Request the M5 history required by the AI trader.
-          // Keep the request bounded and aligned to a completed M5 bar.
-          send(ws, 2137, historicalRequest);
+          for (const item of discoveredSymbols) {
+            subscribeLiveTrendbar(ws, state.accountId, item.symbolId, 5);
+            send(ws, 2137, {
+              ctidTraderAccountId: Number(state.accountId),
+              symbolId: Number(item.symbolId),
+              period: 5,
+              count: 288,
+              toTimestamp: toTimestampM5
+            });
+          }
 
           // Resolve connection once the symbol and
           // live spot stream are established.
@@ -1381,51 +1365,25 @@ function connectOpenApi() {
 
         // ProtoOAGetTrendbarsRes: never mix late responses from a previous symbol.
         if (payloadType === 2138) {
-  if (payload.symbolId != null && state.symbolId != null &&
-      Number(payload.symbolId) !== Number(state.symbolId)) {
-    console.log("AURIXA_STALE_SYMBOL_HISTORY_IGNORED:", JSON.stringify({
-      responseSymbolId: Number(payload.symbolId),
-      activeSymbolId: Number(state.symbolId)
+  const responseSymbolId = Number(payload.symbolId);
+  const bars = Array.isArray(payload.trendbar) ? payload.trendbar : [];
+  const period = Number(payload.period ?? (bars[0] && bars[0].period));
+  const candles = bars.map(bar => trendbarToCandle(bar)).filter(Boolean);
+  if (period === 5 && Number.isFinite(responseSymbolId)) {
+    multiSymbolMarket.setHistory(responseSymbolId, candles);
+    if (responseSymbolId === Number(state.symbolId)) {
+      persistHistoricalCandles(candles, period).catch(err =>
+        console.error("AURIXA market history save error:", err.message)
+      );
+      feedHistoricalTrendbars(bars);
+    }
+    console.log("AURIXA_MULTI_SYMBOL_HISTORY:", JSON.stringify({
+      symbolId: responseSymbolId,
+      symbol: getSupportedSymbols().find(item => Number(item.symbolId) === responseSymbolId)?.canonicalName || null,
+      candleCount: candles.length,
+      active: responseSymbolId === Number(state.symbolId)
     }));
-    return;
   }
-  const bars = Array.isArray(payload.trendbar)
-    ? payload.trendbar
-    : [];
-
-  const period = Number(
-    payload.period ??
-    (bars[0] && bars[0].period)
-  );
-
-  console.log(
-    "AURIXA_HISTORICAL_TRENDBARS:",
-    JSON.stringify({
-      period,
-      barCount: bars.length
-    })
-  );
-
-  if (period === 5) {
-    const persisted = bars
-      .map(bar => trendbarToCandle(bar))
-      .filter(Boolean);
-    persistHistoricalCandles(persisted, period).catch(err =>
-      console.error("AURIXA market history save error:", err.message)
-    );
-
-    feedHistoricalTrendbars(bars);
-
-    const candles = bars
-      .map(bar => trendbarToCandle(bar))
-      .filter(Boolean);
-
-    console.log(
-      "AURIXA_AI_M5_HISTORY:",
-      candles.length
-    );
-  }
-
   return;
 }
 
@@ -1450,6 +1408,20 @@ function connectOpenApi() {
               timestamp: payload.timestamp ?? null
             })
           );
+
+          const eventSymbolId = Number(payload.symbolId);
+          const marketPriceScale = 100000;
+          const eventBid = payload.bid !== undefined ? Number(payload.bid) / marketPriceScale : undefined;
+          const eventAsk = payload.ask !== undefined ? Number(payload.ask) / marketPriceScale : undefined;
+          multiSymbolMarket.updateQuote(eventSymbolId, eventBid, eventAsk, payload.timestamp);
+          if (Array.isArray(payload.trendbar)) {
+            for (const bar of payload.trendbar) {
+              if (Number(bar.period) === 5) {
+                const candle = trendbarToCandle(bar);
+                if (candle) multiSymbolMarket.updateCandle(eventSymbolId, candle);
+              }
+            }
+          }
 
           if (
             state.symbolId !== null &&
@@ -1968,7 +1940,7 @@ async function getDealsByPositionId(positionId, fromTimestamp = null, toTimestam
   return Array.isArray(msg?.payload?.deal) ? msg.payload.deal : [];
 }
 
-async function getOpenXAUUSDPositions(returnProtectionOrders = false) {
+async function getOpenXAUUSDPositions(returnProtectionOrders = false, symbolName = state.symbolName) {
   if (!state.ws || state.ws.readyState !== 1) {
     throw new Error("cTrader WebSocket is not connected");
   }
@@ -1992,15 +1964,9 @@ async function getOpenXAUUSDPositions(returnProtectionOrders = false) {
     ? payload.position
     : [];
 
-  return positions.filter(position => {
-    const symbolId = Number(position?.tradeData?.symbolId);
-    const positionStatus = Number(position?.positionStatus);
-
-    return (
-      symbolId === Number(state.symbolId) &&
-      positionStatus === 1
-    );
-  });
+  const target = findAvailableSymbol(symbolName || state.symbolName);
+  const targetId = Number(target?.symbolId ?? state.symbolId);
+  return positions.filter(position => Number(position?.tradeData?.symbolId) === targetId && Number(position?.positionStatus) === 1);
 }
 
 async function inspectOpenXAUUSDPositions() {
@@ -2066,9 +2032,11 @@ async function getAccountBalance() {
   };
 }
 
-async function getXAUUSDVolumeConstraints() {
+async function getXAUUSDVolumeConstraints(symbolName = state.symbolName) {
   if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
-  if (!state.connected || !state.authorized || !state.accountId || !state.symbolId) {
+  const target = findAvailableSymbol(symbolName || state.symbolName);
+  const targetId = Number(target?.symbolId ?? state.symbolId);
+  if (!state.connected || !state.authorized || !state.accountId || !targetId) {
     throw new Error("cTrader account/symbol is not authorized");
   }
   // ProtoOASymbolByIdReq/Res: ask cTrader for the broker's actual
@@ -2080,13 +2048,13 @@ async function getXAUUSDVolumeConstraints() {
     2116,
     {
       ctidTraderAccountId: Number(state.accountId),
-      symbolId: [Number(state.symbolId)]
+      symbolId: [targetId]
     },
     10000
   );
   const rawSymbols = msg?.payload?.symbol;
   const symbol = Array.isArray(rawSymbols)
-    ? (rawSymbols.find(s => Number(s?.symbolId) === Number(state.symbolId)) || rawSymbols[0] || {})
+    ? (rawSymbols.find(s => Number(s?.symbolId) === targetId) || rawSymbols[0] || {})
     : (rawSymbols || msg?.payload || {});
   const brokerDigits = symbol.digits == null ? NaN : Number(symbol.digits);
   if (Number.isInteger(brokerDigits) && brokerDigits >= 0 && brokerDigits <= 10) {
@@ -2096,7 +2064,7 @@ async function getXAUUSDVolumeConstraints() {
   const maxVolume = Number(symbol.maxVolume);
   const stepVolume = Number(symbol.stepVolume);
   if (!Number.isFinite(minVolume) || minVolume <= 0 || !Number.isFinite(stepVolume) || stepVolume <= 0) {
-    throw new Error("cTrader volume constraints are unavailable for " + state.symbolName);
+    throw new Error("cTrader volume constraints are unavailable for " + (target?.symbolName || symbolName));
   }
   return {
     minVolume,
@@ -2105,11 +2073,13 @@ async function getXAUUSDVolumeConstraints() {
   };
 }
 
-async function modifyPositionProtection(positionId, stopLoss, takeProfit = null) {
+async function modifyPositionProtection(positionId, stopLoss, takeProfit = null, symbolName = state.symbolName) {
   if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
   if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
   if (state.account?.isLive !== false) throw new Error("DEMO ACCOUNT REQUIRED");
 
+  const target = findAvailableSymbol(symbolName || state.symbolName);
+  const targetId = Number(target?.symbolId ?? state.symbolId);
   const pid = Number(positionId);
   const requestedSL = stopLoss == null ? null : Number(stopLoss);
   const requestedTP = takeProfit == null ? null : Number(takeProfit);
@@ -2129,20 +2099,20 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
   // values such as 4116.312500000001, which cTrader rejects as having
   // more digits than allowed. Read the broker symbol definition and
   // round both absolute prices to the broker's configured digits.
-  let protectionDigits = Number(state.symbolDigits);
+  let protectionDigits = Number(target?.digits ?? getSymbolProfile(symbolName)?.digits ?? state.symbolDigits);
   try {
     const symbolMsg = await request(
       state.ws,
       2116,
       {
         ctidTraderAccountId: Number(state.accountId),
-        symbolId: [Number(state.symbolId)]
+        symbolId: [targetId]
       },
       10000
     );
     const rawSymbols = symbolMsg?.payload?.symbol;
     const symbol = Array.isArray(rawSymbols)
-      ? (rawSymbols.find(s => Number(s?.symbolId) === Number(state.symbolId)) || rawSymbols[0] || {})
+      ? (rawSymbols.find(s => Number(s?.symbolId) === targetId) || rawSymbols[0] || {})
       : (rawSymbols || symbolMsg?.payload || {});
     const brokerDigits = Number(symbol.digits);
     if (Number.isInteger(brokerDigits) && brokerDigits >= 0 && brokerDigits <= 10) {
@@ -2193,7 +2163,7 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
     }
 
     try {
-      const existing = await getOpenXAUUSDPositions(true);
+      const existing = await getOpenXAUUSDPositions(true, symbolName);
       const position = existing.find(p => Number(p?.positionId) === pid);
       if (!position) {
         lastError = new Error(`Position ${pid} is not present in the broker's open-position list`);
@@ -2258,7 +2228,7 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null)
       await new Promise(resolve => setTimeout(resolve, 500));
 
       try {
-        const positions = await getOpenXAUUSDPositions(true);
+        const positions = await getOpenXAUUSDPositions(true, symbolName);
         const position = positions.find(p => Number(p?.positionId) === pid);
 
         if (matchesBrokerProtection(position)) {
@@ -2304,7 +2274,8 @@ async function placeDemoMarketOrder({
   direction,
   volume,
   stopLossDistance,
-  takeProfitDistance = 0
+  takeProfitDistance = 0,
+  symbol: requestedSymbol = state.symbolName
 }) {
   if (!state.ws || state.ws.readyState !== 1) {
     throw new Error("cTrader WebSocket is not connected");
@@ -2323,22 +2294,24 @@ async function placeDemoMarketOrder({
     throw new Error("ACCOUNT ENVIRONMENT UNKNOWN");
   }
 
-  if (!isSupportedSymbol(state.symbolName)) {
-    throw new Error("UNSUPPORTED_SYMBOL: " + String(state.symbolName || "unknown"));
+  const target = findAvailableSymbol(requestedSymbol);
+  const targetId = Number(target?.symbolId);
+  if (!isSupportedSymbol(requestedSymbol) || !targetId) {
+    throw new Error("UNSUPPORTED_SYMBOL_OR_NOT_DISCOVERED: " + String(requestedSymbol || "unknown"));
   }
 
   if (!Number.isInteger(Number(volume)) || Number(volume) <= 0) {
     throw new Error("Invalid cTrader volume");
   }
 
-  const volumeRules = await getXAUUSDVolumeConstraints();
+  const volumeRules = await getXAUUSDVolumeConstraints(requestedSymbol);
   const minVolume = Number(volumeRules.minVolume);
   const stepVolume = Number(volumeRules.stepVolume);
   const maxVolume = Number(volumeRules.maxVolume);
   if (Number(volume) < minVolume ||
       (Number.isFinite(maxVolume) && maxVolume > 0 && Number(volume) > maxVolume) ||
       ((Number(volume) - minVolume) % stepVolume !== 0)) {
-    throw new Error("ORDER_VOLUME_OUTSIDE_BROKER_CONSTRAINTS for " + state.symbolName);
+    throw new Error("ORDER_VOLUME_OUTSIDE_BROKER_CONSTRAINTS for " + requestedSymbol);
   }
 
   // Intentionally no fixed open-position-count gate.
@@ -2356,7 +2329,7 @@ async function placeDemoMarketOrder({
 
   const payload = {
     ctidTraderAccountId: Number(state.accountId),
-    symbolId: Number(state.symbolId),
+    symbolId: targetId,
     orderType: 1,
     tradeSide,
     volume: Number(volume),
@@ -2414,7 +2387,7 @@ async function placeDemoMarketOrder({
   let brokerConfirmed = false;
   for (let check = 0; check < 6; check++) {
     try {
-      const openPositions = await getOpenXAUUSDPositions(true);
+      const openPositions = await getOpenXAUUSDPositions(true, requestedSymbol);
       if (openPositions.some(position => String(position?.positionId) === String(positionId))) {
         brokerConfirmed = true;
         break;
@@ -2452,7 +2425,7 @@ async function placeDemoMarketOrder({
 }
 
 
-async function closeXAUUSDPosition(positionId, volume) {
+async function closeXAUUSDPosition(positionId, volume, symbolName = state.symbolName) {
   if (!state.ws || state.ws.readyState !== 1) {
     throw new Error("cTrader WebSocket is not connected");
   }
@@ -2559,7 +2532,10 @@ async function closeXAUUSDPosition(positionId, volume) {
   };
 }
 
-function getCTraderStatus() {
+function getCTraderStatus(symbolName = null) {
+  const market = symbolName ? multiSymbolMarket.getSnapshot(symbolName) : null;
+  const symbolInfo = symbolName ? findAvailableSymbol(symbolName) : null;
+  const useSymbolMarket = Boolean(market && symbolInfo);
   return {
     configured: Boolean(CLIENT_ID && CLIENT_SECRET),
     connected: state.connected,
@@ -2568,14 +2544,16 @@ function getCTraderStatus() {
     account: state.account ? { ctidTraderAccountId: state.account.ctidTraderAccountId, traderLogin: state.account.traderLogin, brokerTitleShort: state.account.brokerTitleShort, isLive: state.account.isLive } : null,
     permissionScope: state.permissionScope,
     tradingPermission: state.permissionScope === 1,
-    symbol: state.symbolName,
-    symbolId: state.symbolId,
-    symbolDigits: state.symbolDigits,
+    symbol: useSymbolMarket ? symbolInfo.symbolName : state.symbolName,
+    symbolName: useSymbolMarket ? symbolInfo.symbolName : state.symbolName,
+    canonicalSymbol: useSymbolMarket ? normalizeSymbolName(symbolInfo.symbolName) : normalizeSymbolName(state.symbolName),
+    symbolId: useSymbolMarket ? symbolInfo.symbolId : state.symbolId,
+    symbolDigits: useSymbolMarket ? (symbolInfo.digits ?? getSymbolProfile(symbolName)?.digits ?? state.symbolDigits) : state.symbolDigits,
     symbols: getSupportedSymbols(),
-    bid: state.bid,
-    ask: state.ask,
-    mid: state.bid !== null && state.ask !== null ? (state.bid + state.ask) / 2 : null,
-    lastUpdate: state.lastUpdate,
+    bid: useSymbolMarket ? market.bid : state.bid,
+    ask: useSymbolMarket ? market.ask : state.ask,
+    mid: useSymbolMarket ? market.mid : (state.bid !== null && state.ask !== null ? (state.bid + state.ask) / 2 : null),
+    lastUpdate: useSymbolMarket ? market.lastUpdate : state.lastUpdate,
     error: state.error,
     autoTrading:
       String(process.env.AUTO_TRADING || "false").toLowerCase() === "true",
@@ -2594,6 +2572,9 @@ async function queryDatabase(text, params = []) {
 module.exports = {
   registerCTrader,
   getCTraderStatus,
+  getCTraderStatusForSymbol: (symbol) => getCTraderStatus(symbol),
+  getMultiSymbolMarkets: () => multiSymbolMarket.list(),
+  getMultiSymbolMarket: (symbol) => multiSymbolMarket.getSnapshot(symbol),
   setMarketEngine,
   getDatabaseHealth,
   queryDatabase,
@@ -2605,6 +2586,7 @@ module.exports = {
   placeDemoMarketOrder,
   getAccountBalance,
   getXAUUSDVolumeConstraints,
+  getSymbolVolumeConstraints: getXAUUSDVolumeConstraints,
   getActiveSymbolVolumeConstraints: getXAUUSDVolumeConstraints,
   isSupportedSymbol,
   normalizeSymbolName,

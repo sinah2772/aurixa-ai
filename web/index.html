@@ -58,7 +58,7 @@
       <div class="section-title">MANUAL CONTROL</div>
       <div class="section-heading" id="manualControlTitle">AUTO-TRADING AUTHORIZATION</div>
       <div class="manual-control-row">
-        <label for="tradingSymbol">TRADING SYMBOL</label>
+        <label for="tradingSymbol">CHART SYMBOL</label>
         <select id="tradingSymbol" aria-label="Trading symbol">
           <option value="" selected disabled>Loading broker symbols…</option>
         </select>
@@ -70,7 +70,16 @@
         <button id="manualAutoTradingButton" type="button" class="manual-trading-button" aria-pressed="false">ENABLE AUTO-TRADING</button>
         <strong id="manualAutoTradingStatus" role="status" aria-live="polite">CHECKING STATUS…</strong>
       </div>
-      <p class="notice">Auto-trading starts only after you enable it. Only broker-discovered supported symbols are selectable. Switching symbols requires the active symbol to be flat; changing symbol disables auto-trading. Turning it off stops new entries; it does not close existing positions.</p>
+      <p class="notice">Auto-trading is OFF after every restart. When enabled, AURIXA scans every broker-verified supported symbol independently, sizing each entry from the current demo balance and each symbol's broker volume rules. A symbol with stale quotes, insufficient candles, invalid spread, unsafe position protection, or failed risk checks is blocked. Changing the chart symbol disables new entries; turning auto-trading off does not close existing positions.</p>
+    </section>
+
+    <section class="panel multi-symbol-panel">
+      <div class="section-title">MULTI-CURRENCY SCANNER</div>
+      <div class="section-heading">ALL BROKER-VERIFIED SUPPORTED SYMBOLS · M5</div>
+      <div class="multi-symbol-summary" id="multiSymbolSummary">Checking broker markets…</div>
+      <div class="multi-symbol-grid" id="multiSymbolGrid">
+        <div class="empty-state">Waiting for per-symbol quotes and M5 history…</div>
+      </div>
     </section>
 
     <div class="dashboard-grid">

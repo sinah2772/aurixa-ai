@@ -1633,3 +1633,15 @@ main > .panel,.dashboard-grid > .panel{min-width:0}
 #manualAutoTradingStatus { font-size:12px; color:var(--muted); }
 #manualAutoTradingStatus.ready { color:var(--green); }
 #manualAutoTradingStatus.blocked { color:var(--red); }
+
+
+.multi-symbol-panel { margin-bottom:16px; }
+.multi-symbol-summary { margin:10px 0 14px; color:var(--muted); font-size:12px; font-weight:800; }
+.multi-symbol-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }
+.multi-symbol-card { min-width:0; padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--panel2); }
+.multi-symbol-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+.multi-symbol-card-head strong { color:var(--text); font-size:14px; }
+.market-ready { color:var(--green); font-size:10px; font-weight:900; }
+.market-wait { color:var(--muted); font-size:10px; font-weight:900; }
+.multi-symbol-quote { color:var(--text); font-size:11px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.multi-symbol-detail { margin-top:7px; color:var(--muted); font-size:10px; line-height:1.5; overflow-wrap:anywhere; }
