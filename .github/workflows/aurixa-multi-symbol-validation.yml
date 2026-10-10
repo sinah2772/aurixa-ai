@@ -1,0 +1,28 @@
+name: AURIXA multi-symbol validation
+
+on:
+  push:
+    branches: [main, feature/manual-auto-trading-toggle]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit tests
+        run: npm test
+      - name: JavaScript syntax checks
+        run: |
+          node --check server/server.js
+          node --check server/ctrader.js
+          node --check server/auto-trader.js
+          node --check server/ai-trader-engine.js
+          node --check server/market-engine.js
+          node --check server/symbol-support.js
+          node --check web/manual-control.js
+          node --check web/app.js
