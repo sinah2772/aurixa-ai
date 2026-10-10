@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
-const { normalizeSymbolName: normalizeCanonicalSymbol, isSupportedSymbol, SUPPORTED_SYMBOLS } = require("./symbol-support");
+const { normalizeSymbolName: normalizeCanonicalSymbol, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMBOLS } = require("./symbol-support");
 
 
 let marketEngine = null;
@@ -1327,6 +1327,9 @@ function connectOpenApi() {
 
           state.symbolId = Number(symbol.symbolId);
           state.symbolName = symbol.symbolName;
+          state.symbolDigits = symbol.digits != null && Number.isInteger(Number(symbol.digits))
+            ? Number(symbol.digits)
+            : (getSymbolProfile(symbol.symbolName)?.digits ?? 5);
 
           // ProtoOASubscribeSpotsReq
           send(ws, 2127, {
@@ -1807,7 +1810,7 @@ function registerCTrader(app) {
       state.symbolName = symbol.symbolName;
       state.symbolDigits = symbol.digits != null && Number.isFinite(Number(symbol.digits))
         ? Number(symbol.digits)
-        : 5;
+        : (getSymbolProfile(symbol.symbolName)?.digits ?? 5);
       state.bid = null;
       state.ask = null;
       state.lastUpdate = null;
