@@ -11,7 +11,6 @@
   let enabled = false;
   let busy = false;
   let selectedSymbol = "";
-  let latestMarkets = [];
 
   function canonical(value) {
     return String(value || "").trim().toUpperCase().replace(/[\/\s_-]/g, "");
@@ -85,7 +84,6 @@
       const data = await response.json();
       if (!response.ok || data.ok !== true) throw new Error(data.error || "MULTI_SYMBOL_STATUS_UNAVAILABLE");
       const markets = Array.isArray(data.markets) ? data.markets : [];
-      latestMarkets = markets;
       const readyCount = Number(data.readyCount || markets.filter(item => item.ready === true).length);
       const discoveredCount = Number(data.discovered || markets.length);
       multiSymbolSummary.textContent =
