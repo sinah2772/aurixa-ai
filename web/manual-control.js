@@ -38,7 +38,7 @@
       if (!value) continue;
       const option = document.createElement("option");
       option.value = value;
-      option.textContent = name + " · broker ID " + item.symbolId;
+      option.textContent = (value === canonical(name) ? name : value + " (broker: " + name + ")") + " · broker ID " + item.symbolId;
       symbolSelect.appendChild(option);
     }
     if (!symbolSelect.options.length) {
