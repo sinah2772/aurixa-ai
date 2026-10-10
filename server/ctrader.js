@@ -2228,7 +2228,7 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null,
       await new Promise(resolve => setTimeout(resolve, 500));
 
       try {
-        const positions = await getOpenXAUUSDPositions(true);
+        const positions = await getOpenXAUUSDPositions(true, symbolName);
         const position = positions.find(p => Number(p?.positionId) === pid);
 
         if (matchesBrokerProtection(position)) {
