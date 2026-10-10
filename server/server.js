@@ -33,7 +33,7 @@ async function auditAiDecision(decision){
   const parsedCandleTime=Date.parse(decision.candleTime);
   const fallbackCandleTime=Math.floor(Date.now()/300000)*300000;
   const candleTime=new Date(Number.isFinite(parsedCandleTime)?parsedCandleTime:fallbackCandleTime);
-  const latest=await queryDatabase("SELECT signal,candle_time AS \"candleTime\" FROM aurixa.ai_signals ORDER BY created_at DESC LIMIT 1");
+  const latest=await queryDatabase("SELECT signal,candle_time AS \"candleTime\" FROM aurixa.ai_signals WHERE symbol=$1 ORDER BY created_at DESC LIMIT 1",[decision.symbol||"XAUUSD"]);
   const previous=latest.rows[0];
   const previousCandle=previous?.candleTime?Date.parse(previous.candleTime):NaN;
   const candleChanged=!previous || !Number.isFinite(previousCandle) || candleTime.getTime()!==previousCandle;
