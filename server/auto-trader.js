@@ -454,7 +454,7 @@ async function syncOpenPositions(symbolName=null){
       // ProtoOAReconcileRes places the actual position entry in position.price;
       // tradeData commonly has no openPrice/price field.
       let entry=numericPrice(pos.price,td.openPrice,td.price,pos.openPrice,td.entryPrice);
-      const status=cTrader.getCTraderStatus?.()||{};
+      const status=cTrader.getCTraderStatusForSymbol?.(targetSymbol)||cTrader.getCTraderStatus?.()||{};
       const market=direction==="BUY"?numericPrice(status.bid):direction==="SELL"?numericPrice(status.ask):NaN;
       const current=Number.isFinite(market)?market:numericPrice(pos.currentPrice,td.currentPrice,td.price);
       if(!positionId||!direction){
@@ -676,7 +676,7 @@ async function syncOpenPositions(symbolName=null){
       const stopAlreadyAtOrBeyondBreakeven=Number.isFinite(currentSL)&&(t.direction==="BUY"?currentSL>=entry:currentSL<=entry);
       if(t.breakeven_applied!==true&&rVal>=cfg.breakevenR&&cTrader.modifyPositionProtection)try{
         // Never move a profit-protecting trailing stop backward to entry.
-        if(!stopAlreadyAtOrBeyondBreakeven) await cTrader.modifyPositionProtection(t.position_id,entry,Number(t.planned_take_profit_price));
+        if(!stopAlreadyAtOrBeyondBreakeven) await cTrader.modifyPositionProtection(t.position_id,entry,Number(t.planned_take_profit_price),targetSymbol);
         await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);protectedCount++;
       }catch(e){console.warn("AI breakeven:",e.message);}
       await dbQuery("UPDATE aurixa.auto_trades SET execution_entry_price=COALESCE(execution_entry_price,$2),status='OPEN',profit=$3,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(entry)?entry:null,Number.isFinite(pnl)?pnl:null]);updated++;
