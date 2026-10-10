@@ -19,6 +19,7 @@ const {
 const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const aiTraderEngine = require("./ai-trader-engine");
+const { normalizeSymbolName, isSupportedSymbol } = require("./symbol-support");
 async function auditAiDecision(decision){
  try{
   await queryDatabase("CREATE SCHEMA IF NOT EXISTS aurixa");
@@ -224,7 +225,7 @@ app.get("/api/auto-trader/status", (req, res) => {
 
 // Manual auto-trading control. Defaults to OFF after each process start.
 // Enabling is allowed only on a connected, authorized demo account with
-// broker trading permission. The current execution engine supports XAUUSD.
+// broker trading permission. Only explicitly supported and broker-discovered symbols can be armed.
 app.post("/api/auto-trader/control", (req, res) => {
   const enabled = req.body?.enabled;
   if (typeof enabled !== "boolean") {
@@ -237,7 +238,7 @@ app.post("/api/auto-trader/control", (req, res) => {
   }
 
   const ct = getCTraderStatus() || {};
-  const symbol = String(ct.symbolName || ct.symbol || "").toUpperCase();
+  const symbol = normalizeSymbolName(ct.symbolName || ct.symbol || "");
   if (!ct.connected || !ct.authorized) {
     return res.status(409).json({ ok: false, enabled: false, error: "CTRADER_NOT_READY" });
   }
@@ -247,8 +248,8 @@ app.post("/api/auto-trader/control", (req, res) => {
   if (ct.tradingPermission !== true) {
     return res.status(409).json({ ok: false, enabled: false, error: "BROKER_TRADING_PERMISSION_REQUIRED" });
   }
-  if (symbol !== "XAUUSD") {
-    return res.status(409).json({ ok: false, enabled: false, error: "UNSUPPORTED_SYMBOL: current auto-trader supports XAUUSD only" });
+  if (!isSupportedSymbol(symbol) || !(ct.symbols || []).some(item => normalizeSymbolName(item.symbolName || item.canonicalName) === symbol)) {
+    return res.status(409).json({ ok: false, enabled: false, error: "UNSUPPORTED_SYMBOL_OR_NOT_DISCOVERED" });
   }
 
   process.env.AUTO_TRADING = "true";
@@ -285,7 +286,8 @@ app.get("/api/auto-trader/positions", async (req, res) => {
 
     // Read the broker position snapshot on every request, including
     // protection orders, so the dashboard never relies on stale DB state.
-    const positions = await ctrader.getOpenXAUUSDPositions(true);
+    const getPositions = ctrader.getOpenSymbolPositions || ctrader.getOpenXAUUSDPositions;
+    const positions = await getPositions(true);
 
     const bid = Number(status.bid);
     const ask = Number(status.ask);
@@ -336,7 +338,7 @@ app.get("/api/auto-trader/positions", async (req, res) => {
 
       return {
         ...position,
-        symbol: String(status.symbolName || status.symbol || "XAUUSD").toUpperCase(),
+        symbol: normalizeSymbolName(status.symbolName || status.symbol || "XAUUSD"),
         direction,
         entryPrice: Number.isFinite(entry) ? entry : null,
         currentPrice: Number.isFinite(currentPrice) ? currentPrice : null,
@@ -365,6 +367,8 @@ app.get("/api/auto-trader/positions", async (req, res) => {
       readOnly: true,
       live: true,
       quoteUpdatedAt: status.lastUpdate || null,
+      symbol: normalizeSymbolName(status.symbolName || status.symbol || "XAUUSD"),
+      symbolDigits: status.symbolDigits ?? null,
       bid: Number.isFinite(bid) ? bid : null,
       ask: Number.isFinite(ask) ? ask : null,
       count: livePositions.length,
@@ -568,7 +572,7 @@ app.get("/api/market",(req,res)=>{
   const decision = aiTraderEngine.decide(state.candles || [], ct);
 
   res.json({
-    symbol: ct.symbol || "XAUUSD",
+    symbol: normalizeSymbolName(ct.symbolName || ct.symbol || "XAUUSD"),
     timeframe: "5m",
 
     price: ct.mid ?? state.price ?? null,
