@@ -418,7 +418,9 @@ async function syncOpenPositions(){
   let updated=0,closed=0,protectedCount=0,trailingUpdated=0;
   const liveStatus=cTrader.getCTraderStatus?.()||{};
   const liveCandles=cTrader.getMarketCandles?.()||[];
-  const exitDecision=cfg.exitReversalEnabled ? (aiEngine?.decide(liveCandles,liveStatus)||null) : null;
+  const marketDecision=aiEngine?.decide(liveCandles,liveStatus)||null;
+  const exitDecision=cfg.exitReversalEnabled ? marketDecision : null;
+  const activeProfile=getSymbolProfile(liveStatus.symbolName||liveStatus.symbol);
   const now=Date.now();
   const eligibleReversal=Boolean(
     exitDecision?.executionEligible===true &&
@@ -428,9 +430,9 @@ async function syncOpenPositions(){
      (exitDecision.signal==="SELL" && exitDecision.trend==="BEARISH"))
   );
 
-  // Trail EVERY open XAUUSD position independently. This intentionally runs
-  // at the broker-position level so manually opened or previously untracked
-  // XAUUSD positions are protected too. Demo-only is enforced by cTrader.
+  // Trail every open position for the selected symbol independently.
+  // Symbol switching is blocked while positions are open, keeping its live
+  // quote and candle stream available for protection repair and trailing.
   if(typeof cTrader.modifyPositionProtection==="function"){
     for(const pos of positions){
       const positionId=pos?.positionId;
@@ -620,8 +622,13 @@ async function syncOpenPositions(){
       const baseRisk=storedRisk>0?storedRisk:
         (Number.isFinite(plannedStop)?Math.abs(plannedEntry-plannedStop):0);
       const profitMove=direction==="BUY"?current-entry:entry-current;
-      const triggerDistance=baseRisk>0?baseRisk*cfg.trailingTriggerR:cfg.trailingFixedDistance;
-      const trailDistance=baseRisk>0?baseRisk*cfg.trailingDistanceR:cfg.trailingFixedDistance;
+      // For manual/untracked positions, derive trailing distances from the
+      // active symbol's live ATR; use a symbol-scaled floor if candles are not ready.
+      const fallbackTrailBase=Number(marketDecision?.atr)>0
+        ? Number(marketDecision.atr)
+        : Math.max(Number(activeProfile?.stopBuffer||0),0.00001)*10;
+      const triggerDistance=baseRisk>0?baseRisk*cfg.trailingTriggerR:fallbackTrailBase*cfg.trailingTriggerR;
+      const trailDistance=baseRisk>0?baseRisk*cfg.trailingDistanceR:fallbackTrailBase*cfg.trailingDistanceR;
       if(!Number.isFinite(profitMove)||profitMove<triggerDistance||!Number.isFinite(trailDistance)||trailDistance<=0)continue;
 
       const candidate=direction==="BUY"?current-trailDistance:current+trailDistance;
