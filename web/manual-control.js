@@ -4,6 +4,8 @@
   const statusEl = document.getElementById("manualAutoTradingStatus");
   const modeEl = document.getElementById("manualTradingMode");
   const symbolSelect = document.getElementById("tradingSymbol");
+  const multiSymbolGrid = document.getElementById("multiSymbolGrid");
+  const multiSymbolSummary = document.getElementById("multiSymbolSummary");
   if (!button || !statusEl || !symbolSelect) return;
 
   let enabled = false;
@@ -54,6 +56,52 @@
     symbolSelect.value = match ? selected : canonical(data.selectedSymbol || symbols[0].symbolName);
     selectedSymbol = symbolSelect.value;
     symbolSelect.disabled = busy;
+  }
+
+  async function refreshMultiSymbolStatus() {
+    if (!multiSymbolGrid || !multiSymbolSummary) return;
+    try {
+      const response = await fetch("/api/auto-trader/multi-symbol-status", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok || data.ok !== true) throw new Error(data.error || "MULTI_SYMBOL_STATUS_UNAVAILABLE");
+      const markets = Array.isArray(data.markets) ? data.markets : [];
+      multiSymbolSummary.textContent = (data.enabled ? "AUTO-TRADING ENABLED · " : "AUTO-TRADING OFF · ") +
+        String(data.readyCount || 0) + " / " + String(data.discovered || 0) + " MARKETS READY · DEMO ONLY";
+      multiSymbolGrid.replaceChildren();
+      for (const market of markets) {
+        const card = document.createElement("div");
+        card.className = "multi-symbol-card";
+        const head = document.createElement("div");
+        head.className = "multi-symbol-card-head";
+        const name = document.createElement("strong");
+        name.textContent = market.symbol || "UNKNOWN";
+        const status = document.createElement("span");
+        status.className = market.ready ? "market-ready" : "market-wait";
+        status.textContent = market.ready ? "READY" : "WAIT";
+        head.append(name, status);
+        const quote = document.createElement("div");
+        quote.className = "multi-symbol-quote";
+        const bid = Number(market.bid), ask = Number(market.ask);
+        quote.textContent = Number.isFinite(bid) && Number.isFinite(ask)
+          ? "BID " + bid + " · ASK " + ask
+          : "QUOTE —";
+        const detail = document.createElement("div");
+        detail.className = "multi-symbol-detail";
+        detail.textContent = "M5 CANDLES " + String(market.candleCount || 0) + " · " +
+          (market.reason || "STATUS UNKNOWN") +
+          (market.symbolName && market.symbolName !== market.symbol ? " · BROKER " + market.symbolName : "");
+        card.append(head, quote, detail);
+        multiSymbolGrid.appendChild(card);
+      }
+      if (!markets.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No supported symbols discovered on this cTrader account.";
+        multiSymbolGrid.appendChild(empty);
+      }
+    } catch (error) {
+      multiSymbolSummary.textContent = "MULTI-SYMBOL STATUS UNAVAILABLE";
+    }
   }
 
   async function readStatus() {
@@ -134,7 +182,7 @@
         throw new Error(messages[data.error] || data.error || "CONTROL_REQUEST_FAILED");
       }
       enabled = data.enabled === true;
-      render(enabled ? "ENABLED · DEMO ONLY · " + selectedSymbol : "OFF · NEW ENTRIES DISABLED",
+      render(enabled ? "ENABLED · DEMO ONLY · ALL MARKETS SCANNED" : "OFF · NEW ENTRIES DISABLED",
         enabled ? "ready" : "");
     } catch (error) {
       render(error.message || "CONTROL REQUEST FAILED", "blocked");
@@ -149,6 +197,8 @@
     }
   });
 
+  refreshMultiSymbolStatus();
+  window.setInterval(refreshMultiSymbolStatus, 5000);
   refreshSymbols().then(readStatus).catch(() => {
     render("WAITING FOR cTRADER SYMBOL DISCOVERY", "blocked");
   });
