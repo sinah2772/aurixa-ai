@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
+const { normalizeSymbolName: normalizeCanonicalSymbol, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMBOLS } = require("./symbol-support");
 
 
 let marketEngine = null;
@@ -75,7 +76,7 @@ const state = {
 };
 
 function normalizeSymbolName(value) {
-  return String(value || "").trim().toUpperCase();
+  return normalizeCanonicalSymbol(value);
 }
 
 function rememberSymbols(symbols) {
@@ -84,14 +85,14 @@ function rememberSymbols(symbols) {
   for (const symbol of symbols) {
     const name = normalizeSymbolName(symbol.symbolName);
 
-    if (!name || !Number.isFinite(Number(symbol.symbolId))) {
+    if (!name || !isSupportedSymbol(name) || !Number.isFinite(Number(symbol.symbolId))) {
       continue;
     }
 
     availableSymbols.set(name, {
       symbolId: Number(symbol.symbolId),
       symbolName: String(symbol.symbolName),
-      digits: Number.isFinite(Number(symbol.digits))
+      digits: symbol.digits != null && Number.isFinite(Number(symbol.digits))
         ? Number(symbol.digits)
         : null
     });
@@ -107,33 +108,15 @@ function findAvailableSymbol(name) {
 }
 
 function getSupportedSymbols() {
-  const result = [];
-
-  for (const symbol of availableSymbols.values()) {
-    const name = normalizeSymbolName(symbol.symbolName);
-
-    const isGold =
-      name === "XAUUSD" ||
-      name.includes("XAUUSD");
-
-    const isBitcoin =
-      name.includes("BTCUSD") ||
-      name === "BTC" ||
-      name.includes("BITCOIN") ||
-      name.includes("XBT");
-
-    if (isGold || isBitcoin) {
-      result.push({
-        symbolName: symbol.symbolName,
-        symbolId: Number(symbol.symbolId),
-        digits: symbol.digits
-      });
-    }
-  }
-
-  return result.sort((a, b) =>
-    a.symbolName.localeCompare(b.symbolName)
-  );
+  return SUPPORTED_SYMBOLS
+    .map(canonical => availableSymbols.get(canonical))
+    .filter(Boolean)
+    .map(symbol => ({
+      symbolName: symbol.symbolName,
+      canonicalName: normalizeSymbolName(symbol.symbolName),
+      symbolId: Number(symbol.symbolId),
+      digits: symbol.digits
+    }));
 }
 
 const CLIENT_ID = process.env.CTRADER_CLIENT_ID;
@@ -1326,30 +1309,27 @@ function connectOpenApi() {
             JSON.stringify(getSupportedSymbols())
           );
 
-          const exact = symbols.find(
-            s => String(s.symbolName || "").toUpperCase() === "XAUUSD"
-          );
-
-          const fallback = symbols.find(
-            s => String(s.symbolName || "").toUpperCase().includes("XAUUSD")
-          );
-
-          const symbol = exact || fallback;
-
+          const requestedDefault = normalizeSymbolName(process.env.CTRADER_DEFAULT_SYMBOL || "XAUUSD");
+          let symbol = findAvailableSymbol(requestedDefault);
           if (!symbol) {
-            const available = symbols
-              .map(s => String(s.symbolName || ""))
-              .filter(Boolean)
-              .slice(0, 100);
-
-            throw new Error(
-              "XAUUSD was not found. Available symbols: " +
-              available.join(", ")
-            );
+            const discovered = getSupportedSymbols();
+            symbol = discovered[0] || null;
+            if (symbol) {
+              console.warn("AURIXA_DEFAULT_SYMBOL_FALLBACK:", JSON.stringify({
+                requested: requestedDefault,
+                selected: symbol.symbolName
+              }));
+            }
+          }
+          if (!symbol) {
+            throw new Error("None of the ten supported symbols were discovered on this cTrader account");
           }
 
           state.symbolId = Number(symbol.symbolId);
-          state.symbolName = symbol.symbolName || "XAUUSD";
+          state.symbolName = symbol.symbolName;
+          state.symbolDigits = symbol.digits != null && Number.isInteger(Number(symbol.digits))
+            ? Number(symbol.digits)
+            : (getSymbolProfile(symbol.symbolName)?.digits ?? 5);
 
           // ProtoOASubscribeSpotsReq
           send(ws, 2127, {
@@ -1399,9 +1379,16 @@ function connectOpenApi() {
           return;
         }
 
-        // ProtoOAGetTrendbarsRes
-        // Historical XAUUSD M5 candles.
+        // ProtoOAGetTrendbarsRes: never mix late responses from a previous symbol.
         if (payloadType === 2138) {
+  if (payload.symbolId != null && state.symbolId != null &&
+      Number(payload.symbolId) !== Number(state.symbolId)) {
+    console.log("AURIXA_STALE_SYMBOL_HISTORY_IGNORED:", JSON.stringify({
+      responseSymbolId: Number(payload.symbolId),
+      activeSymbolId: Number(state.symbolId)
+    }));
+    return;
+  }
   const bars = Array.isArray(payload.trendbar)
     ? payload.trendbar
     : [];
@@ -1744,7 +1731,7 @@ function registerCTrader(app) {
     });
   });
 
-  app.post("/api/ctrader/select-symbol", (req, res) => {
+  app.post("/api/ctrader/select-symbol", async (req, res) => {
     try {
       const requested = normalizeSymbolName(req.body?.symbol);
 
@@ -1783,6 +1770,34 @@ function registerCTrader(app) {
       const accountId = Number(state.accountId);
       const symbolId = Number(symbol.symbolId);
 
+      if (normalizeSymbolName(state.symbolName) === normalizeSymbolName(symbol.symbolName)) {
+        return res.json({
+          ok: true,
+          symbol: state.symbolName,
+          symbolId: state.symbolId,
+          selected: true,
+          unchanged: true,
+          tradingEnabled: String(process.env.AUTO_TRADING || "false").toLowerCase() === "true",
+          paperTrading: true
+        });
+      }
+
+      // The app runs one active market engine at a time. Refuse a market
+      // switch while a position for the active symbol is open, because its
+      // quote stream is required for verified SL/TP repair and trailing.
+      const activePositions = await getOpenXAUUSDPositions(true);
+      if (activePositions.length) {
+        return res.status(409).json({
+          ok: false,
+          error: "OPEN_POSITIONS_MUST_BE_CLOSED_BEFORE_SWITCHING_SYMBOL",
+          activeSymbol: state.symbolName,
+          openPositions: activePositions.length
+        });
+      }
+
+      // Never leave the auto-trader armed across a symbol switch.
+      process.env.AUTO_TRADING = "false";
+
       /*
        * Reset AURIXA's generic M5 engine so candles from
        * the previous pair cannot mix with the new pair.
@@ -1793,9 +1808,9 @@ function registerCTrader(app) {
 
       state.symbolId = symbolId;
       state.symbolName = symbol.symbolName;
-      state.symbolDigits = Number.isFinite(Number(symbol.digits))
+      state.symbolDigits = symbol.digits != null && Number.isFinite(Number(symbol.digits))
         ? Number(symbol.digits)
-        : 5;
+        : (getSymbolProfile(symbol.symbolName)?.digits ?? 5);
       state.bid = null;
       state.ask = null;
       state.lastUpdate = null;
@@ -1822,9 +1837,19 @@ function registerCTrader(app) {
         5
       );
 
+      // Request fresh M5 history for the newly selected broker symbol.
+      // The response handler verifies symbolId before feeding the shared engine.
+      const historyEnd = Math.floor(Date.now() / (5 * 60000)) * (5 * 60000);
+      send(state.ws, 2137, {
+        ctidTraderAccountId: accountId,
+        symbolId,
+        period: 5,
+        count: 288,
+        toTimestamp: historyEnd
+      });
+
       /*
-       * Historical M5 candles are loaded by the authenticated connection.
-       * Avoid duplicate 2137 requests during symbol selection.
+       * Historical M5 candles are now requested for this selected symbol.
        */
       /*
        * Opening Range is XAUUSD-specific.
@@ -1834,7 +1859,7 @@ function registerCTrader(app) {
        * as M5 so selecting XAUUSD again cannot duplicate
        * the existing M1 trendbar subscription.
        */
-      if (normalizeSymbolName(symbol.symbolName).includes("XAUUSD")) {
+      if (normalizeSymbolName(symbol.symbolName) === "XAUUSD") {
         subscribeLiveTrendbar(
           state.ws,
           accountId,
@@ -1891,6 +1916,7 @@ function registerCTrader(app) {
           }
         : null,
       symbol: state.symbolName,
+      symbolName: state.symbolName,
       symbolId: state.symbolId,
       symbols: getSupportedSymbols(),
       bid: state.bid,
@@ -2062,11 +2088,15 @@ async function getXAUUSDVolumeConstraints() {
   const symbol = Array.isArray(rawSymbols)
     ? (rawSymbols.find(s => Number(s?.symbolId) === Number(state.symbolId)) || rawSymbols[0] || {})
     : (rawSymbols || msg?.payload || {});
+  const brokerDigits = symbol.digits == null ? NaN : Number(symbol.digits);
+  if (Number.isInteger(brokerDigits) && brokerDigits >= 0 && brokerDigits <= 10) {
+    state.symbolDigits = brokerDigits;
+  }
   const minVolume = Number(symbol.minVolume);
   const maxVolume = Number(symbol.maxVolume);
   const stepVolume = Number(symbol.stepVolume);
   if (!Number.isFinite(minVolume) || minVolume <= 0 || !Number.isFinite(stepVolume) || stepVolume <= 0) {
-    throw new Error("cTrader XAUUSD volume constraints are unavailable");
+    throw new Error("cTrader volume constraints are unavailable for " + state.symbolName);
   }
   return {
     minVolume,
@@ -2293,12 +2323,22 @@ async function placeDemoMarketOrder({
     throw new Error("ACCOUNT ENVIRONMENT UNKNOWN");
   }
 
-  if (String(state.symbolName || "").toUpperCase() !== "XAUUSD") {
-    throw new Error("XAUUSD is not the active trading symbol");
+  if (!isSupportedSymbol(state.symbolName)) {
+    throw new Error("UNSUPPORTED_SYMBOL: " + String(state.symbolName || "unknown"));
   }
 
   if (!Number.isInteger(Number(volume)) || Number(volume) <= 0) {
     throw new Error("Invalid cTrader volume");
+  }
+
+  const volumeRules = await getXAUUSDVolumeConstraints();
+  const minVolume = Number(volumeRules.minVolume);
+  const stepVolume = Number(volumeRules.stepVolume);
+  const maxVolume = Number(volumeRules.maxVolume);
+  if (Number(volume) < minVolume ||
+      (Number.isFinite(maxVolume) && maxVolume > 0 && Number(volume) > maxVolume) ||
+      ((Number(volume) - minVolume) % stepVolume !== 0)) {
+    throw new Error("ORDER_VOLUME_OUTSIDE_BROKER_CONSTRAINTS for " + state.symbolName);
   }
 
   // Intentionally no fixed open-position-count gate.
@@ -2564,5 +2604,9 @@ module.exports = {
   closeXAUUSDPosition,
   placeDemoMarketOrder,
   getAccountBalance,
-  getXAUUSDVolumeConstraints
+  getXAUUSDVolumeConstraints,
+  getActiveSymbolVolumeConstraints: getXAUUSDVolumeConstraints,
+  isSupportedSymbol,
+  normalizeSymbolName,
+  getSupportedSymbols
 };
