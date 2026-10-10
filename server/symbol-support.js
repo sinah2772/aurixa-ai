@@ -21,7 +21,12 @@ const PROFILES = Object.freeze({
 });
 
 function normalizeSymbolName(value) {
-  return String(value || "").trim().toUpperCase().replace(/[\/\s_-]/g, "");
+  const normalized = String(value || "").trim().toUpperCase().replace(/[\/\s_-]/g, "");
+  // FxPro cTrader exposes its Bitcoin-vs-USD instrument as "BITCOIN".
+  // Keep BTCUSD as AURIXA's canonical name while preserving the broker's
+  // actual symbolName and symbolId for all cTrader requests.
+  if (normalized === "BITCOIN") return "BTCUSD";
+  return normalized;
 }
 
 function isSupportedSymbol(value) {
