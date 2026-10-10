@@ -249,22 +249,17 @@
     const bid = first(market.bid, market.bidPrice, data.bid, data.bidPrice, ctrader?.bid, ctrader?.bidPrice);
     const ask = first(market.ask, market.askPrice, data.ask, data.askPrice, ctrader?.ask, ctrader?.askPrice);
 
-    text("price", number(price, 2));
-    text("bid", number(bid, 2));
-    text("ask", number(ask, 2));
+    const activeSymbol = String(first(ctrader?.symbolName, ctrader?.symbol, market.symbol, market.symbolName, "XAUUSD")).toUpperCase();
+    const digits = priceDigits(activeSymbol);
+    text("price", number(price, digits));
+    text("bid", number(bid, digits));
+    text("ask", number(ask, digits));
 
     if (Number.isFinite(Number(bid)) && Number.isFinite(Number(ask))) {
-      text("spread", number(Number(ask) - Number(bid), 2));
+      text("spread", number(Number(ask) - Number(bid), digits));
     }
 
-    const marketSymbol = String(
-      first(
-        ctrader?.symbol,
-        market.symbol,
-        market.symbolName,
-        "XAUUSD"
-      )
-    ).toUpperCase();
+    const marketSymbol = activeSymbol;
 
     text("instrument", marketSymbol);
     text("chartTitle", marketSymbol + " / 5 MINUTE");
