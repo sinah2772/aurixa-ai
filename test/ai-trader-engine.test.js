@@ -13,6 +13,14 @@ test("AI decision keeps the selected supported symbol while waiting for candles"
   }
 });
 
+test("FxPro BITCOIN broker name evaluates under canonical BTCUSD", () => {
+  const decision = ai.decide([], { symbol: "BITCOIN" });
+  assert.equal(decision.symbol, "BTCUSD");
+  assert.equal(decision.signal, "WAIT");
+  assert.equal(decision.executionEligible, false);
+  assert.ok(!decision.blockedBy.includes("Unsupported trading symbol"));
+});
+
 test("AI decision fails closed for an unsupported symbol", () => {
   const decision = ai.decide([], { symbol: "ETHUSD" });
   assert.equal(decision.signal, "WAIT");
