@@ -2,7 +2,7 @@ name: AURIXA multi-symbol validation
 
 on:
   push:
-    branches: [main, 'feature/ctrader-multi-symbol-demo*', feature/manual-auto-trading-toggle, fix/btcusd-bitcoin-alias]
+    branches: [main, 'feature/ctrader-multi-symbol-demo*', feature/manual-auto-trading-toggle, fix/btcusd-bitcoin-alias, feat/multi-symbol-auto-trading]
   pull_request:
     branches: [main]
 
@@ -24,5 +24,6 @@ jobs:
           node --check server/ai-trader-engine.js
           node --check server/market-engine.js
           node --check server/symbol-support.js
+          node --check server/multi-symbol-market.js
           node --check web/manual-control.js
           node --check web/app.js
