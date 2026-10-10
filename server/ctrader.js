@@ -2329,7 +2329,7 @@ async function placeDemoMarketOrder({
 
   const payload = {
     ctidTraderAccountId: Number(state.accountId),
-    symbolId: Number(state.symbolId),
+    symbolId: targetId,
     orderType: 1,
     tradeSide,
     volume: Number(volume),
@@ -2425,7 +2425,7 @@ async function placeDemoMarketOrder({
 }
 
 
-async function closeXAUUSDPosition(positionId, volume) {
+async function closeXAUUSDPosition(positionId, volume, symbolName = state.symbolName) {
   if (!state.ws || state.ws.readyState !== 1) {
     throw new Error("cTrader WebSocket is not connected");
   }
