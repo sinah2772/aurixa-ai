@@ -232,17 +232,28 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   }
   const configuredMax=Number.isFinite(brokerMax)&&brokerMax>0?Math.min(cfg.maxVolume,brokerMax):cfg.maxVolume;
   const riskAmount=balance*cfg.riskPercent/100;
-  // cTrader Open API volume is sent in "cents": 1000 means 10 base
-  // units. Convert the risk budget into the same volume scale before
-  // normalizing to the broker's min/step/max. The previous calculation
-  // treated volume cents as base units and therefore understated the
-  // tradable volume by 100x, incorrectly rejecting valid confirmed signals.
+  // cTrader volume is expressed in hundredths of the instrument's base units.
+  // Convert quote-currency P/L into the demo account's assumed USD risk budget
+  // for USD-quoted pairs. USDJPY/USDCHF/USDCAD require a fresh inverse conversion
+  // quote; if it is unavailable, fail closed rather than silently mis-size risk.
   const volumeUnitScale=100;
+  const quoteCurrency=decisionSymbol.slice(-3);
+  let quoteToUsdRate=1;
+  if (quoteCurrency !== "USD") {
+    const conversion = cTrader.getMultiSymbolMarket?.("USD" + quoteCurrency);
+    const conversionMid = Number(conversion?.mid);
+    const conversionTime = conversion?.lastUpdate ? Date.parse(conversion.lastUpdate) : NaN;
+    if (!conversion || !Number.isFinite(conversionMid) || conversionMid <= 0 ||
+        !Number.isFinite(conversionTime) || Date.now() - conversionTime > 30000) {
+      return reject("ACCOUNT_CURRENCY_CONVERSION_UNAVAILABLE", {symbol:decisionSymbol,quoteCurrency});
+    }
+    quoteToUsdRate = 1 / conversionMid;
+  }
   let executionRiskDistance=riskDistance;
   let executionStop=stop;
   let executionTarget=target;
   let riskAdjustedForBrokerMinimum=false;
-  const rawVolume=(riskAmount*volumeUnitScale)/executionRiskDistance;
+  const rawVolume=(riskAmount*volumeUnitScale)/(executionRiskDistance*quoteToUsdRate);
   let volume=Math.min(configuredMax,Math.floor(rawVolume/brokerStep)*brokerStep);
 
   // If the structure-based stop is slightly wider than the risk budget,
@@ -264,7 +275,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       executionTarget=decision.signal==="BUY"
         ? entry+executionRiskDistance*2
         : entry-executionRiskDistance*2;
-      const adjustedRaw=(riskAmount*volumeUnitScale)/executionRiskDistance;
+      const adjustedRaw=(riskAmount*volumeUnitScale)/(executionRiskDistance*quoteToUsdRate);
       volume=Math.min(configuredMax,Math.floor(adjustedRaw/brokerStep)*brokerStep);
       if(volume>=brokerMin) riskAdjustedForBrokerMinimum=true;
     }
@@ -293,7 +304,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   console.log("AURIXA ACCOUNT VOLUME CHECK:",JSON.stringify({
     balance,equity:Number.isFinite(equity)?equity:null,
     freeMargin:Number.isFinite(freeMargin)?freeMargin:null,
-    riskPercent:cfg.riskPercent,riskAmount,riskDistance,
+    riskPercent:cfg.riskPercent,riskAmount,riskDistance,quoteToUsdRate,
     executionRiskDistance,
     riskAdjustedForBrokerMinimum,
     volumeUnitScale:100,
