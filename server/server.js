@@ -367,6 +367,8 @@ app.get("/api/auto-trader/positions", async (req, res) => {
       readOnly: true,
       live: true,
       quoteUpdatedAt: status.lastUpdate || null,
+      symbol: normalizeSymbolName(status.symbolName || status.symbol || "XAUUSD"),
+      symbolDigits: status.symbolDigits ?? null,
       bid: Number.isFinite(bid) ? bid : null,
       ask: Number.isFinite(ask) ? ask : null,
       count: livePositions.length,
