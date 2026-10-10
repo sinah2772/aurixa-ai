@@ -10,7 +10,7 @@ test("broker-discovered markets keep independent quotes and M5 history", () => {
     { symbolName: "BITCOIN", canonicalName: "BTCUSD", symbolId: 12, digits: 2 }
   ]);
   const candles = Array.from({ length: 60 }, (_, i) => ({
-    time: 1_800_000_000 + i * 5,
+    time: 29_000_000 + i * 5,
     open: 1.1 + i * 0.00001,
     high: 1.101 + i * 0.00001,
     low: 1.099 + i * 0.00001,
