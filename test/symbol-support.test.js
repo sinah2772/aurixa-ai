@@ -20,6 +20,9 @@ test("the requested ten symbols are supported exactly", () => {
 test("broker separators normalize without accepting suffix variants", () => {
   assert.equal(normalizeSymbolName("EUR/USD"), "EURUSD");
   assert.equal(normalizeSymbolName("usd_jpy"), "USDJPY");
+  assert.equal(normalizeSymbolName("BITCOIN"), "BTCUSD");
+  assert.equal(isSupportedSymbol("BITCOIN"), true);
+  assert.equal(getSymbolProfile("BITCOIN"), getSymbolProfile("BTCUSD"));
   assert.equal(isSupportedSymbol("EUR/USD"), true);
   assert.equal(isSupportedSymbol("EURUSD.raw"), false);
   assert.equal(isSupportedSymbol("BTC"), false);
