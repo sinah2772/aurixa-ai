@@ -40,7 +40,7 @@ function decide(candles,quote={}){
   const maxSpread=Number(process.env["AI_MAX_SPREAD_"+symbol]||(symbol==="XAUUSD"?process.env.AI_MAX_SPREAD:"")||profile.maxSpread);
   const rawDigits=quote.symbolDigits;
   const digits=rawDigits!==null&&rawDigits!==undefined&&Number.isInteger(Number(rawDigits))&&Number(rawDigits)>=0&&Number(rawDigits)<=10?Number(rawDigits):profile.digits;
-  const roundPrice=value=>Number.isFinite(Number(value))?Number(Number(value).toFixed(digits)):null;
+  const roundPrice=value=>value===null||value===undefined||value===""?null:Number.isFinite(Number(value))?Number(Number(value).toFixed(digits)):null;
   const clean=Array.isArray(candles)?candles.filter(c=>c&&[c.open,c.high,c.low,c.close].every(v=>n(v)!==null)).slice(-300):[];
   if(clean.length<MIN_BARS)return wait("Waiting for "+MIN_BARS+" real "+symbol+" candles",{bars:clean.length,candleCount:clean.length},symbol);
   const closes=clean.map(c=>n(c.close)),e9=ema(closes,9),e21=ema(closes,21),e50=ema(closes,50),r=rsi(closes,14),a=atr(clean,14),last=closes.at(-1),prev=closes.at(-2);
