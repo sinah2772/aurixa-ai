@@ -1,0 +1,80 @@
+/* AURIXA AI multi-market dashboard polish — additive overrides */
+:root { color-scheme: dark; }
+.app { width: min(100% - 28px, 1480px); margin-inline: auto; }
+.topbar { position: relative; gap: 14px; }
+.brand { letter-spacing: .16em; }
+.subtitle { line-height: 1.5; }
+main { display: grid; gap: 14px; }
+main > .panel, main > .dashboard-grid { margin: 0; }
+.panel { min-width: 0; }
+.hero { border-color: rgba(245,196,81,.22); }
+.market-top { align-items: flex-start; gap: 12px; }
+.market-meta { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; }
+.market-tag { white-space: nowrap; }
+.manual-control-panel { border-color: rgba(245,196,81,.25); }
+.manual-control-panel .notice { line-height: 1.6; }
+.manual-control-actions { justify-content: flex-start; }
+.manual-trading-button { min-height: 44px; }
+.multi-symbol-panel { border-color: rgba(245,196,81,.25); }
+.multi-symbol-summary { line-height: 1.7; }
+.multi-symbol-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: stretch; }
+.multi-symbol-card {
+  display:flex; flex-direction:column; gap:8px; min-width:0; min-height:170px;
+  padding:12px; border-color:var(--border); transition:border-color .15s ease, background .15s ease;
+}
+.multi-symbol-card.is-selected {
+  border-color: var(--yellow); background: linear-gradient(155deg, rgba(245,196,81,.11), var(--panel2) 70%);
+  box-shadow: inset 0 0 0 1px rgba(245,196,81,.10);
+}
+.multi-symbol-card-head { margin:0; }
+.multi-symbol-card-head strong { font-size:15px; letter-spacing:.025em; }
+.market-ready, .market-wait { flex-shrink:0; border:1px solid currentColor; border-radius:999px; padding:4px 6px; font-size:9px; }
+.market-ready { background:rgba(48,214,138,.07); }
+.market-wait { color:var(--yellow); background:rgba(245,196,81,.06); }
+.multi-symbol-quote { font-size:11px; line-height:1.6; font-variant-numeric:tabular-nums; }
+.multi-symbol-detail { flex:1; font-size:10px; line-height:1.65; }
+.multi-symbol-select {
+  width:100%; min-height:36px; margin-top:auto; padding:8px 9px;
+  border:1px solid var(--border); border-radius:8px; background:#101419; color:var(--text);
+  font-size:9px; font-weight:900; letter-spacing:.06em; cursor:pointer;
+}
+.multi-symbol-card.is-selected .multi-symbol-select { border-color:var(--yellow); color:var(--yellow); }
+.multi-symbol-select:disabled { opacity:.55; cursor:not-allowed; }
+.multi-symbol-select:focus-visible, .manual-trading-button:focus-visible, #tradingSymbol:focus-visible {
+  outline:2px solid var(--yellow); outline-offset:2px;
+}
+.dashboard-grid { gap:14px; }
+.signal-panel .signal-card { justify-content:flex-start; gap:10px; }
+.ai-activity-panel, .confirmed-history-panel, .closed-history-panel { min-width:0; }
+.system-footer { margin-top:2px; }
+@media (max-width: 1200px) {
+  .multi-symbol-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 850px) {
+  .app { width:min(100% - 20px, 100%); }
+  .multi-symbol-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-grid { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width: 520px) {
+  .app { width:calc(100% - 16px); }
+  main { gap:10px; }
+  .topbar { align-items:flex-start; }
+  .subtitle { max-width:235px; font-size:9px; }
+  .market-top { flex-direction:column; }
+  .market-meta { justify-content:flex-start; }
+  .multi-symbol-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:7px; }
+  .multi-symbol-card { min-height:176px; padding:9px; gap:7px; }
+  .multi-symbol-card-head { align-items:flex-start; flex-wrap:wrap; gap:6px; }
+  .multi-symbol-card-head strong { font-size:13px; }
+  .multi-symbol-quote { font-size:10px; }
+  .multi-symbol-detail { font-size:9px; }
+  .multi-symbol-select { min-height:34px; padding:7px 4px; font-size:8px; letter-spacing:.025em; }
+  .manual-control-row { align-items:flex-start; }
+  .manual-control-row select { max-width:65%; min-width:0; }
+  .manual-control-actions { align-items:stretch; flex-direction:column; }
+  .manual-trading-button { width:100%; }
+  #manualAutoTradingStatus { line-height:1.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .multi-symbol-card { transition:none; }
+}

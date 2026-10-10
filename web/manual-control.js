@@ -56,6 +56,25 @@
     symbolSelect.value = match ? selected : canonical(data.selectedSymbol || symbols[0].symbolName);
     selectedSymbol = symbolSelect.value;
     symbolSelect.disabled = busy;
+    // Keep the scanner's selected-market highlight in sync with the dropdown.
+    refreshMultiSymbolStatus();
+  }
+
+  function marketReasonLabel(reason) {
+    const key = String(reason || "STATUS_UNKNOWN").toUpperCase();
+    const labels = {
+      READY: "Market data ready",
+      OK: "Market data ready",
+      QUOTE_STALE: "Quote is stale",
+      STALE_QUOTE: "Quote is stale",
+      INSUFFICIENT_CANDLES: "Waiting for more M5 candles",
+      CANDLES_NOT_READY: "Waiting for M5 history",
+      QUOTE_UNAVAILABLE: "No broker quote",
+      SYMBOL_NOT_FOUND: "Symbol not available",
+      CTRADER_DISCONNECTED: "cTrader disconnected",
+      AUTO_TRADING_DISABLED: "Market ready · auto-trading off"
+    };
+    return labels[key] || key.replaceAll("_", " ").toLowerCase().replace(/^./, c => c.toUpperCase());
   }
 
   async function refreshMultiSymbolStatus() {
@@ -65,32 +84,55 @@
       const data = await response.json();
       if (!response.ok || data.ok !== true) throw new Error(data.error || "MULTI_SYMBOL_STATUS_UNAVAILABLE");
       const markets = Array.isArray(data.markets) ? data.markets : [];
-      multiSymbolSummary.textContent = (data.enabled ? "AUTO-TRADING ENABLED · " : "AUTO-TRADING OFF · ") +
-        String(data.readyCount || 0) + " / " + String(data.discovered || 0) + " MARKETS READY · DEMO ONLY";
+      const readyCount = Number(data.readyCount || markets.filter(item => item.ready === true).length);
+      const discoveredCount = Number(data.discovered || markets.length);
+      multiSymbolSummary.textContent =
+        readyCount + " / " + discoveredCount + " MARKETS READY  ·  " +
+        (data.enabled ? "AUTO-TRADING ON" : "AUTO-TRADING OFF") +
+        "  ·  DEMO ONLY  ·  SELECT A CARD TO LOAD ITS CHART";
       multiSymbolGrid.replaceChildren();
       for (const market of markets) {
-        const card = document.createElement("div");
-        card.className = "multi-symbol-card";
+        const symbol = canonical(market.symbol || market.canonicalName || market.symbolName || "UNKNOWN");
+        const selected = symbol === selectedSymbol;
+        const card = document.createElement("article");
+        card.className = "multi-symbol-card" + (selected ? " is-selected" : "");
+        card.dataset.symbol = symbol;
+
         const head = document.createElement("div");
         head.className = "multi-symbol-card-head";
         const name = document.createElement("strong");
-        name.textContent = market.symbol || "UNKNOWN";
+        name.textContent = symbol;
         const status = document.createElement("span");
         status.className = market.ready ? "market-ready" : "market-wait";
         status.textContent = market.ready ? "READY" : "WAIT";
         head.append(name, status);
+
         const quote = document.createElement("div");
         quote.className = "multi-symbol-quote";
         const bid = Number(market.bid), ask = Number(market.ask);
-        quote.textContent = Number.isFinite(bid) && Number.isFinite(ask)
-          ? "BID " + bid + " · ASK " + ask
-          : "QUOTE —";
+        const digits = ({XAUUSD:2, EURUSD:5, NZDUSD:5, USDCHF:5, USDCAD:5, AUDUSD:5, USDJPY:3, GBPUSD:5, XAGUSD:3, BTCUSD:2})[symbol] ?? 2;
+        const fmt = value => Number.isFinite(value) ? value.toLocaleString(undefined, {minimumFractionDigits:digits, maximumFractionDigits:digits}) : "—";
+        quote.textContent = "BID " + fmt(bid) + "  ·  ASK " + fmt(ask);
+
         const detail = document.createElement("div");
         detail.className = "multi-symbol-detail";
-        detail.textContent = "M5 CANDLES " + String(market.candleCount || 0) + " · " +
-          (market.reason || "STATUS UNKNOWN") +
-          (market.symbolName && market.symbolName !== market.symbol ? " · BROKER " + market.symbolName : "");
-        card.append(head, quote, detail);
+        detail.textContent = "M5 HISTORY  " + String(market.candleCount || 0) + " candles · " +
+          marketReasonLabel(market.reason) +
+          (market.symbolName && market.symbolName !== symbol ? " · Broker: " + market.symbolName : "") +
+          (market.symbolId != null ? " · ID " + market.symbolId : "");
+
+        const select = document.createElement("button");
+        select.type = "button";
+        select.className = "multi-symbol-select";
+        select.textContent = selected ? "CHART SELECTED" : "OPEN IN CHART";
+        select.setAttribute("aria-pressed", String(selected));
+        select.disabled = busy || !symbolSelect || !Array.from(symbolSelect.options).some(option => option.value === symbol);
+        select.addEventListener("click", () => {
+          if (selected || busy) return;
+          symbolSelect.value = symbol;
+          symbolSelect.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        card.append(head, quote, detail, select);
         multiSymbolGrid.appendChild(card);
       }
       if (!markets.length) {
@@ -100,7 +142,12 @@
         multiSymbolGrid.appendChild(empty);
       }
     } catch (error) {
-      multiSymbolSummary.textContent = "MULTI-SYMBOL STATUS UNAVAILABLE";
+      multiSymbolSummary.textContent = "SCANNER STATUS UNAVAILABLE · RETRYING";
+      multiSymbolGrid.replaceChildren();
+      const errorCard = document.createElement("div");
+      errorCard.className = "empty-state";
+      errorCard.textContent = "Unable to load broker market readiness. Auto-trading controls remain governed by the backend.";
+      multiSymbolGrid.appendChild(errorCard);
     }
   }
 
