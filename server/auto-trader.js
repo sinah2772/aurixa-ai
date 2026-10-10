@@ -265,7 +265,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   // broker-executable protection distance.
   if(volume<brokerMin){
     const minVolumeRiskPerPrice=(brokerMin/volumeUnitScale);
-    const maxRiskDistance=(riskAmount*0.995)/minVolumeRiskPerPrice;
+    const maxRiskDistance=(riskAmount*0.995)/(minVolumeRiskPerPrice*quoteToUsdRate);
     const minimumExecutableRisk=Number.isFinite(Number(decision.atr))
       ? Number(decision.atr)*Number(symbolProfile.minStopAtr||1.2)
       : 0;
@@ -281,7 +281,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     }
   }
 
-  const requiredRiskAtMinVolume=(brokerMin/volumeUnitScale)*executionRiskDistance;
+  const requiredRiskAtMinVolume=(brokerMin/volumeUnitScale)*executionRiskDistance*quoteToUsdRate;
   if(volume<brokerMin){
     return reject("RISK_BUDGET_TOO_SMALL_FOR_BROKER_MIN_VOLUME",{
       accountBalance:balance,
