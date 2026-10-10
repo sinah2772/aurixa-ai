@@ -19,6 +19,7 @@ const {
 const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const aiTraderEngine = require("./ai-trader-engine");
+const { normalizeSymbolName, isSupportedSymbol } = require("./symbol-support");
 async function auditAiDecision(decision){
  try{
   await queryDatabase("CREATE SCHEMA IF NOT EXISTS aurixa");
@@ -32,7 +33,7 @@ async function auditAiDecision(decision){
   const parsedCandleTime=Date.parse(decision.candleTime);
   const fallbackCandleTime=Math.floor(Date.now()/300000)*300000;
   const candleTime=new Date(Number.isFinite(parsedCandleTime)?parsedCandleTime:fallbackCandleTime);
-  const latest=await queryDatabase("SELECT signal,candle_time AS \"candleTime\" FROM aurixa.ai_signals ORDER BY created_at DESC LIMIT 1");
+  const latest=await queryDatabase("SELECT signal,candle_time AS \"candleTime\" FROM aurixa.ai_signals WHERE symbol=$1 ORDER BY created_at DESC LIMIT 1",[decision.symbol||"XAUUSD"]);
   const previous=latest.rows[0];
   const previousCandle=previous?.candleTime?Date.parse(previous.candleTime):NaN;
   const candleChanged=!previous || !Number.isFinite(previousCandle) || candleTime.getTime()!==previousCandle;
@@ -224,7 +225,7 @@ app.get("/api/auto-trader/status", (req, res) => {
 
 // Manual auto-trading control. Defaults to OFF after each process start.
 // Enabling is allowed only on a connected, authorized demo account with
-// broker trading permission. The current execution engine supports XAUUSD.
+// broker trading permission. Only explicitly supported and broker-discovered symbols can be armed.
 app.post("/api/auto-trader/control", (req, res) => {
   const enabled = req.body?.enabled;
   if (typeof enabled !== "boolean") {
@@ -237,7 +238,7 @@ app.post("/api/auto-trader/control", (req, res) => {
   }
 
   const ct = getCTraderStatus() || {};
-  const symbol = String(ct.symbolName || ct.symbol || "").toUpperCase();
+  const symbol = normalizeSymbolName(ct.symbolName || ct.symbol || "");
   if (!ct.connected || !ct.authorized) {
     return res.status(409).json({ ok: false, enabled: false, error: "CTRADER_NOT_READY" });
   }
@@ -247,8 +248,8 @@ app.post("/api/auto-trader/control", (req, res) => {
   if (ct.tradingPermission !== true) {
     return res.status(409).json({ ok: false, enabled: false, error: "BROKER_TRADING_PERMISSION_REQUIRED" });
   }
-  if (symbol !== "XAUUSD") {
-    return res.status(409).json({ ok: false, enabled: false, error: "UNSUPPORTED_SYMBOL: current auto-trader supports XAUUSD only" });
+  if (!isSupportedSymbol(symbol) || !(ct.symbols || []).some(item => normalizeSymbolName(item.symbolName || item.canonicalName) === symbol)) {
+    return res.status(409).json({ ok: false, enabled: false, error: "UNSUPPORTED_SYMBOL_OR_NOT_DISCOVERED" });
   }
 
   process.env.AUTO_TRADING = "true";
@@ -285,7 +286,8 @@ app.get("/api/auto-trader/positions", async (req, res) => {
 
     // Read the broker position snapshot on every request, including
     // protection orders, so the dashboard never relies on stale DB state.
-    const positions = await ctrader.getOpenXAUUSDPositions(true);
+    const getPositions = ctrader.getOpenSymbolPositions || ctrader.getOpenXAUUSDPositions;
+    const positions = await getPositions(true);
 
     const bid = Number(status.bid);
     const ask = Number(status.ask);
@@ -294,7 +296,7 @@ app.get("/api/auto-trader/positions", async (req, res) => {
       const td = position?.tradeData || {};
       const side = Number(td.tradeSide);
       const direction = side === 1 ? "BUY" : side === 2 ? "SELL" : null;
-      const entry = Number(td.openPrice ?? td.price ?? position?.openPrice);
+      const entry = Number(position?.price ?? td.openPrice ?? td.price ?? position?.openPrice);
       const volume = Number(td.volume ?? position?.volume);
 
       // cTrader's live quote is the authoritative mark price:
@@ -312,17 +314,6 @@ app.get("/api/auto-trader/positions", async (req, res) => {
         td.profit
       );
 
-      // If cTrader does not include a floating P/L field in the position
-      // snapshot, calculate the live XAUUSD mark-to-market value from the
-      // live bid/ask and cTrader volume units.
-      const calculatedPnl =
-        direction &&
-        Number.isFinite(entry) &&
-        Number.isFinite(currentPrice) &&
-        Number.isFinite(volume)
-          ? (direction === "BUY" ? currentPrice - entry : entry - currentPrice) * volume
-          : null;
-
       // Actual protection must come only from the current cTrader position
       // snapshot. Never fall back to planned/stored trade SL/TP: missing broker
       // fields must remain unconfirmed rather than being shown as protected.
@@ -336,7 +327,7 @@ app.get("/api/auto-trader/positions", async (req, res) => {
 
       return {
         ...position,
-        symbol: String(status.symbolName || status.symbol || "XAUUSD").toUpperCase(),
+        symbol: normalizeSymbolName(status.symbolName || status.symbol || "XAUUSD"),
         direction,
         entryPrice: Number.isFinite(entry) ? entry : null,
         currentPrice: Number.isFinite(currentPrice) ? currentPrice : null,
@@ -352,9 +343,9 @@ app.get("/api/auto-trader/positions", async (req, res) => {
           takeProfitSet: hasTP,
           checkedAt: status.lastUpdate || new Date().toISOString()
         },
-        unrealizedNetProfit: Number.isFinite(brokerPnl)
-          ? brokerPnl
-          : calculatedPnl,
+        // Never invent floating P/L from price difference × broker volume;
+        // volume units and account-currency conversion vary by symbol.
+        unrealizedNetProfit: Number.isFinite(brokerPnl) ? brokerPnl : null,
         liveQuoteTimestamp: status.lastUpdate || new Date().toISOString()
       };
     });
@@ -365,6 +356,8 @@ app.get("/api/auto-trader/positions", async (req, res) => {
       readOnly: true,
       live: true,
       quoteUpdatedAt: status.lastUpdate || null,
+      symbol: normalizeSymbolName(status.symbolName || status.symbol || "XAUUSD"),
+      symbolDigits: status.symbolDigits ?? null,
       bid: Number.isFinite(bid) ? bid : null,
       ask: Number.isFinite(ask) ? ask : null,
       count: livePositions.length,
@@ -568,7 +561,7 @@ app.get("/api/market",(req,res)=>{
   const decision = aiTraderEngine.decide(state.candles || [], ct);
 
   res.json({
-    symbol: ct.symbol || "XAUUSD",
+    symbol: normalizeSymbolName(ct.symbolName || ct.symbol || "XAUUSD"),
     timeframe: "5m",
 
     price: ct.mid ?? state.price ?? null,

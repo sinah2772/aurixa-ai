@@ -64,6 +64,11 @@
     return null;
   }
 
+  function priceDigits(symbol) {
+    const key = String(symbol || "XAUUSD").toUpperCase().replace(/[\/\s_-]/g, "");
+    return ({XAUUSD:2, EURUSD:5, NZDUSD:5, USDCHF:5, USDCAD:5, AUDUSD:5, USDJPY:3, GBPUSD:5, XAGUSD:3, BTCUSD:2})[key] ?? 2;
+  }
+
   function number(v, digits = 2) {
     const n = Number(v);
 
@@ -244,22 +249,17 @@
     const bid = first(market.bid, market.bidPrice, data.bid, data.bidPrice, ctrader?.bid, ctrader?.bidPrice);
     const ask = first(market.ask, market.askPrice, data.ask, data.askPrice, ctrader?.ask, ctrader?.askPrice);
 
-    text("price", number(price, 2));
-    text("bid", number(bid, 2));
-    text("ask", number(ask, 2));
+    const activeSymbol = String(first(ctrader?.symbolName, ctrader?.symbol, market.symbol, market.symbolName, "XAUUSD")).toUpperCase();
+    const digits = priceDigits(activeSymbol);
+    text("price", number(price, digits));
+    text("bid", number(bid, digits));
+    text("ask", number(ask, digits));
 
     if (Number.isFinite(Number(bid)) && Number.isFinite(Number(ask))) {
-      text("spread", number(Number(ask) - Number(bid), 2));
+      text("spread", number(Number(ask) - Number(bid), digits));
     }
 
-    const marketSymbol = String(
-      first(
-        ctrader?.symbol,
-        market.symbol,
-        market.symbolName,
-        "XAUUSD"
-      )
-    ).toUpperCase();
+    const marketSymbol = activeSymbol;
 
     text("instrument", marketSymbol);
     text("chartTitle", marketSymbol + " / 5 MINUTE");
@@ -461,6 +461,7 @@
     const data = ai?.decision || ai || {};
     const gates = data.gates || {};
     const direction = String(first(data.direction, data.signal, "WAIT")).toUpperCase();
+    const digits = priceDigits(first(data.symbol, marketState?.symbol, "XAUUSD"));
     const eligible = data.executionEligible === true;
     const hasPosition = Number(first(positions?.count, 0)) > 0;
     const ready = eligible && !hasPosition;
@@ -470,9 +471,9 @@
     const failedGates = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
     text("gateQuality", failedGates.length ? "BLOCKED · " + failedGates.map(k => String(k).replaceAll("_", " ").toUpperCase()).join(" / ") : "PASSED");
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
-    text("gateEntry", number(first(data.entry, data.entryPrice), 2));
-    text("gateSL", number(first(data.stopLoss, data.stop), 2));
-    text("gateTP", number(first(data.takeProfit, data.target), 2));
+    text("gateEntry", number(first(data.entry, data.entryPrice), digits));
+    text("gateSL", number(first(data.stopLoss, data.stop), digits));
+    text("gateTP", number(first(data.takeProfit, data.target), digits));
     text("gateRR", Number.isFinite(Number(first(data.rewardRisk, data.riskReward))) ? number(first(data.rewardRisk, data.riskReward), 1) + "R" : "—");
 
     const decision = $("gateDecision");
@@ -495,6 +496,7 @@
 
   function updateAutoTrader(status, positions) {
     if (!status) return;
+    const digits = priceDigits(status.symbol || "XAUUSD");
     const enabled = status.enabled === true;
     const demo = status.demoAccount === true && status.demoOnly === true;
     const connected = status.connected === true && status.authorized === true;
@@ -523,7 +525,7 @@
       text("autoPositionVolume", "—");
       text("autoPositionSL", "—");
       text("autoPositionPnl", "—");
-      text("autoTradeNotice", state === "READY" ? "Demo auto-trader is armed. No XAUUSD position is open." : state);
+      text("autoTradeNotice", state === "READY" ? "Demo auto-trader is armed. No " + String(first(status?.symbol, "selected-symbol")) + " position is open." : state);
     } else {
       const side = Number(p?.tradeData?.tradeSide) === 1 ? "BUY" : Number(p?.tradeData?.tradeSide) === 2 ? "SELL" : first(p.direction, "—");
       const entry = first(p?.tradeData?.openPrice, p?.tradeData?.price, p?.price, p?.entryPrice);
@@ -532,12 +534,12 @@
       const sl = first(p?.tradeData?.stopLoss, p?.stopLoss);
       const pnl = first(p?.unrealizedNetProfit, p?.tradeData?.unrealizedNetProfit, p?.netProfit, p?.profit);
       text("autoPositionDirection", side);
-      text("autoPositionEntry", number(entry, 2));
-      text("autoPositionCurrent", number(current, 2));
+      text("autoPositionEntry", number(entry, digits));
+      text("autoPositionCurrent", number(current, digits));
       text("autoPositionVolume", volume ?? "—");
-      text("autoPositionSL", number(sl, 2));
+      text("autoPositionSL", number(sl, digits));
       text("autoPositionPnl", pnl === null || pnl === undefined || pnl === "" || !Number.isFinite(Number(pnl)) ? "—" : number(pnl, 2));
-      text("autoTradeNotice", "Demo XAUUSD position is open.");
+      text("autoTradeNotice", "Demo " + String(first(status?.symbol, "selected-symbol")) + " position is open.");
     }
 
 
@@ -557,25 +559,19 @@
         ? data
         : [];
 
-    const xauusd = positions.filter(p => {
-      const symbol = String(first(
-        p?.symbol,
-        p?.symbolName,
-        p?.tradeData?.symbol,
-        "XAUUSD"
-      )).toUpperCase();
-      return symbol.includes("XAUUSD");
-    });
+    const activeSymbol = String(first(data?.symbol, $("instrument")?.textContent, "XAUUSD")).toUpperCase().replace(/[\/\s_-]/g, "");
+    const digits = priceDigits(activeSymbol);
+    const activePositions = positions;
 
-    if (summary) summary.textContent = xauusd.length + " OPEN POSITIONS";
+    if (summary) summary.textContent = activePositions.length + " OPEN POSITIONS · " + activeSymbol;
 
-    if (!xauusd.length) {
-      body.innerHTML = '<div class="empty">No open XAUUSD trades.</div>';
+    if (!activePositions.length) {
+      body.innerHTML = '<div class="empty">No open positions for ' + escapeHTML(activeSymbol) + '.</div>';
       if (updated) updated.textContent = "Live cTrader position feed · " + new Date().toLocaleTimeString();
       return;
     }
 
-    body.innerHTML = xauusd.map(p => {
+    body.innerHTML = activePositions.map(p => {
       const td = p?.tradeData || {};
       const sideNum = Number(first(td.tradeSide, p.tradeSide));
       const direction = sideNum === 1
@@ -610,16 +606,16 @@
 
       return '<article class="open-trade-card">' +
         '<div class="open-trade-top">' +
-          '<div><strong class="open-trade-direction ' + sideClass + '">' + escapeHTML(direction) + '</strong><span class="open-trade-symbol">XAUUSD</span></div>' +
+          '<div><strong class="open-trade-direction ' + sideClass + '">' + escapeHTML(direction) + '</strong><span class="open-trade-symbol">' + escapeHTML(activeSymbol) + '</span></div>' +
           '<strong class="open-trade-pnl ' + pnlClass + '">' + escapeHTML(Number.isFinite(pnlN) ? (pnlN > 0 ? "+" : "") + number(pnlN, 2) : "—") + '</strong>' +
         '</div>' +
         '<div class="open-trade-id">POSITION ' + escapeHTML(positionId ?? "—") + (orderId ? ' · ORDER ' + escapeHTML(orderId) : '') + '</div>' +
         '<div class="open-trade-grid">' +
-          '<div><span>ENTRY</span><strong>' + escapeHTML(Number.isFinite(entryN) ? number(entryN, 2) : "—") + '</strong></div>' +
-          '<div><span>CURRENT</span><strong>' + escapeHTML(Number.isFinite(currentN) ? number(currentN, 2) : "—") + '</strong></div>' +
+          '<div><span>ENTRY</span><strong>' + escapeHTML(Number.isFinite(entryN) ? number(entryN, digits) : "—") + '</strong></div>' +
+          '<div><span>CURRENT</span><strong>' + escapeHTML(Number.isFinite(currentN) ? number(currentN, digits) : "—") + '</strong></div>' +
           '<div><span>VOLUME</span><strong>' + escapeHTML(volume ?? "—") + '</strong></div>' +
-          '<div><span>STOP LOSS</span><strong>' + escapeHTML(Number.isFinite(slN) ? number(slN, 2) : "NOT SET") + '</strong></div>' +
-          '<div><span>TAKE PROFIT</span><strong>' + escapeHTML(Number.isFinite(tpN) ? number(tpN, 2) : "NOT SET") + '</strong></div>' +
+          '<div><span>STOP LOSS</span><strong>' + escapeHTML(Number.isFinite(slN) ? number(slN, digits) : "NOT SET") + '</strong></div>' +
+          '<div><span>TAKE PROFIT</span><strong>' + escapeHTML(Number.isFinite(tpN) ? number(tpN, digits) : "NOT SET") + '</strong></div>' +
           '<div><span>OPENED</span><strong>' + escapeHTML(opened ? formatTime(opened) : "—") + '</strong></div>' +
         '</div>' +
         '<div class="open-trade-footer"><span>BROKER PROTECTION ' + escapeHTML(protectionStatus) + ' · ' + (Number.isFinite(slN) ? "SL " + number(slN, 2) : "SL MISSING") + ' · ' + (Number.isFinite(tpN) ? "TP " + number(tpN, 2) : "TP MISSING") + '</span><span>LIVE cTRADER SNAPSHOT</span></div>' +
@@ -660,7 +656,7 @@ function formatTime(value) {
     const source = candles.filter(c => c && [c.open,c.high,c.low,c.close].every(v => Number.isFinite(Number(v)))).slice(-120);
     if (source.length < 2) return;
     let canvas = container.querySelector("canvas");
-    if (!canvas) { container.innerHTML=""; canvas=document.createElement("canvas"); canvas.setAttribute("aria-label","cTrader live XAUUSD M5 candlestick chart"); canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.display="block"; container.appendChild(canvas); }
+    if (!canvas) { container.innerHTML=""; canvas=document.createElement("canvas"); canvas.setAttribute("aria-label","cTrader live selected-symbol M5 candlestick chart"); canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.display="block"; container.appendChild(canvas); }
     const rect=container.getBoundingClientRect(), dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1)), width=Math.max(320,Math.floor(rect.width||640)), height=Math.max(260,Math.floor(rect.height||420));
     canvas.width=Math.floor(width*dpr); canvas.height=Math.floor(height*dpr);
     const ctx=canvas.getContext("2d"); if(!ctx)return; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle="#080a0d"; ctx.fillRect(0,0,width,height);
@@ -838,6 +834,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
 
     body.innerHTML = closed.map(t => {
       const direction = String(t.direction || "").toUpperCase();
+      const digits = priceDigits(t.symbol || "XAUUSD");
       const toNumber = value => {
         if (value === null || value === undefined || value === "") return null;
         const n = Number(value);
@@ -852,7 +849,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       const closedAt = formatTime(t.closedAt);
       return '<div class="confirmed-signal-row">' +
         '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML(direction || "TRADE") + '</strong>' +
-        '<span>' + escapeHTML((entry !== null && entry > 0 ? number(entry, 2) : "—") + " → " + (exit !== null && exit > 0 ? number(exit, 2) : "—")) + '</span>' +
+        '<span>' + escapeHTML((entry !== null && entry > 0 ? number(entry, digits) : "—") + " → " + (exit !== null && exit > 0 ? number(exit, digits) : "—")) + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(pnl !== null ? (pnl > 0 ? "+" : "") + number(pnl, 2) : "—") + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(result + " · " + closedAt) + '</span>' +
         '</div>';
