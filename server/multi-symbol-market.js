@@ -13,7 +13,7 @@ function registerSymbols(symbols) {
     if (!isSupportedSymbol(symbol) || !Number.isInteger(symbolId) || symbolId <= 0) continue;
     const previous = markets.get(symbol) || { candles: [], bid: null, ask: null, lastUpdate: null };
     Object.assign(previous, { symbol, symbolName: String(item.symbolName || symbol), symbolId,
-      digits: Number.isInteger(Number(item.digits)) ? Number(item.digits) : null });
+      digits: item.digits != null && Number.isInteger(Number(item.digits)) ? Number(item.digits) : null });
     markets.set(symbol, previous);
     byId.set(symbolId, symbol);
   }
@@ -61,7 +61,9 @@ function updateQuote(key, bid, ask, timestamp) {
   const b = Number(bid), a = Number(ask);
   if (Number.isFinite(b) && b > 0) market.bid = b;
   if (Number.isFinite(a) && a > 0) market.ask = a;
-  market.lastUpdate = timestamp ? new Date(Number(timestamp)).toISOString() : new Date().toISOString();
+  const timestampMs = Number(timestamp);
+  market.lastUpdate = timestamp != null && Number.isFinite(timestampMs) && timestampMs > 0
+    ? new Date(timestampMs).toISOString() : new Date().toISOString();
   return true;
 }
 
