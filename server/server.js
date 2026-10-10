@@ -3,6 +3,10 @@ const cors = require("cors");
 const path = require("path");
 require("dotenv").config();
 
+// Manual operator authorization is required after every server restart/deploy.
+// Ignore a stale AUTO_TRADING=true environment value so startup is always OFF.
+process.env.AUTO_TRADING = "false";
+
 const app = express();
 const {
   registerCTrader,
