@@ -218,6 +218,39 @@ app.get("/api/auto-trader/status", (req, res) => {
   }
 });
 
+// Manual auto-trading control. Defaults to OFF after each process start.
+// Enabling is allowed only on a connected, authorized demo account with
+// broker trading permission. The current execution engine supports XAUUSD.
+app.post("/api/auto-trader/control", (req, res) => {
+  const enabled = req.body?.enabled;
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ ok: false, error: "enabled must be true or false" });
+  }
+
+  if (!enabled) {
+    process.env.AUTO_TRADING = "false";
+    return res.json({ ok: true, enabled: false, message: "Auto-trading disabled. Existing broker positions are not automatically closed." });
+  }
+
+  const ct = getCTraderStatus() || {};
+  const symbol = String(ct.symbolName || ct.symbol || "").toUpperCase();
+  if (!ct.connected || !ct.authorized) {
+    return res.status(409).json({ ok: false, enabled: false, error: "CTRADER_NOT_READY" });
+  }
+  if (ct.account?.isLive !== false) {
+    return res.status(409).json({ ok: false, enabled: false, error: "DEMO_ACCOUNT_REQUIRED" });
+  }
+  if (ct.tradingPermission !== true) {
+    return res.status(409).json({ ok: false, enabled: false, error: "BROKER_TRADING_PERMISSION_REQUIRED" });
+  }
+  if (symbol !== "XAUUSD") {
+    return res.status(409).json({ ok: false, enabled: false, error: "UNSUPPORTED_SYMBOL: current auto-trader supports XAUUSD only" });
+  }
+
+  process.env.AUTO_TRADING = "true";
+  return res.json({ ok: true, enabled: true, symbol, demoOnly: true, message: "Demo auto-trading enabled. Orders still require a confirmed eligible signal and all risk gates to pass." });
+});
+
 app.get("/api/auto-trader/dry-run", async (req, res) => {
   try {
     const dryRun = await autoTrader.dryRunAiTrader();
