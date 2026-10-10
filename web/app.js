@@ -461,6 +461,7 @@
     const data = ai?.decision || ai || {};
     const gates = data.gates || {};
     const direction = String(first(data.direction, data.signal, "WAIT")).toUpperCase();
+    const digits = priceDigits(first(data.symbol, marketState?.symbol, "XAUUSD"));
     const eligible = data.executionEligible === true;
     const hasPosition = Number(first(positions?.count, 0)) > 0;
     const ready = eligible && !hasPosition;
@@ -470,9 +471,9 @@
     const failedGates = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
     text("gateQuality", failedGates.length ? "BLOCKED · " + failedGates.map(k => String(k).replaceAll("_", " ").toUpperCase()).join(" / ") : "PASSED");
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
-    text("gateEntry", number(first(data.entry, data.entryPrice), 2));
-    text("gateSL", number(first(data.stopLoss, data.stop), 2));
-    text("gateTP", number(first(data.takeProfit, data.target), 2));
+    text("gateEntry", number(first(data.entry, data.entryPrice), digits));
+    text("gateSL", number(first(data.stopLoss, data.stop), digits));
+    text("gateTP", number(first(data.takeProfit, data.target), digits));
     text("gateRR", Number.isFinite(Number(first(data.rewardRisk, data.riskReward))) ? number(first(data.rewardRisk, data.riskReward), 1) + "R" : "—");
 
     const decision = $("gateDecision");
@@ -495,6 +496,7 @@
 
   function updateAutoTrader(status, positions) {
     if (!status) return;
+    const digits = priceDigits(status.symbol || "XAUUSD");
     const enabled = status.enabled === true;
     const demo = status.demoAccount === true && status.demoOnly === true;
     const connected = status.connected === true && status.authorized === true;
@@ -532,10 +534,10 @@
       const sl = first(p?.tradeData?.stopLoss, p?.stopLoss);
       const pnl = first(p?.unrealizedNetProfit, p?.tradeData?.unrealizedNetProfit, p?.netProfit, p?.profit);
       text("autoPositionDirection", side);
-      text("autoPositionEntry", number(entry, 2));
-      text("autoPositionCurrent", number(current, 2));
+      text("autoPositionEntry", number(entry, digits));
+      text("autoPositionCurrent", number(current, digits));
       text("autoPositionVolume", volume ?? "—");
-      text("autoPositionSL", number(sl, 2));
+      text("autoPositionSL", number(sl, digits));
       text("autoPositionPnl", pnl === null || pnl === undefined || pnl === "" || !Number.isFinite(Number(pnl)) ? "—" : number(pnl, 2));
       text("autoTradeNotice", "Demo " + String(first(status?.symbol, "selected-symbol")) + " position is open.");
     }
@@ -832,6 +834,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
 
     body.innerHTML = closed.map(t => {
       const direction = String(t.direction || "").toUpperCase();
+      const digits = priceDigits(t.symbol || "XAUUSD");
       const toNumber = value => {
         if (value === null || value === undefined || value === "") return null;
         const n = Number(value);
@@ -846,7 +849,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       const closedAt = formatTime(t.closedAt);
       return '<div class="confirmed-signal-row">' +
         '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML(direction || "TRADE") + '</strong>' +
-        '<span>' + escapeHTML((entry !== null && entry > 0 ? number(entry, 2) : "—") + " → " + (exit !== null && exit > 0 ? number(exit, 2) : "—")) + '</span>' +
+        '<span>' + escapeHTML((entry !== null && entry > 0 ? number(entry, digits) : "—") + " → " + (exit !== null && exit > 0 ? number(exit, digits) : "—")) + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(pnl !== null ? (pnl > 0 ? "+" : "") + number(pnl, 2) : "—") + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(result + " · " + closedAt) + '</span>' +
         '</div>';
