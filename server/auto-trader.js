@@ -95,8 +95,16 @@ async function executeAiDecision(decision, decisionId=null) {
     inFlightSignalKeys.delete(key);
   }
 }
-function config(){return{
+function config(){
+ let enabledSymbols = [];
+ try {
+   const parsed = JSON.parse(process.env.AUTO_TRADING_SYMBOLS || "[]");
+   if (Array.isArray(parsed)) enabledSymbols = [...new Set(parsed.map(normalizeSymbolName).filter(isSupportedSymbol))];
+ } catch (_) { enabledSymbols = []; }
+ const symbolScoped = String(process.env.AUTO_TRADING_SYMBOL_SCOPE || "false").toLowerCase() === "true";
+ return {
  enabled:String(process.env.AUTO_TRADING||"false").toLowerCase()==="true",
+ enabledSymbols, symbolScoped,
  demoOnly:String(process.env.AUTO_TRADING_DEMO_ONLY||"true").toLowerCase()!=="false",
  riskPercent:Math.max(.1,Math.min(1,Number(process.env.AUTO_TRADING_RISK_PERCENT||.5))),
  maxSpread:Math.max(.05,Number(process.env.AUTO_TRADING_MAX_SPREAD||.60)),
@@ -118,7 +126,7 @@ function config(){return{
 
 function getStatus(){
  const cfg=config(),ct=cTrader?.getCTraderStatus?.()||{};
- return {enabled:cfg.enabled,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"unlimited",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:"unlimited",cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||"")};
+ return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"unlimited",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:"unlimited",cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||"")};
 }
 
 async function executeAiDecisionInternal(decision, decisionId=null){
@@ -142,6 +150,9 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision?.signal||null,reason,...extra};
   };
   if(!cfg.enabled)return reject("AUTO_TRADING_DISABLED");
+  if(cfg.symbolScoped && !cfg.enabledSymbols.includes(decisionSymbol)) {
+    return reject("SYMBOL_NOT_ARMED", {symbol:decisionSymbol, enabledSymbols:cfg.enabledSymbols});
+  }
   if(typeof dbQuery!=="function")return reject("TRADE_DATABASE_UNAVAILABLE");
   if(!decision||!["BUY","SELL"].includes(decision.signal)||decision.executionEligible!==true)return reject("AI_DECISION_NOT_ELIGIBLE");
   // Candle timestamps can be epoch seconds, epoch milliseconds, or ISO strings
