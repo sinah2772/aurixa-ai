@@ -839,10 +839,10 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       const detail=row?.decision && typeof row.decision==="object"?row.decision:{};
       const price=first(row?.entry,row?.entryPrice,row?.entry_price,row?.price,row?.mid,row?.close,detail?.entry,detail?.price,detail?.mid,detail?.close);
       const time=first(row?.createdAt,row?.created_at,row?.timestamp,row?.time,row?.candleTime,detail?.timestamp);
-      const symbol=String(first(row?.symbol,detail?.symbol,"UNKNOWN")).toUpperCase();
+      const rowSymbol=String(first(row?.symbol,detail?.symbol,"UNKNOWN")).toUpperCase().replace(/[^A-Z0-9._/-]/g,"");
       const id=Number(row?.id);
-      return '<button type="button" class="confirmed-signal-row confirmed-signal-click" data-signal-id="'+(Number.isSafeInteger(id)&&id>0?id:"")+'" aria-label="Investigate '+escapeHTML(signal+" "+symbol)+'">'+
-        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'">'+escapeHTML(signal+" · "+symbol)+'</strong>'+
+      return '<button type="button" class="confirmed-signal-row confirmed-signal-click" data-signal-id="'+(Number.isSafeInteger(id)&&id>0?id:"")+'" aria-label="Investigate '+escapeHTML(signal+" "+rowSymbol)+'">'+
+        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'">'+escapeHTML(signal+" · "+rowSymbol)+'</strong>'+
         '<span>'+escapeHTML(Number.isFinite(confidence)?number(confidence,0)+"%":"—")+'</span>'+
         '<span>'+escapeHTML(Number.isFinite(Number(price))?number(price,2):"—")+'</span>'+
         '<span>'+escapeHTML(formatTime(time))+'</span>'+
