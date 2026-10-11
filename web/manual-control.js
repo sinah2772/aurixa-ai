@@ -63,8 +63,8 @@
   function marketReasonLabel(reason) {
     const key = String(reason || "STATUS_UNKNOWN").toUpperCase();
     const labels = {
-      READY: "Market data ready",
-      OK: "Market data ready",
+      READY: "Market data ready · entry not yet approved",
+      OK: "Market data ready · entry not yet approved",
       QUOTE_STALE: "Quote is stale",
       STALE_QUOTE: "Quote is stale",
       INSUFFICIENT_CANDLES: "Waiting for more M5 candles",
@@ -87,9 +87,9 @@
       const readyCount = Number(data.readyCount || markets.filter(item => item.ready === true).length);
       const discoveredCount = Number(data.discovered || markets.length);
       multiSymbolSummary.textContent =
-        readyCount + " / " + discoveredCount + " MARKETS READY  ·  " +
+        readyCount + " / " + discoveredCount + " MARKETS WITH DATA READY  ·  " +
         (data.enabled ? "AUTO-TRADING ON" : "AUTO-TRADING OFF") +
-        "  ·  DEMO ONLY  ·  SELECT A CARD TO LOAD ITS CHART";
+        "  ·  DEMO ONLY  ·  DATA READY DOES NOT MEAN ENTRY APPROVED";
       multiSymbolGrid.replaceChildren();
       for (const market of markets) {
         const symbol = canonical(market.symbol || market.canonicalName || market.symbolName || "UNKNOWN");
@@ -104,7 +104,7 @@
         name.textContent = symbol;
         const status = document.createElement("span");
         status.className = market.ready ? "market-ready" : "market-wait";
-        status.textContent = market.ready ? "READY" : "WAIT";
+        status.textContent = market.ready ? "DATA READY" : "DATA WAIT";
         head.append(name, status);
 
         const quote = document.createElement("div");
