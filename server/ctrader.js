@@ -1781,15 +1781,8 @@ function registerCTrader(app) {
       state.lastUpdate = null;
       state.error = null;
 
-      /*
-       * Spot feed.
-       */
-      send(state.ws, 2127, {
-        ctidTraderAccountId: accountId,
-        symbolId: [symbolId],
-        subscribeToSpotTimestamp: true
-      });
-
+      // The connection already subscribes to spot events for every supported
+      // symbol. Do not issue a duplicate spot subscription on chart changes.
       /*
        * M5 live trendbars.
        * cTrader rejects duplicate subscriptions, so keep a
