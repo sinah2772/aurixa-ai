@@ -743,7 +743,7 @@ async function syncOpenPositions(symbolName=null){
           positionId:t.position_id,error:e.message
         }));
       }
-      await dbQuery("UPDATE aurixa.auto_trades SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),close_price=$2,profit=COALESCE($3,profit),exit_reason=$4,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(closePrice)?closePrice:null,Number.isFinite(profit)?profit:null,reason]);
+      await dbQuery("UPDATE aurixa.auto_trades SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),close_price=COALESCE($2,close_price),profit=COALESCE($3,profit),exit_reason=COALESCE($4,exit_reason),updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(closePrice)?closePrice:null,Number.isFinite(profit)?profit:null,reason]);
       console.log("AURIXA_BROKER_POSITION_CLOSED:",JSON.stringify({
         tradeId:t.id,positionId:t.position_id,reason,
         closePrice:Number.isFinite(closePrice)?closePrice:null,
