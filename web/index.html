@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261011-pair-controls2">
-  <link rel="stylesheet" href="/multi-market-ui.css?v=20261011-pair-controls2">
+  <link rel="stylesheet" href="/style.css?v=20261011-pair-popup1">
+  <link rel="stylesheet" href="/multi-market-ui.css?v=20261011-pair-popup1">
   </head>
 <body>
 <div class="app">
@@ -18,8 +18,11 @@
       <div class="brand">AURIXA AI</div>
       <div class="subtitle">MULTI-MARKET INTELLIGENCE · cTRADER DEMO</div>
     </div>
-    <div class="live-badge">
-      <span class="dot"></span> CONNECTING
+    <div class="topbar-actions">
+      <button id="multiSymbolOpenButton" type="button" class="market-controls-open" aria-haspopup="dialog" aria-controls="multiSymbolDialog">PAIR CONTROLS</button>
+      <div class="live-badge">
+        <span class="dot"></span> CONNECTING
+      </div>
     </div>
   </header>
 
@@ -74,14 +77,23 @@
       <p class="notice">Auto-trading starts OFF after every server restart and must be enabled manually. When enabled, AURIXA scans broker-verified symbols independently; changing the chart only changes the displayed market and does not stop the scanner. Entries remain blocked per symbol when quotes are stale, M5 history is insufficient, spread or risk checks fail, or broker protection cannot be verified. Turning auto-trading off blocks new entries but does not close existing positions.</p>
     </section>
 
-    <section class="panel multi-symbol-panel">
+    <dialog id="multiSymbolDialog" class="multi-symbol-dialog" aria-labelledby="multiSymbolDialogTitle">
+      <div class="multi-symbol-dialog-toolbar">
+        <div>
+          <div class="section-title">MARKET CONTROLS</div>
+          <div id="multiSymbolDialogTitle" class="section-heading">PAIR SELECTOR &amp; DEMO AUTO-TRADING</div>
+        </div>
+        <button id="multiSymbolCloseButton" type="button" class="market-controls-close">CLOSE ✕</button>
+      </div>
+      <section class="panel multi-symbol-panel">
       <div class="section-title">MULTI-CURRENCY SCANNER</div>
       <div class="section-heading">ALL BROKER-VERIFIED SUPPORTED SYMBOLS · M5</div>
       <div class="multi-symbol-summary" id="multiSymbolSummary">Checking broker markets…</div>
       <div class="multi-symbol-grid" id="multiSymbolGrid">
         <div class="empty-state">Waiting for per-symbol quotes and M5 history…</div>
       </div>
-    </section>
+      </section>
+    </dialog>
 
     <!-- AUTO-TRADE CANDIDATE -->
     <section id="autoTradeCandidatePanel" class="panel auto-candidate-panel" aria-labelledby="autoCandidateTitle">
@@ -329,8 +341,8 @@
 
   </main>
 </div>
-<script defer src="/manual-control.js?v=20261011-pair-controls2"></script>
-<script defer src="/app.js?v=20261011-pair-controls2"></script>
-<script defer src="/auto-trade-candidate.js?v=20261011-pair-controls2"></script>
+<script defer src="/manual-control.js?v=20261011-pair-popup1"></script>
+<script defer src="/app.js?v=20261011-pair-popup1"></script>
+<script defer src="/auto-trade-candidate.js?v=20261011-pair-popup1"></script>
 </body>
 </html>
