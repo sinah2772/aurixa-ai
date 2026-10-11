@@ -343,8 +343,8 @@ app.get("/api/auto-trader/positions", async (req, res) => {
       // Actual protection must come only from the current cTrader position
       // snapshot. Never fall back to planned/stored trade SL/TP: missing broker
       // fields must remain unconfirmed rather than being shown as protected.
-      const rawSL = position?.stopLoss;
-      const rawTP = position?.takeProfit;
+      const rawSL = position?.stopLoss ?? td.stopLoss;
+      const rawTP = position?.takeProfit ?? td.takeProfit;
       const actualSL = rawSL == null || rawSL === "" ? null : Number(rawSL);
       const actualTP = rawTP == null || rawTP === "" ? null : Number(rawTP);
       const hasSL = Number.isFinite(actualSL) && actualSL > 0;
