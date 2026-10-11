@@ -560,51 +560,67 @@ app.get("/api/auto-trader/trades", async (req, res) => {
       Math.max(1, Number(req.query.limit) || 20)
     );
 
-    const result = await queryDatabase(`
-      SELECT
-        id,
-        decision_id AS "decisionId",
-        strategy_signal_key AS "strategySignalKey",
-        signal_id AS "signalId",
-        created_at AS "createdAt",
-        symbol,
-        timeframe,
-        direction,
-        signal_entry_price AS "signalEntryPrice",
-        execution_entry_price AS "executionEntryPrice",
-        order_id AS "orderId",
-        position_id AS "positionId",
-        volume,
-        execution_entry_price AS "executionEntryPrice",
-        stop_loss_distance AS "stopLossDistance",
-        take_profit_distance AS "takeProfitDistance",
-        planned_entry_price AS "plannedEntryPrice",
-        planned_stop_price AS "plannedStopPrice",
-        planned_take_profit_price AS "plannedTakeProfitPrice",
-        partial_taken AS "partialTaken",
-        breakeven_applied AS "breakevenApplied",
-        status,
-        opened_at AS "openedAt",
-        closed_at AS "closedAt",
-        close_price AS "closePrice",
-        profit,
-        error,
-        gate_reason AS "gateReason",
-        exit_reason AS "exitReason",
-        client_msg_id AS "clientMsgId",
-        risk_percent AS "riskPercent",
-        risk_amount AS "riskAmount"
-      FROM aurixa.auto_trades
-      ORDER BY created_at DESC
-      LIMIT $1
-    `, [limit]);
+    const tradeColumns = `
+      id,
+      decision_id AS "decisionId",
+      strategy_signal_key AS "strategySignalKey",
+      signal_id AS "signalId",
+      created_at AS "createdAt",
+      symbol,
+      timeframe,
+      direction,
+      signal_entry_price AS "signalEntryPrice",
+      execution_entry_price AS "executionEntryPrice",
+      order_id AS "orderId",
+      position_id AS "positionId",
+      volume,
+      stop_loss_distance AS "stopLossDistance",
+      take_profit_distance AS "takeProfitDistance",
+      planned_entry_price AS "plannedEntryPrice",
+      planned_stop_price AS "plannedStopPrice",
+      planned_take_profit_price AS "plannedTakeProfitPrice",
+      partial_taken AS "partialTaken",
+      breakeven_applied AS "breakevenApplied",
+      status,
+      opened_at AS "openedAt",
+      closed_at AS "closedAt",
+      close_price AS "closePrice",
+      profit,
+      error,
+      gate_reason AS "gateReason",
+      exit_reason AS "exitReason",
+      client_msg_id AS "clientMsgId",
+      risk_percent AS "riskPercent",
+      risk_amount AS "riskAmount"
+    `;
+
+    // Keep execution/audit events separate from closed-trade history.
+    // Frequent rejected-signal audit rows can otherwise push recent closes
+    // beyond the created_at-based page limit and hide them from the dashboard.
+    const [result, closedResult] = await Promise.all([
+      queryDatabase(`
+        SELECT ${tradeColumns}
+        FROM aurixa.auto_trades
+        ORDER BY created_at DESC
+        LIMIT $1
+      `, [limit]),
+      queryDatabase(`
+        SELECT ${tradeColumns}
+        FROM aurixa.auto_trades
+        WHERE UPPER(status) = 'CLOSED'
+        ORDER BY closed_at DESC NULLS LAST, created_at DESC
+        LIMIT $1
+      `, [limit])
+    ]);
 
     res.json({
       ok: true,
       autoTradingEnabled:
         String(process.env.AUTO_TRADING || "false").toLowerCase() === "true",
       count: result.rows.length,
-      trades: result.rows
+      trades: result.rows,
+      closedTradeCount: closedResult.rows.length,
+      closedTrades: closedResult.rows
     });
   } catch (err) {
     console.error("Auto-Trader trades error:", err);
