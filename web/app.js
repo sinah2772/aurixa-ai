@@ -559,20 +559,21 @@
         ? data
         : [];
 
-    const activeSymbol = String(first(data?.symbol, $("instrument")?.textContent, "XAUUSD")).toUpperCase().replace(/[\/\s_-]/g, "");
-    const digits = priceDigits(activeSymbol);
+    const activeSymbol = String(first(data?.selectedSymbol, data?.symbol, $("instrument")?.textContent, "XAUUSD")).toUpperCase().replace(/[\/\s_-]/g, "");
     const activePositions = positions;
 
-    if (summary) summary.textContent = activePositions.length + " OPEN POSITIONS · " + activeSymbol;
+    if (summary) summary.textContent = activePositions.length + " OPEN POSITIONS · MULTI-MARKET";
 
     if (!activePositions.length) {
-      body.innerHTML = '<div class="empty">No open positions for ' + escapeHTML(activeSymbol) + '.</div>';
+      body.innerHTML = '<div class="empty">No open positions across supported markets.</div>';
       if (updated) updated.textContent = "Live cTrader position feed · " + new Date().toLocaleTimeString();
       return;
     }
 
     body.innerHTML = activePositions.map(p => {
       const td = p?.tradeData || {};
+      const positionSymbol = String(first(p.symbol, p.symbolName, activeSymbol)).toUpperCase().replace(/[\/\s_-]/g, "");
+      const digits = priceDigits(positionSymbol);
       const sideNum = Number(first(td.tradeSide, p.tradeSide));
       const direction = sideNum === 1
         ? "BUY"
@@ -606,7 +607,7 @@
 
       return '<article class="open-trade-card">' +
         '<div class="open-trade-top">' +
-          '<div><strong class="open-trade-direction ' + sideClass + '">' + escapeHTML(direction) + '</strong><span class="open-trade-symbol">' + escapeHTML(activeSymbol) + '</span></div>' +
+          '<div><strong class="open-trade-direction ' + sideClass + '">' + escapeHTML(direction) + '</strong><span class="open-trade-symbol">' + escapeHTML(positionSymbol) + '</span></div>' +
           '<strong class="open-trade-pnl ' + pnlClass + '">' + escapeHTML(Number.isFinite(pnlN) ? (pnlN > 0 ? "+" : "") + number(pnlN, 2) : "—") + '</strong>' +
         '</div>' +
         '<div class="open-trade-id">POSITION ' + escapeHTML(positionId ?? "—") + (orderId ? ' · ORDER ' + escapeHTML(orderId) : '') + '</div>' +
@@ -618,7 +619,7 @@
           '<div><span>TAKE PROFIT</span><strong>' + escapeHTML(Number.isFinite(tpN) ? number(tpN, digits) : "NOT SET") + '</strong></div>' +
           '<div><span>OPENED</span><strong>' + escapeHTML(opened ? formatTime(opened) : "—") + '</strong></div>' +
         '</div>' +
-        '<div class="open-trade-footer"><span>BROKER PROTECTION ' + escapeHTML(protectionStatus) + ' · ' + (Number.isFinite(slN) ? "SL " + number(slN, 2) : "SL MISSING") + ' · ' + (Number.isFinite(tpN) ? "TP " + number(tpN, 2) : "TP MISSING") + '</span><span>LIVE cTRADER SNAPSHOT</span></div>' +
+        '<div class="open-trade-footer"><span>BROKER PROTECTION ' + escapeHTML(protectionStatus) + ' · ' + (Number.isFinite(slN) ? "SL " + number(slN, digits) : "SL MISSING") + ' · ' + (Number.isFinite(tpN) ? "TP " + number(tpN, digits) : "TP MISSING") + '</span><span>LIVE cTRADER SNAPSHOT</span></div>' +
       '</article>';
     }).join("");
 
