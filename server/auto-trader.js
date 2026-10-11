@@ -144,8 +144,15 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   if(!cfg.enabled)return reject("AUTO_TRADING_DISABLED");
   if(typeof dbQuery!=="function")return reject("TRADE_DATABASE_UNAVAILABLE");
   if(!decision||!["BUY","SELL"].includes(decision.signal)||decision.executionEligible!==true)return reject("AI_DECISION_NOT_ELIGIBLE");
-  const t=Number(decision.candleTime),ts=t<1e11?t*1000:t;
-  if(!Number.isFinite(ts)||Date.now()-ts<0||Date.now()-ts>cfg.maxSignalAgeMinutes*60000)return reject("AI_SIGNAL_STALE");
+  // Candle timestamps can be epoch seconds, epoch milliseconds, or ISO strings
+  // depending on whether they came from the broker feed or persisted history.
+  const rawCandleTime=decision?.candleTime;
+  const numericCandleTime=typeof rawCandleTime==="number"||/^\d+(?:\.\d+)?$/.test(String(rawCandleTime??""))
+    ? Number(rawCandleTime) : Date.parse(String(rawCandleTime??""));
+  const ts=Number.isFinite(numericCandleTime)
+    ? (numericCandleTime>0&&numericCandleTime<1e11?numericCandleTime*1000:numericCandleTime)
+    : NaN;
+  if(!Number.isFinite(ts)||Date.now()-ts<0||Date.now()-ts>cfg.maxSignalAgeMinutes*60000)return reject("AI_SIGNAL_STALE",{candleTime:rawCandleTime??null});
   const st=statusAtStart;
   if(!st?.connected||!st?.authorized)return reject("CTRADER_NOT_READY");
   if(cfg.demoOnly&&st.account?.isLive!==false)return reject(st.account?.isLive===true?"LIVE_ACCOUNT_BLOCKED":"ACCOUNT_ENVIRONMENT_UNKNOWN");
@@ -416,7 +423,23 @@ async function executeAiDecisionInternal(decision, decisionId=null){
        result.status==="CLOSED"?"PROTECTION_FAILURE_EMERGENCY_CLOSE":(result.protectionStatus==="FAILED"?"PROTECTION_FAILED":"PASSED"),
        result.protectionError||null,result.closePrice||null,result.exitReason||null]);
   }catch(e){console.error("AI trade record update failed:",e.message);}
-  return {executed:["OPEN","PARTIAL"].includes(result.status),strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,gate:"PASSED",direction:decision.signal,volume,riskAmount,plannedEntryPrice:entry,plannedStopPrice:executionStop,plannedTakeProfitPrice:executionTarget,originalPlannedStopPrice:stop,originalPlannedTakeProfitPrice:target,riskAdjustedForBrokerMinimum,...result};
+  const brokerPositionVerified=result.brokerConfirmed===true;
+  const executionReason=brokerPositionVerified?null:
+    (["OPEN","PARTIAL"].includes(result.status)?"BROKER_POSITION_NOT_VERIFIED":"CTRADER_ORDER_NOT_FILLED");
+  if(!brokerPositionVerified){
+    console.error("AURIXA_EXECUTION_REQUIRES_RECONCILIATION:",JSON.stringify({
+      reservationId,strategySignalKey:key,symbol:decisionSymbol,
+      orderId:result.orderId||null,positionId:result.positionId||null,
+      executionType:result.executionType??null,status:result.status||null,
+      protectionStatus:result.protectionStatus||null
+    }));
+  }
+  return {executed:["OPEN","PARTIAL"].includes(result.status)&&brokerPositionVerified,
+    reason:executionReason,strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,
+    gate:"PASSED",direction:decision.signal,volume,riskAmount,
+    plannedEntryPrice:entry,plannedStopPrice:executionStop,plannedTakeProfitPrice:executionTarget,
+    originalPlannedStopPrice:stop,originalPlannedTakeProfitPrice:target,
+    riskAdjustedForBrokerMinimum,brokerPositionVerified,...result};
 }
 
 async function dryRunAiTrader(){
