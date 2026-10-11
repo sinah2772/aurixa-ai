@@ -1017,7 +1017,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     updateAccountPanel(account, autoStatus, ctrader);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
-    updateAutoTradeCandidate(liveAi, ctrader, autoStatus, autoPositions);
+    // The live multi-symbol candidate widget owns the candidate panel; avoid overwriting it with the chart-selected symbol.
     if (aiSignals && aiSignals.ok !== false) {
       renderConfirmedSignalHistory(aiSignals, autoTrades?.trades || []);
     } else {
