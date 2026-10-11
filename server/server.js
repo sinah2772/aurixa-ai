@@ -644,63 +644,54 @@ app.get("/api/market/history", async (req, res) => {
     // frontend chart blank when the live market engine already has candles.
     if (Number.isFinite(accountId) && Number.isFinite(symbolId)) {
       try {
-        const tradeColumns = `
-      id,
-      decision_id AS "decisionId",
-      strategy_signal_key AS "strategySignalKey",
-      signal_id AS "signalId",
-      created_at AS "createdAt",
-      symbol, timeframe, direction,
-      signal_entry_price AS "signalEntryPrice",
-      execution_entry_price AS "executionEntryPrice",
-      order_id AS "orderId",
-      position_id AS "positionId",
-      volume,
-      stop_loss_distance AS "stopLossDistance",
-      take_profit_distance AS "takeProfitDistance",
-      planned_entry_price AS "plannedEntryPrice",
-      planned_stop_price AS "plannedStopPrice",
-      planned_take_profit_price AS "plannedTakeProfitPrice",
-      partial_taken AS "partialTaken",
-      breakeven_applied AS "breakevenApplied",
-      status,
-      opened_at AS "openedAt",
-      closed_at AS "closedAt",
-      close_price AS "closePrice",
-      profit, error,
-      gate_reason AS "gateReason",
-      exit_reason AS "exitReason",
-      client_msg_id AS "clientMsgId",
-      risk_percent AS "riskPercent",
-      risk_amount AS "riskAmount"
-    `;
+        const result = await queryDatabase(`
+          SELECT
+            ctid_trader_account_id AS "accountId",
+            symbol_id AS "symbolId",
+            symbol,
+            timeframe,
+            EXTRACT(EPOCH FROM candle_time) * 1000 AS time,
+            open, high, low, close, volume
+          FROM aurixa.market_candles
+          WHERE ctid_trader_account_id = $1
+            AND symbol_id = $2
+            AND timeframe = $3
+          ORDER BY candle_time DESC
+          LIMIT $4
+        `, [accountId, symbolId, timeframe, limit]);
 
-    // Keep the audit feed separate: frequent rejected-signal rows can push
-    // recently closed trades outside the created_at-based page limit.
-    const [result, closedResult] = await Promise.all([
-      queryDatabase(`
-        SELECT ${tradeColumns}
-        FROM aurixa.auto_trades
-        ORDER BY created_at DESC
-        LIMIT $1
-      `, [limit]),
-      queryDatabase(`
-        SELECT ${tradeColumns}
-        FROM aurixa.auto_trades
-        WHERE UPPER(status) = 'CLOSED'
-        ORDER BY closed_at DESC NULLS LAST, created_at DESC
-        LIMIT $1
-      `, [limit])
-    ]);
+        const candles = result.rows.reverse();
 
-    res.json({
+        if (candles.length >= 2) {
+          return res.json({
+            ok: true,
+            source: "database",
+            accountId,
+            symbolId,
+            timeframe,
+            count: candles.length,
+            candles
+          });
+        }
+      } catch (dbError) {
+        console.warn("Market history DB fallback:", dbError.message);
+      }
+    }
+
+    // Final fallback: live in-memory market-engine candles.
+    const state = marketEngine.getState();
+    const liveCandles = Array.isArray(state?.candles)
+      ? state.candles.slice(-limit)
+      : [];
+
+    return res.json({
       ok: true,
-      autoTradingEnabled:
-        String(process.env.AUTO_TRADING || "false").toLowerCase() === "true",
-      count: result.rows.length,
-      trades: result.rows,
-      closedTradeCount: closedResult.rows.length,
-      closedTrades: closedResult.rows
+      source: "market-engine",
+      accountId: Number.isFinite(accountId) ? accountId : null,
+      symbolId: Number.isFinite(symbolId) ? symbolId : null,
+      timeframe,
+      count: liveCandles.length,
+      candles: liveCandles
     });
   } catch (err) {
     console.error("Market history error:", err);
