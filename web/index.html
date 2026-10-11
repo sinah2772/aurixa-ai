@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261011-audit-fix1">
-  <link rel="stylesheet" href="/multi-market-ui.css?v=20261011-audit-fix1">
+  <link rel="stylesheet" href="/style.css?v=20261011-candidate1">
+  <link rel="stylesheet" href="/multi-market-ui.css?v=20261011-candidate1">
   </head>
 <body>
 <div class="app">
@@ -81,6 +81,29 @@
       <div class="multi-symbol-grid" id="multiSymbolGrid">
         <div class="empty-state">Waiting for per-symbol quotes and M5 history…</div>
       </div>
+    </section>
+
+    <section class="panel auto-candidate-panel" aria-labelledby="autoCandidateTitle">
+      <div class="section-title">AUTO-TRADING SELECTION</div>
+      <div class="section-heading" id="autoCandidateTitle">CURRENT BEST CANDIDATE · ALL SCANNED MARKETS</div>
+      <div id="autoCandidateStatus" class="auto-candidate-status" role="status" aria-live="polite">WAITING FOR SCANNER EVALUATION…</div>
+      <div class="auto-candidate-main">
+        <strong id="autoCandidateSymbol">—</strong>
+        <span id="autoCandidateDirection" class="candidate-direction">WAIT</span>
+        <span id="autoCandidateConfidence">CONFIDENCE —</span>
+      </div>
+      <div class="auto-candidate-levels">
+        <div><span>ENTRY</span><strong id="autoCandidateEntry">—</strong></div>
+        <div><span>STOP LOSS</span><strong id="autoCandidateSL">—</strong></div>
+        <div><span>TAKE PROFIT</span><strong id="autoCandidateTP">—</strong></div>
+        <div><span>R:R</span><strong id="autoCandidateRR">—</strong></div>
+      </div>
+      <div id="autoCandidateReason" class="notice">The selected chart market is not necessarily the next auto-trade candidate.</div>
+      <div class="auto-candidate-table-wrap">
+        <div class="auto-candidate-table-head"><span>SYMBOL</span><span>BIAS / SIGNAL</span><span>GATES</span><span>EXECUTION STATUS</span></div>
+        <div id="autoCandidateList" class="auto-candidate-list"><div class="empty-state">Waiting for per-market strategy decisions…</div></div>
+      </div>
+      <div id="autoCandidateUpdated" class="auto-candidate-updated">Waiting for scanner timestamps…</div>
     </section>
 
     <div class="dashboard-grid">
@@ -302,7 +325,7 @@
 
   </main>
 </div>
-<script defer src="/manual-control.js?v=20261011-audit-fix1"></script>
-<script defer src="/app.js?v=20261011-audit-fix1"></script>
+<script defer src="/manual-control.js?v=20261011-candidate1"></script>
+<script defer src="/app.js?v=20261011-candidate1"></script>
 </body>
 </html>
