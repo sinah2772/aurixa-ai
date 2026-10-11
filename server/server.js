@@ -356,9 +356,14 @@ app.post("/api/auto-trader/control", (req, res) => {
       if (Array.isArray(parsed)) armed = parsed.map(normalizeSymbolName).filter(supportedDiscovered);
     } catch (_) { armed = []; }
 
-    // When converting from global mode to pair mode, arm only the requested pair.
+    // Enabling a single pair from OFF starts a one-pair scope. If the operator
+    // disables one pair while global mode is active, preserve the other discovered pairs.
     const wasScoped = String(process.env.AUTO_TRADING_SYMBOL_SCOPE || "false").toLowerCase() === "true";
-    if (!wasScoped) armed = [];
+    if (!wasScoped) {
+      armed = enabled ? [] : (ct.symbols || [])
+        .map(item => normalizeSymbolName(item.canonicalName || item.symbolName))
+        .filter(supportedDiscovered);
+    }
     const next = new Set(armed);
     if (enabled) next.add(requestedSymbol);
     else next.delete(requestedSymbol);
