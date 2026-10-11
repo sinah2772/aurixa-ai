@@ -1761,22 +1761,8 @@ function registerCTrader(app) {
         });
       }
 
-      // The app runs one active market engine at a time. Refuse a market
-      // switch while a position for the active symbol is open, because its
-      // quote stream is required for verified SL/TP repair and trailing.
-      const activePositions = await getOpenXAUUSDPositions(true);
-      if (activePositions.length) {
-        return res.status(409).json({
-          ok: false,
-          error: "OPEN_POSITIONS_MUST_BE_CLOSED_BEFORE_SWITCHING_SYMBOL",
-          activeSymbol: state.symbolName,
-          openPositions: activePositions.length
-        });
-      }
-
-      // Never leave the auto-trader armed across a symbol switch.
-      process.env.AUTO_TRADING = "false";
-
+      // Chart selection only changes the visible chart. Independent per-symbol
+      // feeds remain subscribed and the multi-symbol auto-trader keeps running.
       /*
        * Reset AURIXA's generic M5 engine so candles from
        * the previous pair cannot mix with the new pair.
@@ -1974,6 +1960,29 @@ async function getOpenXAUUSDPositions(returnProtectionOrders = false, symbolName
   const target = findAvailableSymbol(symbolName || state.symbolName);
   const targetId = Number(target?.symbolId ?? state.symbolId);
   return positions.filter(position => Number(position?.tradeData?.symbolId) === targetId && Number(position?.positionStatus) === 1);
+}
+
+// Return all open positions on supported broker-discovered symbols.
+// This snapshot is independent of the currently selected chart symbol.
+async function getOpenSymbolPositions(returnProtectionOrders = false) {
+  if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
+  if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
+
+  const msg = await request(state.ws, 2124, {
+    ctidTraderAccountId: Number(state.accountId),
+    returnProtectionOrders: Boolean(returnProtectionOrders)
+  }, 10000);
+  const positions = Array.isArray(msg?.payload?.position) ? msg.payload.position : [];
+  const symbolsById = new Map(getSupportedSymbols().map(item => [Number(item.symbolId), item]));
+
+  return positions.filter(position => {
+    const symbolId = Number(position?.tradeData?.symbolId);
+    return Number(position?.positionStatus) === 1 && symbolsById.has(symbolId);
+  }).map(position => {
+    const symbolId = Number(position?.tradeData?.symbolId);
+    const symbol = symbolsById.get(symbolId);
+    return { ...position, symbol: symbol.canonicalName, symbolName: symbol.symbolName, symbolId };
+  });
 }
 
 async function inspectOpenXAUUSDPositions() {
@@ -2499,7 +2508,7 @@ async function closeXAUUSDPosition(positionId, volume, symbolName = state.symbol
   for (let check = 0; check < 10; check++) {
     await new Promise(resolve => setTimeout(resolve, 500));
     try {
-      const positions = await getOpenXAUUSDPositions(true);
+      const positions = await getOpenXAUUSDPositions(true, symbolName);
       const stillOpen = positions.find(position => String(position?.positionId) === String(pid));
       if (!stillOpen) {
         brokerConfirmed = true;
@@ -2586,6 +2595,7 @@ module.exports = {
   getDatabaseHealth,
   queryDatabase,
   getOpenXAUUSDPositions,
+  getOpenSymbolPositions,
   getDealsByPositionId,
   inspectOpenXAUUSDPositions,
   modifyPositionProtection,
