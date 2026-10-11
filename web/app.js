@@ -994,6 +994,65 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     text("performanceSample", "LAST " + rows.length + " TRADES · " + evaluated + " WITH RECORDED P/L · " + pending + " P/L PENDING");
   }
 
+  async function openFinishedTradeInvestigation(tradeId) {
+    let modal = document.getElementById("finishedTradeInvestigation");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "finishedTradeInvestigation";
+      modal.className = "signal-investigation-modal";
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+      modal.innerHTML = '<div class="signal-investigation-backdrop" data-finished-close></div><section class="signal-investigation-dialog" role="dialog" aria-modal="true" aria-labelledby="finishedTradeTitle"><header class="signal-investigation-header"><div><p class="eyebrow">TRADE LIFECYCLE AUDIT</p><h2 id="finishedTradeTitle">Why did this trade finish?</h2></div><button type="button" class="signal-investigation-close" data-finished-close aria-label="Close">×</button></header><div id="finishedTradeContent" class="signal-investigation-content"></div></section>';
+      document.body.appendChild(modal);
+      modal.addEventListener("click", event => {
+        if (event.target.closest("[data-finished-close]")) {
+          modal.hidden = true;
+          modal.setAttribute("aria-hidden", "true");
+          document.body.classList.remove("signal-investigation-open");
+        }
+      });
+    }
+    const content = document.getElementById("finishedTradeContent");
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("signal-investigation-open");
+    content.innerHTML = '<div class="empty">Loading broker and trade records…</div>';
+    try {
+      const response = await fetch("/api/auto-trader/trade-trace/" + encodeURIComponent(tradeId), {cache:"no-store",headers:{Accept:"application/json"}});
+      const payload = await response.json();
+      if (!response.ok || payload?.ok !== true || !payload.trace) throw new Error(payload?.error || "Trade record unavailable");
+      const t = payload.trace, d = t.decision || {}, ex = t.execution || {}, p = t.protection || {}, life = t.lifecycle || {}, gates = t.gates || {};
+      const val = v => v === null || v === undefined || v === "" ? "Not recorded" : String(v);
+      const money = v => v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? "P/L unavailable" : (Number(v) > 0 ? "+" : "") + Number(v).toFixed(2);
+      const reason = String(life.exitReason || "");
+      const explanation = reason === "AI_DIRECTION_REVERSAL" ? "AURIXA confirmed an opposite-direction signal and the broker confirmed the close." :
+        reason === "BROKER_CLOSED" ? "The broker position disappeared and a close was reconciled. The stored record does not identify whether SL, TP, manual close, or another broker action triggered it." :
+        reason ? "Recorded exit reason: " + reason.replace(/_/g, " ").toLowerCase() + "." :
+        "No specific exit trigger was stored for this trade.";
+      const field = (label, value) => '<div class="signal-investigation-field"><span>' + escapeHTML(label) + '</span><strong>' + escapeHTML(val(value)) + '</strong></div>';
+      content.innerHTML =
+        '<section class="signal-investigation-section"><h3>WHY did the trade open?</h3><div class="signal-investigation-grid">' +
+        field("Direction / symbol", val(ex.direction) + " / " + val(t.symbol)) +
+        field("Strategy", val(d.engine) + " / " + val(d.version)) +
+        field("Signal confidence", d.confidence == null ? "Not recorded" : Number(d.confidence).toFixed(1) + "%") +
+        field("Decision ID", d.id) + field("Gate / block reason", gates.reason) +
+        field("Original decision", d.data?.reason || d.data?.explanation || "See raw decision evidence below") +
+        '</div></section><section class="signal-investigation-section"><h3>HOW did it execute and finish?</h3><div class="signal-investigation-grid">' +
+        field("Status", ex.status) + field("Order ID", ex.orderId) + field("Position ID", ex.positionId) +
+        field("Volume", ex.volume) + field("Signal entry", ex.signalEntryPrice) + field("Actual entry", ex.entryPrice) +
+        field("Planned entry", p.plannedEntryPrice) + field("Planned stop-loss", p.plannedStopPrice) +
+        field("Planned take-profit", p.plannedTakeProfitPrice) + field("Stop distance", p.stopLossDistance) +
+        field("Take-profit distance", p.takeProfitDistance) + field("Opened at", ex.openedAt) +
+        field("Closed at", life.closedAt) + field("Exit price", life.closePrice) +
+        field("Realized P/L", money(life.profit)) + field("Recorded exit reason", reason || "Not recorded") +
+        '</div><p class="signal-investigation-explanation"><b>Closure explanation:</b> ' + escapeHTML(explanation) + '</p>' +
+        (t.error ? '<p class="signal-investigation-explanation"><b>Execution error:</b> ' + escapeHTML(t.error) + '</p>' : '') +
+        '</section><details class="signal-raw-evidence"><summary>View raw decision evidence</summary><pre>' + escapeHTML(JSON.stringify(d.data || {}, null, 2)) + '</pre></details>';
+    } catch (error) {
+      content.innerHTML = '<div class="empty">Could not load trade investigation: ' + escapeHTML(error.message || "Request failed") + '</div>';
+    }
+  }
+
   function renderClosedTradeHistory(data) {
     const body = $("closedTradeHistory");
     const summary = $("closedTradeHistorySummary");
@@ -1051,7 +1110,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
         const pnlClass = pnl === null ? "pnl-pending" : pnl > 0 ? "pnl-positive" : pnl < 0 ? "pnl-negative" : "pnl-flat";
         const time = formatTime(t.closedAt || t.openedAt || t.createdAt);
         const pnlLabel = pnl === null ? "PENDING" : (pnl > 0 ? "+" : "") + number(pnl, 2);
-        return '<tr>' +
+        return '<tr data-finished-trade-id="' + escapeHTML(String(t.id || "")) + '" tabindex="0" role="button" aria-label="Investigate finished trade ' + escapeHTML(String(t.id || "")) + '">' +
           cell(time) +
           '<td><strong class="' + (direction === "BUY" ? "history-buy" : direction === "SELL" ? "history-sell" : "") + '">' + escapeHTML(direction + " · " + tradeSymbol) + '</strong></td>' +
           cell(priceCell(entry, digits)) +
@@ -1240,6 +1299,24 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
 
   function start() {
     wireSignalInvestigation();
+    const closedHistory = $("closedTradeHistory");
+    if (closedHistory && !closedHistory.dataset.finishedTradeInvestigationWired) {
+      closedHistory.dataset.finishedTradeInvestigationWired = "true";
+      const openFromRow = event => {
+        const row = event.target.closest("[data-finished-trade-id]");
+        if (row && row.dataset.finishedTradeId) openFinishedTradeInvestigation(row.dataset.finishedTradeId);
+      };
+      closedHistory.addEventListener("click", openFromRow);
+      closedHistory.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          const row = event.target.closest("[data-finished-trade-id]");
+          if (row && row.dataset.finishedTradeId) {
+            event.preventDefault();
+            openFinishedTradeInvestigation(row.dataset.finishedTradeId);
+          }
+        }
+      });
+    }
     const connectButton =
       $("loginBtn") ||
       $("connectCtrader");
