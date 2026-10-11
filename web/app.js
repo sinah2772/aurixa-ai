@@ -417,6 +417,87 @@
     text("aiGate", failed.length ? "BLOCKED · " + failed.join(" · ") : data.executionEligible === true ? "ALL GATES PASSED" : "WAITING FOR GATES");
   }
 
+  function updateAutoTradeCandidate(ai, ctrader, autoStatus, positions) {
+    const data = ai?.decision || ai?.result || ai || {};
+    const signal = String(first(data.signal, data.direction, "WAIT")).toUpperCase();
+    const symbol = String(first(data.symbol, data.symbolName, "UNKNOWN")).toUpperCase().replace(/[\\/\\s_-]/g, "");
+    const gates = data.gates || {};
+    const blocked = Array.isArray(data.blockedBy)
+      ? data.blockedBy
+      : Object.entries(gates).filter(([, value]) => value === false).map(([key]) => key);
+    const reasons = blocked.map(key => String(key).replaceAll("_", " ").toUpperCase());
+    const connected = ctrader?.connected === true && ctrader?.authorized === true;
+    const demo = autoStatus?.demoAccount === true && autoStatus?.demoOnly === true;
+    const enabled = autoStatus?.enabled === true;
+    const autoReady = enabled && demo && connected && autoStatus?.blocked !== true;
+    const eligible = data.executionEligible === true && (signal === "BUY" || signal === "SELL");
+
+    text("candidateSymbol", symbol);
+    text("candidateDirection", signal === "BUY" || signal === "SELL" ? signal : "WAIT");
+
+    let approval;
+    if (!data || !Object.keys(data).length) {
+      approval = "DECISION UNAVAILABLE";
+    } else if (reasons.length) {
+      approval = "BLOCKED";
+    } else if (!eligible) {
+      approval = signal === "BUY" || signal === "SELL" ? "GATES UNCONFIRMED" : "WAITING FOR SIGNAL";
+    } else if (!enabled) {
+      approval = "SIGNAL READY · AUTO OFF";
+    } else if (!autoReady) {
+      approval = "WAITING · ACCOUNT / FEED";
+    } else {
+      approval = "ENTRY GATES PASSED";
+    }
+    text("candidateApproval", approval);
+
+    const autoLabel = !autoStatus
+      ? "STATUS UNAVAILABLE"
+      : !enabled
+        ? "OFF"
+        : autoStatus.blocked === true
+          ? "BLOCKED"
+          : autoReady
+            ? "ARMED · DEMO"
+            : "WAITING · VERIFY DEMO / FEED";
+    text("candidateAutoStatus", autoLabel);
+
+    const openPositions = Array.isArray(positions?.positions) ? positions.positions : [];
+    const matchingPosition = openPositions.find(position => {
+      const positionSymbol = String(first(position.symbol, position.symbolName, position.tradeData?.symbolName, "")).toUpperCase().replace(/[\\/\\s_-]/g, "");
+      const side = Number(first(position.tradeData?.tradeSide, position.tradeSide));
+      const positionDirection = side === 1 ? "BUY" : side === 2 ? "SELL" : String(first(position.direction, "")).toUpperCase();
+      return positionSymbol === symbol && positionDirection === signal;
+    });
+    text("candidateBrokerStatus", matchingPosition ? "OPEN POSITION VERIFIED" : "NO MATCHING OPEN POSITION");
+
+    let reason;
+    if (!data || !Object.keys(data).length) {
+      reason = "The AI decision API has not supplied a decision yet.";
+    } else if (reasons.length) {
+      reason = "BLOCKED BY: " + reasons.join(" · ");
+    } else if (signal !== "BUY" && signal !== "SELL") {
+      reason = "No BUY/SELL candidate is confirmed for " + symbol + ". Waiting for the strategy.";
+    } else if (!eligible) {
+      reason = "The direction is " + signal + ", but the backend has not confirmed execution eligibility.";
+    } else if (!enabled) {
+      reason = signal + " signal for " + symbol + " passes the reported AI gates, but auto-trading is OFF.";
+    } else if (!autoReady) {
+      reason = "Candidate " + symbol + " " + signal + " is waiting for verified demo account, cTrader connection, or unblocked auto-trader status.";
+    } else if (matchingPosition) {
+      reason = symbol + " " + signal + " has a matching open position in the cTrader position feed.";
+    } else {
+      reason = symbol + " " + signal + " passes the reported entry gates. No matching open position is visible yet; this is not proof that an order was accepted.";
+    }
+    text("candidateReason", reason);
+
+    const panel = $("autoTradeCandidatePanel");
+    if (panel) {
+      panel.classList.toggle("is-blocked", approval === "BLOCKED" || autoLabel === "BLOCKED");
+      panel.classList.toggle("is-approved", approval === "ENTRY GATES PASSED");
+    }
+  }
+
   function updateMarketSession(market, ctrader) {
     const state = market || {};
     const status = String(
@@ -936,6 +1017,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     updateAccountPanel(account, autoStatus, ctrader);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
+    updateAutoTradeCandidate(liveAi, ctrader, autoStatus, autoPositions);
     if (aiSignals && aiSignals.ok !== false) {
       renderConfirmedSignalHistory(aiSignals, autoTrades?.trades || []);
     } else {

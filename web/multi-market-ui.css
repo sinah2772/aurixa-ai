@@ -101,3 +101,16 @@ main > .panel, main > .dashboard-grid { margin: 0; }
 .frontend-data-freshness { margin-top: 8px; font-size: 11px; color: var(--muted, #a0a0a0); overflow-wrap: anywhere; }
 .frontend-data-freshness.is-fresh { color: var(--success, #65d6a0); }
 .frontend-data-freshness.is-stale { color: var(--danger, #ff7777); }
+
+
+/* Auto-trade candidate: clearly separate signal eligibility from broker execution. */
+.auto-candidate-panel { border-color: rgba(245,196,81,.28); }
+.auto-candidate-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:9px; margin-top:14px; }
+.auto-candidate-stat { min-width:0; padding:12px; border:1px solid var(--border); border-radius:10px; background:#080a0d; }
+.auto-candidate-stat span { display:block; color:var(--muted); font-size:9px; font-weight:850; letter-spacing:.09em; line-height:1.5; }
+.auto-candidate-stat strong { display:block; margin-top:7px; font-size:12px; overflow-wrap:anywhere; line-height:1.5; }
+.auto-candidate-reason { margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:10px; color:var(--text); background:rgba(255,255,255,.02); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.auto-candidate-panel.is-approved { border-color:rgba(48,214,138,.45); }
+.auto-candidate-panel.is-blocked { border-color:rgba(255,91,101,.45); }
+@media (max-width:850px) { .auto-candidate-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:420px) { .auto-candidate-grid { gap:7px; } .auto-candidate-stat { padding:9px; } .auto-candidate-stat strong { font-size:11px; } }
