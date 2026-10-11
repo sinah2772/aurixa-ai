@@ -93,7 +93,7 @@
       const discoveredCount = Number(data.discovered ?? markets.length);
       multiSymbolSummary.textContent =
         readyCount + " / " + discoveredCount + " MARKETS WITH DATA READY  ·  " +
-        (data.enabled ? "AUTO-TRADING ON" : "AUTO-TRADING OFF") +
+        (data.enabled ? (data.symbolScoped ? "PAIR-SCOPED AUTO-TRADING" : "AUTO-TRADING ON · ALL MARKETS") : "AUTO-TRADING OFF") +
         "  ·  DEMO ONLY  ·  DATA READY DOES NOT MEAN ENTRY APPROVED";
       // Position cards are backed by the live broker snapshot, never inferred
       // from strategy signals or planned entries.
@@ -240,51 +240,45 @@
         });
         controls.append(detailsButton, chartButton);
 
-        if (!enabled) {
-          const enableButton = document.createElement("button");
-          enableButton.type = "button";
-          enableButton.className = "multi-symbol-select multi-symbol-enable";
-          enableButton.textContent = "ENABLE DEMO AUTO-TRADING";
-          enableButton.disabled = busy || enableBusy;
-          enableButton.addEventListener("click", async () => {
-            if (enableBusy || enabled) return;
-            enableBusy = true;
-            enableButton.disabled = true;
-            enableButton.textContent = "VERIFYING DEMO…";
-            try {
-              const response = await fetch("/api/auto-trader/control", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "Accept": "application/json" },
-                body: JSON.stringify({ enabled: true })
-              });
-              const result = await response.json();
-              if (!response.ok || result.ok !== true) {
-                const messages = {
-                  CTRADER_NOT_READY: "Connect and authorize cTrader first",
-                  DEMO_ACCOUNT_REQUIRED: "Demo account required",
-                  BROKER_TRADING_PERMISSION_REQUIRED: "Broker trading permission required",
-                  UNSUPPORTED_SYMBOL_OR_NOT_DISCOVERED: "No supported broker symbol"
-                };
-                throw new Error(messages[result.error] || result.error || "Enable request failed");
-              }
-              enabled = result.enabled === true;
-              await readStatus();
-              await refreshMultiSymbolStatus();
-            } catch (error) {
-              statusEl.textContent = "ENABLE BLOCKED · " + (error.message || "CONTROL REQUEST FAILED");
-              statusEl.classList.add("blocked");
-            } finally {
-              enableBusy = false;
-              await refreshMultiSymbolStatus();
+        const isPairEnabled = market.autoTradeEnabled === true;
+        const enableButton = document.createElement("button");
+        enableButton.type = "button";
+        enableButton.className = "multi-symbol-select multi-symbol-enable" + (isPairEnabled ? " enabled" : "");
+        enableButton.textContent = isPairEnabled ? "DISABLE " + symbol + " AUTO-TRADING" : "ENABLE " + symbol + " ONLY";
+        enableButton.setAttribute("aria-pressed", String(isPairEnabled));
+        enableButton.disabled = busy || enableBusy;
+        enableButton.addEventListener("click", async () => {
+          if (enableBusy) return;
+          enableBusy = true;
+          enableButton.disabled = true;
+          enableButton.textContent = "VERIFYING " + symbol + "…";
+          try {
+            const response = await fetch("/api/auto-trader/control", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Accept": "application/json" },
+              body: JSON.stringify({ enabled: !isPairEnabled, symbol })
+            });
+            const result = await response.json();
+            if (!response.ok || result.ok !== true) {
+              const messages = {
+                CTRADER_NOT_READY: "Connect and authorize cTrader first",
+                DEMO_ACCOUNT_REQUIRED: "Demo account required",
+                BROKER_TRADING_PERMISSION_REQUIRED: "Broker trading permission required",
+                UNSUPPORTED_SYMBOL_OR_NOT_DISCOVERED: "Pair is not supported/discovered"
+              };
+              throw new Error(messages[result.error] || result.error || "Pair control request failed");
             }
-          });
-          controls.appendChild(enableButton);
-        } else {
-          const enabledBadge = document.createElement("div");
-          enabledBadge.className = "multi-symbol-enable-state";
-          enabledBadge.textContent = study.executionEligible ? "AUTO-TRADING ON · SIGNAL ELIGIBLE" : "AUTO-TRADING ON · WAITING FOR VALID ENTRY";
-          controls.appendChild(enabledBadge);
-        }
+            await readStatus();
+            await refreshMultiSymbolStatus();
+          } catch (error) {
+            statusEl.textContent = "PAIR CONTROL BLOCKED · " + (error.message || "REQUEST FAILED");
+            statusEl.classList.add("blocked");
+          } finally {
+            enableBusy = false;
+            await refreshMultiSymbolStatus();
+          }
+        });
+        controls.appendChild(enableButton);
         card.append(head, quote, detail, studies, details, controls);
         multiSymbolGrid.appendChild(card);
       }
