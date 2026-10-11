@@ -26,10 +26,10 @@ test("position polling never fabricates trading authorization", () => {
   const end = app.indexOf("async function refreshLiveChart()", start);
   assert.ok(start >= 0 && end > start);
   const fastPoll = app.slice(start, end);
-  assert.doesNotMatch(fastPoll, /updateAutoTrader\\s*\\(/);
-  assert.doesNotMatch(fastPoll, /authorized\\s*:\\s*true/);
-  assert.doesNotMatch(fastPoll, /connected\\s*:\\s*true/);
-  assert.doesNotMatch(fastPoll, /enabled\\s*:\\s*true/);
+  assert.equal(fastPoll.includes("updateAutoTrader("), false);
+  assert.equal(fastPoll.includes("authorized: true"), false);
+  assert.equal(fastPoll.includes("connected: true"), false);
+  assert.equal(fastPoll.includes("enabled: true"), false);
 });
 
 test("positions endpoint has one dedicated fast-poll owner", () => {
