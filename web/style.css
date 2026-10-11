@@ -1645,3 +1645,12 @@ main > .panel,.dashboard-grid > .panel{min-width:0}
 .market-wait { color:var(--muted); font-size:10px; font-weight:900; }
 .multi-symbol-quote { color:var(--text); font-size:11px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .multi-symbol-detail { margin-top:7px; color:var(--muted); font-size:10px; line-height:1.5; overflow-wrap:anywhere; }
+
+
+/* Confirmed signal history: fit every column to the dashboard viewport. */
+.confirmed-history-panel{min-width:0;width:100%;overflow:hidden}
+.confirmed-history-panel .history-board-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0;flex-wrap:wrap}
+.confirmed-signal-head,.confirmed-signal-row{grid-template-columns:minmax(0,1.35fr) minmax(48px,.65fr) minmax(65px,.8fr) minmax(66px,.85fr) minmax(80px,1fr);gap:clamp(3px,.8vw,9px);width:100%;box-sizing:border-box}
+.confirmed-signal-row>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.confirmed-signal-row strong{overflow-wrap:anywhere}
+@media(max-width:700px){.confirmed-history-panel .history-board-title,.confirmed-history-panel .confirmed-signal-head,.confirmed-history-panel .confirmed-signal-history{min-width:0;width:100%}.confirmed-signal-head,.confirmed-signal-row{grid-template-columns:minmax(0,1.25fr) minmax(34px,.55fr) minmax(48px,.7fr) minmax(55px,.8fr) minmax(62px,.9fr);gap:3px}.confirmed-signal-head{font-size:clamp(6px,1.65vw,8px);letter-spacing:0;padding-left:2px;padding-right:2px}.confirmed-signal-row{font-size:clamp(7px,2vw,10px);padding:8px 4px}.confirmed-signal-row strong{font-size:clamp(7px,2vw,10px)}}
