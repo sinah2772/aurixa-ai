@@ -1490,25 +1490,13 @@ if (
       // Existing AURIXA M5 market engine.
       feedLiveTrendbars([bar]);
 
-      // Opening Range strategy M5.
-      openingRangeStrategy.updateM5Candle(
-        candle
-      );
+      // Multi-symbol AURIXA AI is the active strategy. The old Opening Range
+      // module is not present in this repository, so do not call an undefined
+      // strategy object during cTrader reconnect/session restore.
     }
 
-    if (period === 1) {
-      // Opening Range strategy M1.
-      openingRangeStrategy.updateLiveM1Candle(
-        candle
-      );
-
-      console.log(
-        "AURIXA_OPENING_RANGE_SIGNAL:",
-        JSON.stringify(
-          openingRangeStrategy.getPrediction()
-        )
-      );
-    }
+    // M1 Opening Range evaluation intentionally disabled: the active
+    // auto-trading engine evaluates each discovered symbol on independent M5 data.
   }
 }
 
