@@ -239,9 +239,35 @@ app.get("/api/auto-trader/multi-symbol-status", (req, res) => {
         Number.isFinite(Number(market.bid)) && Number.isFinite(Number(market.ask)) &&
         Number(market.ask) > Number(market.bid)
       );
+      const candidate = latestAutoTradeCandidates.get(normalizeSymbolName(market.symbol)) || {};
+      const candidateTime = Date.parse(candidate.checkedAt || "");
+      const candidateFresh = Number.isFinite(candidateTime) && Date.now() - candidateTime <= 45000;
       return { ...market, quoteFresh, ready,
         reason: ready ? "READY" : market.candleCount < 50 ? "WAITING_FOR_M5_HISTORY" :
-          !quoteFresh ? "WAITING_FOR_FRESH_QUOTE" : "MARKET_DATA_UNAVAILABLE" };
+          !quoteFresh ? "WAITING_FOR_FRESH_QUOTE" : "MARKET_DATA_UNAVAILABLE",
+        study: {
+          fresh: candidateFresh,
+          signal: candidateFresh ? (candidate.signal || "WAIT") : "WAIT",
+          confidence: candidateFresh ? (candidate.confidence ?? null) : null,
+          trend: candidateFresh ? (candidate.trend || null) : null,
+          regime: candidateFresh ? (candidate.regime || null) : null,
+          ema9: candidateFresh ? (candidate.ema9 ?? null) : null,
+          ema21: candidateFresh ? (candidate.ema21 ?? null) : null,
+          ema50: candidateFresh ? (candidate.ema50 ?? null) : null,
+          rsi: candidateFresh ? (candidate.rsi ?? null) : null,
+          atr: candidateFresh ? (candidate.atr ?? null) : null,
+          momentum: candidateFresh ? (candidate.momentum ?? null) : null,
+          score: candidateFresh ? (candidate.score || null) : null,
+          logic: candidateFresh ? (candidate.logic || null) : null,
+          entry: candidateFresh ? (candidate.entry ?? null) : null,
+          stopLoss: candidateFresh ? (candidate.stopLoss ?? null) : null,
+          takeProfit: candidateFresh ? (candidate.takeProfit ?? null) : null,
+          rewardRisk: candidateFresh ? (candidate.rewardRisk ?? null) : null,
+          executionEligible: candidateFresh && candidate.executionEligible === true,
+          executionStatus: candidateFresh ? (candidate.executionStatus || "ANALYZED · NO ENTRY") : "WAITING FOR ANALYSIS",
+          reason: candidateFresh ? (candidate.executionReason || candidate.reason || "WAITING FOR ENTRY CONFIRMATION") : "WAITING FOR FRESH STRATEGY EVALUATION",
+          checkedAt: candidate.checkedAt || null
+        } };
     });
     res.set("Cache-Control", "no-store");
     res.json({ ok:true, enabled:autoTrader.getStatus().enabled, demoOnly:true,
@@ -740,6 +766,10 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             blockedBy: decision.blockedBy || [], gates: decision.gates || {},
             entry: decision.entry ?? null, stopLoss: decision.stopLoss ?? null,
             takeProfit: decision.takeProfit ?? null, rewardRisk: decision.rewardRisk ?? null,
+            trend: decision.trend ?? null, regime: decision.regime ?? null,
+            ema9: decision.ema9 ?? null, ema21: decision.ema21 ?? null, ema50: decision.ema50 ?? null,
+            rsi: decision.rsi ?? null, atr: decision.atr ?? null, momentum: decision.momentum ?? null,
+            score: decision.score ?? null, logic: decision.logic ?? null,
             candleCount: market.candles.length, quoteFresh: true,
             decisionId, checkedAt: new Date().toISOString()
           };
