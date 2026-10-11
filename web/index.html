@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261011-audit-fix1">
-  <link rel="stylesheet" href="/multi-market-ui.css?v=20261011-audit-fix1">
+  <link rel="stylesheet" href="/style.css?v=20261011-candidate1">
+  <link rel="stylesheet" href="/multi-market-ui.css?v=20261011-candidate1">
   </head>
 <body>
 <div class="app">
@@ -81,6 +81,21 @@
       <div class="multi-symbol-grid" id="multiSymbolGrid">
         <div class="empty-state">Waiting for per-symbol quotes and M5 history…</div>
       </div>
+    </section>
+
+    <!-- AUTO-TRADE CANDIDATE -->
+    <section class="panel auto-candidate-panel" aria-labelledby="autoCandidateTitle">
+      <div class="section-title">AUTO-TRADE CANDIDATE</div>
+      <div class="section-heading" id="autoCandidateTitle">CURRENT AI EVALUATION</div>
+      <div class="auto-candidate-grid">
+        <div class="auto-candidate-stat"><span>SYMBOL</span><strong id="candidateSymbol">WAITING</strong></div>
+        <div class="auto-candidate-stat"><span>DIRECTION</span><strong id="candidateDirection">WAIT</strong></div>
+        <div class="auto-candidate-stat"><span>ENTRY APPROVAL</span><strong id="candidateApproval">CHECKING</strong></div>
+        <div class="auto-candidate-stat"><span>AUTO-TRADER</span><strong id="candidateAutoStatus">CHECKING</strong></div>
+        <div class="auto-candidate-stat"><span>BROKER POSITION</span><strong id="candidateBrokerStatus">NOT CHECKED</strong></div>
+      </div>
+      <div id="candidateReason" class="auto-candidate-reason" role="status" aria-live="polite">Waiting for current AI decision and broker status…</div>
+      <p class="notice">AURIXA scans supported markets independently. This panel shows the latest AI decision returned by the backend, not a manually selected execution pair. DATA READY is not trade approval. A broker position is confirmed only from the cTrader open-position feed.</p>
     </section>
 
     <div class="dashboard-grid">
@@ -302,7 +317,7 @@
 
   </main>
 </div>
-<script defer src="/manual-control.js?v=20261011-audit-fix1"></script>
-<script defer src="/app.js?v=20261011-audit-fix1"></script>
+<script defer src="/manual-control.js?v=20261011-candidate1"></script>
+<script defer src="/app.js?v=20261011-candidate1"></script>
 </body>
 </html>
