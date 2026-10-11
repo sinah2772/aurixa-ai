@@ -655,7 +655,8 @@ app.get("/api/auto-trader/trades", async (req, res) => {
       queryDatabase(`
         SELECT ${tradeColumns}
         FROM aurixa.auto_trades
-        WHERE UPPER(status) = 'CLOSED'
+        WHERE UPPER(BTRIM(COALESCE(status, ''))) LIKE 'CLOSED%'
+           OR closed_at IS NOT NULL
         ORDER BY closed_at DESC NULLS LAST, created_at DESC
         LIMIT $1
       `, [limit])
