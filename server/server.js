@@ -314,11 +314,12 @@ app.get("/api/auto-trader/positions", async (req, res) => {
     const getPositions = ctrader.getOpenSymbolPositions || ctrader.getOpenXAUUSDPositions;
     const positions = await getPositions(true);
 
-    const bid = Number(status.bid);
-    const ask = Number(status.ask);
-
     const livePositions = positions.map(position => {
       const td = position?.tradeData || {};
+      const symbol = normalizeSymbolName(position?.symbol || position?.symbolName || status.symbolName || status.symbol || "XAUUSD");
+      const symbolStatus = ctrader.getCTraderStatusForSymbol?.(symbol) || status;
+      const bid = Number(symbolStatus.bid);
+      const ask = Number(symbolStatus.ask);
       const side = Number(td.tradeSide);
       const direction = side === 1 ? "BUY" : side === 2 ? "SELL" : null;
       const entry = Number(position?.price ?? td.openPrice ?? td.price ?? position?.openPrice);
@@ -342,8 +343,8 @@ app.get("/api/auto-trader/positions", async (req, res) => {
       // Actual protection must come only from the current cTrader position
       // snapshot. Never fall back to planned/stored trade SL/TP: missing broker
       // fields must remain unconfirmed rather than being shown as protected.
-      const rawSL = position?.stopLoss;
-      const rawTP = position?.takeProfit;
+      const rawSL = position?.stopLoss ?? td.stopLoss;
+      const rawTP = position?.takeProfit ?? td.takeProfit;
       const actualSL = rawSL == null || rawSL === "" ? null : Number(rawSL);
       const actualTP = rawTP == null || rawTP === "" ? null : Number(rawTP);
       const hasSL = Number.isFinite(actualSL) && actualSL > 0;
@@ -352,7 +353,7 @@ app.get("/api/auto-trader/positions", async (req, res) => {
 
       return {
         ...position,
-        symbol: normalizeSymbolName(status.symbolName || status.symbol || "XAUUSD"),
+        symbol,
         direction,
         entryPrice: Number.isFinite(entry) ? entry : null,
         currentPrice: Number.isFinite(currentPrice) ? currentPrice : null,
@@ -366,12 +367,12 @@ app.get("/api/auto-trader/positions", async (req, res) => {
           takeProfit: hasTP ? actualTP : null,
           stopLossSet: hasSL,
           takeProfitSet: hasTP,
-          checkedAt: status.lastUpdate || new Date().toISOString()
+          checkedAt: symbolStatus.lastUpdate || new Date().toISOString()
         },
         // Never invent floating P/L from price difference × broker volume;
         // volume units and account-currency conversion vary by symbol.
         unrealizedNetProfit: Number.isFinite(brokerPnl) ? brokerPnl : null,
-        liveQuoteTimestamp: status.lastUpdate || new Date().toISOString()
+        liveQuoteTimestamp: symbolStatus.lastUpdate || new Date().toISOString()
       };
     });
 
@@ -381,7 +382,9 @@ app.get("/api/auto-trader/positions", async (req, res) => {
       readOnly: true,
       live: true,
       quoteUpdatedAt: status.lastUpdate || null,
+      scope: "MULTI_SYMBOL",
       symbol: normalizeSymbolName(status.symbolName || status.symbol || "XAUUSD"),
+      selectedSymbol: normalizeSymbolName(status.symbolName || status.symbol || "XAUUSD"),
       symbolDigits: status.symbolDigits ?? null,
       bid: Number.isFinite(bid) ? bid : null,
       ask: Number.isFinite(ask) ? ask : null,

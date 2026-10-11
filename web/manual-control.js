@@ -174,7 +174,7 @@
     const requested = symbolSelect.value;
     if (!requested || requested === selectedSymbol || busy) return;
     busy = true;
-    render("VERIFYING SYMBOL · CHECKING OPEN POSITIONS…");
+    render("SWITCHING CHART · MULTI-MARKET SCANNER STAYS RUNNING…");
     try {
       const response = await fetch("/api/ctrader/select-symbol", {
         method: "POST",
@@ -184,7 +184,6 @@
       const data = await response.json();
       if (!response.ok || data.ok !== true) {
         const messages = {
-          OPEN_POSITIONS_MUST_BE_CLOSED_BEFORE_SWITCHING_SYMBOL: "CLOSE OPEN POSITIONS ON " + String(data.activeSymbol || selectedSymbol || "THE ACTIVE SYMBOL") + " BEFORE SWITCHING",
           CTRADER_NOT_READY: "CONNECT / AUTHORIZE cTRADER FIRST",
           "cTrader WebSocket is not connected": "cTRADER FEED DISCONNECTED"
         };
@@ -192,7 +191,7 @@
       }
       selectedSymbol = canonical(data.symbol);
       await refreshSymbols(selectedSymbol);
-      render("SELECTED · " + selectedSymbol + " · AUTO-TRADING OFF", "ready");
+      render("CHART SELECTED · " + selectedSymbol + " · MULTI-MARKET SCANNER CONTINUES", "ready");
       window.location.reload();
     } catch (error) {
       await refreshSymbols(selectedSymbol).catch(() => {});
