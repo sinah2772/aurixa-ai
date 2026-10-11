@@ -384,7 +384,7 @@
   function updateSignal(ai) {
     const data = ai?.decision || ai || {};
     const signal = String(first(data.signal, data.direction, "WAIT")).toUpperCase();
-    const confidence = Number(data.confidence);
+    const confidence = data.confidence == null || data.confidence === "" ? NaN : Number(data.confidence);
     const gates = data.gates || {};
     const blocked = Array.isArray(data.blockedBy)
       ? data.blockedBy
@@ -400,15 +400,17 @@
     text("aiDecisionSymbol", String(first(data.symbol, data.symbolName, $("instrument")?.textContent, "XAUUSD")).toUpperCase());
     text("aiRegime", String(first(data.regime,"—")).replaceAll("_"," "));
     text("aiTrend", first(data.trend,"—"));
-    text("aiRsi", Number.isFinite(Number(data.rsi)) ? number(data.rsi,1) : "—");
-    text("aiMomentum", Number.isFinite(Number(data.momentum)) ? number(data.momentum,2) + " ATR" : "—");
+    const rsi = data.rsi == null || data.rsi === "" ? NaN : Number(data.rsi);
+    const momentum = data.momentum == null || data.momentum === "" ? NaN : Number(data.momentum);
+    text("aiRsi", Number.isFinite(rsi) ? number(rsi,1) : "—");
+    text("aiMomentum", Number.isFinite(momentum) ? number(momentum,2) + " ATR" : "—");
 
-    const buy = Number(data?.score?.buy);
-    const sell = Number(data?.score?.sell);
+    const buy = data?.score?.buy == null || data.score.buy === "" ? NaN : Number(data.score.buy);
+    const sell = data?.score?.sell == null || data.score.sell === "" ? NaN : Number(data.score.sell);
     text("aiScore", Number.isFinite(buy) && Number.isFinite(sell) ? "BUY " + buy + " / SELL " + sell : "—");
 
     const logic = data.logic || {};
-    text("aiLogicChecks", Number.isFinite(Number(logic.passed))
+    text("aiLogicChecks", logic.passed != null && logic.passed !== "" && Number.isFinite(Number(logic.passed))
       ? String(logic.passed) + "/" + String(first(logic.total,6)) + " PASSED"
       : "—");
 
@@ -865,7 +867,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     };
     body.innerHTML = confirmed.map(row => {
       const signal=String(first(row?.signal,row?.direction,row?.decision,"")).toUpperCase();
-      const confidence=Number(row?.confidence);
+      const confidence=row?.confidence == null || row?.confidence === "" ? NaN : Number(row.confidence);
       const price=first(row?.entryPrice,row?.price,row?.mid,row?.close);
       const time=first(row?.timestamp,row?.createdAt,row?.created_at,row?.time,row?.created);
       const trade=findTrade(row,signal,price);
