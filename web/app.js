@@ -28,6 +28,7 @@
   };
 
   let chart = null;
+  let fullRefreshBusy = false;
 
   async function getJSON(url) {
     try {
@@ -41,9 +42,7 @@
         return null;
       }
 
-      const json = await r.json();
-      console.log("AURIXA API RESPONSE:", url, json);
-      return json;
+      return await r.json();
     } catch {
       return null;
     }
@@ -376,6 +375,7 @@
 
     setSignal(signal);
     text("confidence", Number.isFinite(confidence) ? number(confidence,0) + "%" : "—");
+    text("aiDecisionSymbol", String(first(data.symbol, data.symbolName, $("instrument")?.textContent, "XAUUSD")).toUpperCase());
     text("aiRegime", String(first(data.regime,"—")).replaceAll("_"," "));
     text("aiTrend", first(data.trend,"—"));
     text("aiRsi", Number.isFinite(Number(data.rsi)) ? number(data.rsi,1) : "—");
@@ -466,7 +466,7 @@
     const hasPosition = Number(first(positions?.count, 0)) > 0;
     const ready = eligible && !hasPosition;
 
-    text("gateMarket", gates.dataReady === false ? "NO DATA" : (gates.spreadAllowed === false ? "SPREAD BLOCKED" : "READY"));
+    text("gateMarket", gates.dataReady === false ? "NO DATA" : (gates.spreadAllowed === false ? "SPREAD BLOCKED" : "DATA READY"));
     text("gateSignal", direction);
     const failedGates = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
     text("gateQuality", failedGates.length ? "BLOCKED · " + failedGates.map(k => String(k).replaceAll("_", " ").toUpperCase()).join(" / ") : "PASSED");
@@ -683,7 +683,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const logic = data.logic || {};
     const failed = Array.isArray(data.blockedBy) ? data.blockedBy : [];
     const rr = first(data.rewardRisk, data.riskReward);
-    text("activityLast", new Date().toLocaleTimeString());
+    const evaluationTime = first(data.evaluatedAt, data.evaluated_at, data.evaluationTime, data.timestamp, data.createdAt, data.created_at);
+    text("activityLast", evaluationTime ? formatTime(evaluationTime) : "UI UPDATE · " + new Date().toLocaleTimeString());
     text("activityDecision", signal + " · " + number(data.confidence, 0) + "%");
     text("activityLogic", Number.isFinite(Number(logic.passed)) ? String(logic.passed) + "/" + String(first(logic.total, 6)) + " checks passed" : "Logic unavailable");
     text("activityGates", failed.length ? "BLOCKED · " + failed.map(x => x.replaceAll("_"," ")).join(" · ").toUpperCase() : (data.executionEligible === true ? "ALL GATES PASSED" : "WAITING FOR GATES"));
@@ -770,8 +771,9 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
         else if(status==="SUBMITTED") tradeStatus="TRADE SUBMITTED";
         else if(trade.gateReason) tradeStatus="BLOCKED";
       }
+      const rowSymbol = String(first(row?.symbol, row?.symbolName, $("instrument")?.textContent, "UNKNOWN")).toUpperCase();
       return '<div class="confirmed-signal-row">'+
-        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'">'+signal+'</strong>'+
+        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'">'+escapeHTML(signal + " · " + rowSymbol)+'</strong>'+
         '<span>'+escapeHTML(Number.isFinite(confidence)?number(confidence,0)+"%":"—")+'</span>'+
         '<span>'+escapeHTML(Number.isFinite(Number(price))?number(price,2):"—")+'</span>'+
         '<span>'+escapeHTML(formatTime(time))+'</span>'+
@@ -842,7 +844,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
 
     body.innerHTML = closed.map(t => {
       const direction = String(t.direction || "").toUpperCase();
-      const digits = priceDigits(t.symbol || "XAUUSD");
+      const tradeSymbol = String(first(t.symbol, t.symbolName, "UNKNOWN")).toUpperCase();
+      const digits = priceDigits(tradeSymbol);
       const toNumber = value => {
         if (value === null || value === undefined || value === "") return null;
         const n = Number(value);
@@ -856,7 +859,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       const opened = formatTime(t.openedAt || t.createdAt);
       const closedAt = formatTime(t.closedAt);
       return '<div class="confirmed-signal-row">' +
-        '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML(direction || "TRADE") + '</strong>' +
+        '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML((direction || "TRADE") + " · " + tradeSymbol) + '</strong>' +
         '<span>' + escapeHTML((entry !== null && entry > 0 ? number(entry, digits) : "—") + " → " + (exit !== null && exit > 0 ? number(exit, digits) : "—")) + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(pnl !== null ? (pnl > 0 ? "+" : "") + number(pnl, 2) : "—") + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(result + " · " + closedAt) + '</span>' +
@@ -864,7 +867,21 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }).join("");
   }
 
+  function updateFrontendFreshness(responses) {
+    const el = $("frontendDataFreshness");
+    if (!el) return;
+    const healthy = responses.every(value => value !== null && value !== undefined && value?.ok !== false);
+    el.textContent = healthy
+      ? "API DATA UPDATED · " + new Date().toLocaleTimeString()
+      : "DATA PARTIAL / STALE · ONE OR MORE API REQUESTS FAILED";
+    el.classList.toggle("is-stale", !healthy);
+    el.classList.toggle("is-fresh", healthy);
+  }
+
   async function refresh() {
+    if (fullRefreshBusy) return;
+    fullRefreshBusy = true;
+    try {
     const [
       market,
       marketState,
@@ -922,6 +939,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     );
 
     const system = await getJSON(API.system);
+    updateFrontendFreshness([market, marketState, ctrader, autoStatus, autoPositions, aiDecision, aiHistory, aiSignals, autoTrades, account, system]);
 
     if (system) {
       const online =
@@ -938,6 +956,9 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       "lastRefresh",
       new Date().toLocaleTimeString()
     );
+    } finally {
+      fullRefreshBusy = false;
+    }
   }
 
   let openTradesRefreshBusy = false;
@@ -949,20 +970,9 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     try {
       const live = await getJSON(API.autoPositions);
       if (live?.ok === true) {
+        // This fast poll owns only the broker position list. Authorization,
+        // connection and auto-trading state must come from real status APIs.
         renderOpenTrades(live);
-        // Keep the compact account/execution position display synchronized
-        // with the same broker snapshot used by OPEN TRADES.
-        updateAutoTrader(
-          {
-            enabled: true,
-            demoOnly: true,
-            demoAccount: true,
-            connected: true,
-            authorized: true,
-            positionLimit: "unlimited"
-          },
-          live
-        );
       }
     } finally {
       openTradesRefreshBusy = false;
