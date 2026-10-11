@@ -1654,3 +1654,44 @@ main > .panel,.dashboard-grid > .panel{min-width:0}
 .confirmed-signal-row>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .confirmed-signal-row strong{overflow-wrap:anywhere}
 @media(max-width:700px){.confirmed-history-panel .history-board-title,.confirmed-history-panel .confirmed-signal-head,.confirmed-history-panel .confirmed-signal-history{min-width:0;width:100%}.confirmed-signal-head,.confirmed-signal-row{grid-template-columns:minmax(0,1.25fr) minmax(34px,.55fr) minmax(48px,.7fr) minmax(55px,.8fr) minmax(62px,.9fr);gap:3px}.confirmed-signal-head{font-size:clamp(6px,1.65vw,8px);letter-spacing:0;padding-left:2px;padding-right:2px}.confirmed-signal-row{font-size:clamp(7px,2vw,10px);padding:8px 4px}.confirmed-signal-row strong{font-size:clamp(7px,2vw,10px)}}
+
+
+/* Clickable confirmed-signal investigation */
+.confirmed-signal-click{display:grid;align-items:center;text-align:left;font:inherit;color:var(--text);background:transparent;border:0;border-bottom:1px solid var(--border);cursor:pointer}
+.confirmed-signal-click:hover,.confirmed-signal-click:focus-visible{background:var(--panel2);outline:2px solid var(--border);outline-offset:-2px}
+.confirmed-signal-click>span:last-child{color:var(--muted);font-size:10px;font-weight:800}
+.signal-investigation[hidden]{display:none!important}
+.signal-investigation{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px}
+.signal-investigation-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.76);backdrop-filter:blur(4px)}
+.signal-investigation-dialog{position:relative;z-index:1;width:min(900px,100%);max-height:min(92vh,1000px);overflow:auto;border:1px solid var(--border);border-radius:16px;background:var(--panel);color:var(--text);box-shadow:0 24px 90px rgba(0,0,0,.5)}
+.signal-investigation-header{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:18px 20px;background:var(--panel);border-bottom:1px solid var(--border)}
+.signal-investigation-header h2{margin:5px 0;font-size:21px}
+.signal-investigation-header p{margin:0;color:var(--muted);font-size:12px}
+.signal-investigation-close{flex:0 0 auto;width:40px;height:40px;border:1px solid var(--border);border-radius:10px;background:var(--panel2);color:var(--text);font-size:27px;cursor:pointer}
+.signal-investigation-content{padding:18px;display:grid;gap:16px}
+.signal-investigation-section{border:1px solid var(--border);border-radius:12px;padding:14px;min-width:0}
+.signal-investigation-section h3{font-size:14px;letter-spacing:.04em;margin:0 0 12px}
+.signal-investigation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.signal-investigation-field{min-width:0;display:flex;flex-direction:column;gap:5px;padding:10px;border-radius:8px;background:var(--panel2)}
+.signal-investigation-field span{font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.04em}
+.signal-investigation-field strong{font-size:12px;overflow-wrap:anywhere;white-space:normal}
+.signal-investigation-explanation{margin:12px 0 0;padding:12px;border-left:3px solid var(--border);background:var(--panel2);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.signal-investigation-muted{color:var(--muted);font-size:12px}
+.signal-audit-gates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.signal-audit-gate{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:11px}
+.signal-audit-gate>span{overflow-wrap:anywhere;font-weight:800}
+.signal-audit-gate small{grid-column:1/-1;color:var(--muted);overflow-wrap:anywhere}
+.gate-pass{color:var(--green)}.gate-fail{color:var(--red)}.gate-unknown{color:var(--muted)}
+.signal-raw-evidence{border:1px solid var(--border);border-radius:10px;padding:12px;font-size:12px}
+.signal-raw-evidence summary{cursor:pointer;font-weight:800}
+.signal-raw-evidence pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;color:var(--muted);font-size:11px}
+body.signal-investigation-open{overflow:hidden}
+@media(max-width:700px){
+ .signal-investigation{padding:0;align-items:stretch}
+ .signal-investigation-dialog{width:100%;height:100%;max-height:100%;border-radius:0;border-left:0;border-right:0}
+ .signal-investigation-header{padding:14px}
+ .signal-investigation-content{padding:12px}
+ .signal-investigation-grid,.signal-audit-gates{grid-template-columns:minmax(0,1fr)}
+ .signal-investigation-section{padding:11px}
+ .confirmed-signal-click>span:last-child{font-size:8px}
+}
