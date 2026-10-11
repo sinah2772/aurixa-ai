@@ -49,7 +49,8 @@
     safeText(nodes.symbol, c.symbol);
     safeText(nodes.direction, c.signal === "BUY" || c.signal === "SELL"
       ? c.signal : (c.bias ? "WAIT · " + c.bias + " BIAS" : "WAIT"));
-    safeText(nodes.confidence, Number.isFinite(Number(c.confidence)) ? Number(c.confidence).toFixed(0) + "%" : "—");
+    const candidateConfidence = c.confidence == null || c.confidence === "" ? NaN : Number(c.confidence);
+    safeText(nodes.confidence, Number.isFinite(candidateConfidence) ? candidateConfidence.toFixed(0) + "%" : "—");
     safeText(nodes.entry, price(c.entry, c.symbol));
     safeText(nodes.sl, price(c.stopLoss, c.symbol));
     safeText(nodes.tp, price(c.takeProfit, c.symbol));
