@@ -146,3 +146,19 @@ main > .panel, main > .dashboard-grid { margin: 0; }
 .multi-symbol-study-reason { color:var(--muted); font-size:9px; line-height:1.5; overflow-wrap:anywhere; }
 .multi-symbol-card { min-height:250px; }
 @media (max-width:520px) { .multi-symbol-card { min-height:255px; } }
+
+
+/* Per-symbol actions: details, broker-confirmed active positions, and safe demo enable. */
+.multi-symbol-card-controls { display:grid; gap:6px; margin-top:auto; }
+.multi-symbol-card-controls .multi-symbol-select { margin-top:0; }
+.multi-symbol-details-toggle { border-color:rgba(245,196,81,.3); }
+.multi-symbol-enable { border-color:rgba(48,214,138,.45); color:var(--green); background:rgba(48,214,138,.06); }
+.multi-symbol-position-state { padding:7px 8px; border:1px solid var(--border); border-radius:7px; color:var(--muted); font-size:9px; font-weight:850; line-height:1.45; }
+.multi-symbol-position-state.has-position { color:var(--green); border-color:rgba(48,214,138,.45); background:rgba(48,214,138,.06); }
+.multi-symbol-enable-state { color:var(--muted); font-size:9px; line-height:1.5; text-align:center; }
+.multi-symbol-expanded-details { padding:9px; border:1px solid var(--border); border-radius:8px; background:rgba(0,0,0,.22); }
+.multi-symbol-expanded-row { display:flex; justify-content:space-between; align-items:start; gap:8px; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.06); font-size:10px; line-height:1.5; }
+.multi-symbol-expanded-row:last-child { border-bottom:0; }
+.multi-symbol-expanded-row span { color:var(--muted); flex:0 0 38%; }
+.multi-symbol-expanded-row strong { text-align:right; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.multi-symbol-card-controls button:focus-visible { outline:2px solid var(--yellow); outline-offset:2px; }
