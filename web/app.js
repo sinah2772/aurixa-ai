@@ -818,83 +818,130 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const body = $("confirmedSignalHistory");
     const summary = $("confirmedSignalHistorySummary");
     if (!body) return;
-
-    const source = Array.isArray(history?.signals)
-      ? history.signals
-      : Array.isArray(history?.history)
-        ? history.history
-        : Array.isArray(history?.decisions)
-          ? history.decisions
-          : Array.isArray(history)
-            ? history
-            : [];
-
+    const source = Array.isArray(history?.signals) ? history.signals
+      : Array.isArray(history?.history) ? history.history
+      : Array.isArray(history?.decisions) ? history.decisions
+      : Array.isArray(history) ? history : [];
     const confirmed = source.filter(row => {
       const signal = String(first(row?.signal, row?.direction, row?.decision, "")).toUpperCase();
-      const executionEligible =
-        row?.executionEligible === true ||
-        row?.confirmed === true ||
-        row?.finalGate === true ||
-        row?.status === "CONFIRMED";
-      return (signal === "BUY" || signal === "SELL") && executionEligible;
+      return (signal === "BUY" || signal === "SELL") &&
+        (row?.executionEligible === true || row?.confirmed === true ||
+         row?.finalGate === true || row?.status === "CONFIRMED");
     }).slice(0, 50);
-
     if (summary) summary.textContent = confirmed.length + " CONFIRMED SIGNALS";
     if (!confirmed.length) {
       body.innerHTML = '<div class="empty">No confirmed BUY or SELL signals yet.</div>';
       return;
     }
-
-    const trades = Array.isArray(autoTrades) ? autoTrades : [];
-    const usedTrades = new Set();
-    const getTime = v => { const n = Date.parse(v || ""); return Number.isFinite(n) ? n : null; };
-    const findTrade = (row, signal, price) => {
-      const st = getTime(first(row?.timestamp, row?.createdAt, row?.created_at, row?.time, row?.created));
-      const pn = Number(price);
-      let best=null, score=Infinity;
-      trades.forEach((t,i)=>{
-        if(usedTrades.has(i) || String(t?.direction||"").toUpperCase()!==signal) return;
-        const tt=getTime(first(t?.createdAt,t?.created_at,t?.openedAt,""));
-        const tp=Number(t?.signalEntryPrice??t?.plannedEntryPrice??t?.executionEntryPrice);
-        const dt=st!=null&&tt!=null?Math.abs(st-tt):999999999;
-        const dp=Number.isFinite(pn)&&Number.isFinite(tp)?Math.abs(pn-tp):999999999;
-        if(dt>10*60*1000&&dp>1)return;
-        const sc=Math.min(dt/1000,3600)+Math.min(dp,10)*30;
-        if(sc<score){score=sc;best={t,i};}
-      });
-      if(best) usedTrades.add(best.i);
-      return best?.t||null;
-    };
     body.innerHTML = confirmed.map(row => {
       const signal=String(first(row?.signal,row?.direction,row?.decision,"")).toUpperCase();
       const confidence=row?.confidence == null || row?.confidence === "" ? NaN : Number(row.confidence);
-      const detail = row?.decision && typeof row.decision === "object" ? row.decision : {};
-      const price=first(
-        row?.entryPrice,row?.entry_price,row?.plannedEntryPrice,row?.planned_entry_price,
-        row?.price,row?.mid,row?.close,detail?.entryPrice,detail?.entry_price,
-        detail?.plannedEntryPrice,detail?.price,detail?.mid,detail?.close
-      );
-      const time=first(row?.timestamp,row?.createdAt,row?.created_at,row?.time,row?.created,detail?.timestamp,detail?.createdAt);
-      const trade=findTrade(row,signal,price);
-      let tradeStatus="NOT TRADED", cls="";
-      if(trade){
-        const status=String(trade.status||"").toUpperCase(), pnl=Number(trade.profit);
-        if(status==="CLOSED"){
-          tradeStatus=Number.isFinite(pnl)?(pnl>0?"PROFIT +"+number(pnl,2):pnl<0?"LOSS "+number(pnl,2):"BREAKEVEN 0.00"):"CLOSED";
-          cls=pnl>0?"history-buy":pnl<0?"history-sell":"";
-        } else if(["OPEN","PARTIAL"].includes(status)) tradeStatus="TRADE OPEN";
-        else if(status==="SUBMITTED") tradeStatus="TRADE SUBMITTED";
-        else if(trade.gateReason) tradeStatus="BLOCKED";
-      }
-      const rowSymbol = String(first(row?.symbol,row?.symbolName,row?.symbol_name,detail?.symbol,detail?.symbolName, "UNKNOWN")).toUpperCase().replace(/[^A-Z0-9._/-]/g,"");
-      return '<div class="confirmed-signal-row">'+
-        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'" title="'+escapeHTML(signal + " · " + rowSymbol)+'">'+escapeHTML(signal + " · " + rowSymbol)+'</strong>'+
+      const detail=row?.decision && typeof row.decision==="object"?row.decision:{};
+      const price=first(row?.entry,row?.entryPrice,row?.entry_price,row?.price,row?.mid,row?.close,detail?.entry,detail?.price,detail?.mid,detail?.close);
+      const time=first(row?.createdAt,row?.created_at,row?.timestamp,row?.time,row?.candleTime,detail?.timestamp);
+      const symbol=String(first(row?.symbol,detail?.symbol,"UNKNOWN")).toUpperCase();
+      const id=Number(row?.id);
+      return '<button type="button" class="confirmed-signal-row confirmed-signal-click" data-signal-id="'+(Number.isSafeInteger(id)&&id>0?id:"")+'" aria-label="Investigate '+escapeHTML(signal+" "+symbol)+'">'+
+        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'">'+escapeHTML(signal+" · "+symbol)+'</strong>'+
         '<span>'+escapeHTML(Number.isFinite(confidence)?number(confidence,0)+"%":"—")+'</span>'+
         '<span>'+escapeHTML(Number.isFinite(Number(price))?number(price,2):"—")+'</span>'+
         '<span>'+escapeHTML(formatTime(time))+'</span>'+
-        '<span class="'+cls+'">'+escapeHTML(tradeStatus)+'</span>'+
-        '</div>';
+        '<span>VIEW WHY &amp; HOW ↗</span></button>';
     }).join("");
+  }
+
+  function investigationValue(value, digits=2) {
+    if(value===null||value===undefined||value==="") return "Not recorded";
+    const n=Number(value);
+    return Number.isFinite(n)?number(n,digits):String(value);
+  }
+  function investigationField(label,value) {
+    return '<div class="signal-investigation-field"><span>'+escapeHTML(label)+'</span><strong>'+escapeHTML(value==null||value===""?"Not recorded":String(value))+'</strong></div>';
+  }
+  function renderSignalInvestigation(signal) {
+    const content=$("signalInvestigationContent");
+    if(!content) return;
+    const d=signal.decision||{}, ex=signal.execution||{};
+    const blocked=Array.isArray(signal.blockedBy)?signal.blockedBy:[];
+    const gates=signal.gates&&typeof signal.gates==="object"?signal.gates:{};
+    const gateRows=Object.entries(gates).map(([key,value])=>{
+      const status=value===true?"PASS":value===false?"FAIL":"UNKNOWN";
+      const cls=value===true?"gate-pass":value===false?"gate-fail":"gate-unknown";
+      return '<div class="signal-audit-gate"><span>'+escapeHTML(key.replaceAll("_"," ").toUpperCase())+'</span><strong class="'+cls+'">'+status+'</strong></div>';
+    }).join("");
+    const why=blocked.length?blocked.map(x=>String(x).replaceAll("_"," ")).join(" · "):
+      signal.executionEligible===true?"All recorded execution gates passed; a passed signal does not by itself prove an order was filled.":"No explicit block reason was stored. Review the recorded decision below.";
+    const status=String(ex.status||"UNKNOWN").toUpperCase();
+    const tradeOutcome=ex.tradeId
+      ? (status==="CLOSED"?"The linked trade is recorded as closed.":status==="OPEN"||status==="PARTIAL"?"The linked trade is recorded as open.":"A linked trade record exists; check its status and broker identifiers.")
+      : signal.executionEligible===true
+        ? "No trade record is linked to this signal. This is not proof of broker rejection; historical linkage or execution evidence may be missing."
+        : "The signal was not approved for execution according to the stored decision.";
+    const pnl=ex.profit===null||ex.profit===undefined||ex.profit===""?"Not available from the stored trade record":investigationValue(ex.profit);
+    $("signalInvestigationTitle").textContent=String(signal.direction||"SIGNAL").toUpperCase()+" · "+String(signal.symbol||"UNKNOWN").toUpperCase();
+    $("signalInvestigationSubtitle").textContent="Signal #"+signal.id+" · "+formatTime(signal.createdAt||signal.candleTime)+" · "+String(signal.timeframe||"M5");
+    content.innerHTML=
+      '<section class="signal-investigation-section"><h3>WHY was this signal generated?</h3>'+
+      '<div class="signal-investigation-grid">'+
+      investigationField("Direction",signal.direction)+investigationField("Confidence",investigationValue(signal.confidence,1)+"%")+
+      investigationField("Signal price",investigationValue(signal.entryPrice))+investigationField("Strategy",String(signal.engine||"Unknown")+" / "+String(signal.version||"Unknown"))+
+      investigationField("Trend",d.trend||"Not recorded")+investigationField("Market regime",d.regime||"Not recorded")+
+      investigationField("RSI",investigationValue(d.rsi,2))+investigationField("Momentum",investigationValue(d.momentum,2))+
+      investigationField("EMA 9 / 21 / 50",[d.ema9,d.ema21,d.ema50].map(v=>v==null?"—":investigationValue(v)).join(" / "))+
+      investigationField("Planned stop loss",investigationValue(signal.stopLoss))+investigationField("Planned take profit",investigationValue(signal.takeProfit))+
+      investigationField("Reward / risk",signal.rewardRisk==null?"Not recorded":investigationValue(signal.rewardRisk,2)+"R")+
+      '</div><p class="signal-investigation-explanation"><b>Recorded decision:</b> '+escapeHTML(why)+'</p></section>'+
+      '<section class="signal-investigation-section"><h3>HOW did execution checks behave?</h3>'+
+      (gateRows?'<div class="signal-audit-gates">'+gateRows+'</div>':'<p class="signal-investigation-muted">Gate-by-gate values were not stored for this signal.</p>')+
+      '<p class="signal-investigation-explanation"><b>Execution interpretation:</b> '+escapeHTML(tradeOutcome)+'</p>'+
+      '<div class="signal-investigation-grid">'+
+      investigationField("Execution status",status)+investigationField("Block / gate reason",ex.gateReason||blocked.join(", ")||"No explicit reason recorded")+
+      investigationField("Execution error",ex.error||"Not recorded")+investigationField("Order ID",ex.orderId)+
+      investigationField("Position ID",ex.positionId)+investigationField("Volume",investigationValue(ex.volume,0))+
+      investigationField("Signal entry price",investigationValue(ex.signalEntryPrice))+investigationField("Actual fill price",investigationValue(ex.fillPrice))+
+      investigationField("Opened",ex.openedAt?formatTime(ex.openedAt):"Not recorded")+investigationField("Closed",ex.closedAt?formatTime(ex.closedAt):"Not recorded")+
+      investigationField("Exit price",investigationValue(ex.closePrice))+investigationField("Realized P/L",pnl)+
+      investigationField("Exit reason",ex.exitReason||"Not recorded")+
+      investigationField("Stored planned SL / TP",investigationValue(ex.plannedStopLoss)+" / "+investigationValue(ex.plannedTakeProfit))+
+      '</div></section>'+
+      '<details class="signal-raw-evidence"><summary>View raw stored decision evidence</summary><pre>'+escapeHTML(JSON.stringify(d,null,2))+'</pre></details>';
+  }
+  async function openSignalInvestigation(id) {
+    const modal=$("signalInvestigation"),content=$("signalInvestigationContent");
+    if(!modal||!content||!id) return;
+    modal.hidden=false;modal.setAttribute("aria-hidden","false");
+    document.body.classList.add("signal-investigation-open");
+    content.innerHTML='<div class="empty">Loading stored signal and execution records…</div>';
+    try {
+      const response=await fetch("/api/ai/signals/"+encodeURIComponent(id),{cache:"no-store",headers:{Accept:"application/json"}});
+      const data=await response.json();
+      if(!response.ok||data?.ok!==true||!data.signal) throw new Error(data?.error||"Signal evidence unavailable");
+      renderSignalInvestigation(data.signal);
+    } catch(error) {
+      content.innerHTML='<div class="empty">Could not load investigation evidence: '+escapeHTML(error.message||"Request failed")+'. Please check the server and try again.</div>';
+    }
+  }
+  function closeSignalInvestigation() {
+    const modal=$("signalInvestigation");
+    if(!modal)return;
+    modal.hidden=true;modal.setAttribute("aria-hidden","true");
+    document.body.classList.remove("signal-investigation-open");
+  }
+  function wireSignalInvestigation() {
+    const body=$("confirmedSignalHistory");
+    if(body&&!body.dataset.investigationWired){
+      body.dataset.investigationWired="true";
+      body.addEventListener("click",event=>{
+        const button=event.target.closest("[data-signal-id]");
+        if(button&&button.dataset.signalId) openSignalInvestigation(button.dataset.signalId);
+      });
+    }
+    const modal=$("signalInvestigation");
+    if(modal&&!modal.dataset.closeWired){
+      modal.dataset.closeWired="true";
+      modal.addEventListener("click",event=>{if(event.target.closest("[data-signal-close]"))closeSignalInvestigation();});
+      document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!modal.hidden)closeSignalInvestigation();});
+    }
   }
 
 
@@ -1192,6 +1239,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
   }
 
   function start() {
+    wireSignalInvestigation();
     const connectButton =
       $("loginBtn") ||
       $("connectCtrader");
