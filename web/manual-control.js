@@ -11,6 +11,8 @@
   let enabled = false;
   let busy = false;
   let selectedSymbol = "";
+  let latestPositions = [];
+  let enableBusy = false;
 
   function canonical(value) {
     return String(value || "").trim().toUpperCase().replace(/[\/\s_-]/g, "");
@@ -90,6 +92,14 @@
         readyCount + " / " + discoveredCount + " MARKETS WITH DATA READY  ·  " +
         (data.enabled ? "AUTO-TRADING ON" : "AUTO-TRADING OFF") +
         "  ·  DEMO ONLY  ·  DATA READY DOES NOT MEAN ENTRY APPROVED";
+      // Position cards are backed by the live broker snapshot, never inferred
+      // from strategy signals or planned entries.
+      try {
+        const positionResponse = await fetch("/api/auto-trader/positions", { cache: "no-store" });
+        const positionData = await positionResponse.json();
+        latestPositions = positionResponse.ok && positionData.ok === true && Array.isArray(positionData.positions)
+          ? positionData.positions : [];
+      } catch (_) { latestPositions = []; }
       multiSymbolGrid.replaceChildren();
       for (const market of markets) {
         const symbol = canonical(market.symbol || market.canonicalName || market.symbolName || "UNKNOWN");
@@ -161,18 +171,114 @@
         why.textContent = study.reason || "Waiting for per-symbol strategy evaluation.";
         studies.appendChild(why);
 
-        const select = document.createElement("button");
-        select.type = "button";
-        select.className = "multi-symbol-select";
-        select.textContent = selected ? "CHART SELECTED" : "OPEN IN CHART";
-        select.setAttribute("aria-pressed", String(selected));
-        select.disabled = busy || !symbolSelect || !Array.from(symbolSelect.options).some(option => option.value === symbol);
-        select.addEventListener("click", () => {
+        const symbolPositions = latestPositions.filter(position =>
+          canonical(position.symbol || position.symbolName) === symbol);
+        const positionBadge = document.createElement("div");
+        positionBadge.className = "multi-symbol-position-state" + (symbolPositions.length ? " has-position" : "");
+        positionBadge.textContent = symbolPositions.length
+          ? "ACTIVE BROKER TRADE · " + symbolPositions.length + " OPEN"
+          : "NO OPEN BROKER POSITION";
+        studies.appendChild(positionBadge);
+
+        const controls = document.createElement("div");
+        controls.className = "multi-symbol-card-controls";
+        const detailsButton = document.createElement("button");
+        detailsButton.type = "button";
+        detailsButton.className = "multi-symbol-select multi-symbol-details-toggle";
+        detailsButton.textContent = "VIEW DETAILS";
+        detailsButton.setAttribute("aria-expanded", "false");
+
+        const details = document.createElement("div");
+        details.className = "multi-symbol-expanded-details";
+        details.hidden = true;
+        const detailLine = (label, value) => {
+          const row = document.createElement("div");
+          row.className = "multi-symbol-expanded-row";
+          const key = document.createElement("span"); key.textContent = label;
+          const val = document.createElement("strong"); val.textContent = value == null || value === "" ? "—" : String(value);
+          row.append(key, val); details.appendChild(row);
+        };
+        detailLine("ENTRY", fmtStudy(study.entry, digits));
+        detailLine("STOP LOSS", fmtStudy(study.stopLoss, digits));
+        detailLine("TAKE PROFIT", fmtStudy(study.takeProfit, digits));
+        detailLine("SIGNAL CONFIDENCE", study.fresh && study.confidence != null ? Math.round(Number(study.confidence)) + "%" : "—");
+        detailLine("SIGNAL CHECKED", study.checkedAt ? new Date(study.checkedAt).toLocaleTimeString() : "—");
+        if (symbolPositions.length) {
+          for (const position of symbolPositions) {
+            const id = position.positionId == null ? "—" : String(position.positionId);
+            const side = String(position.direction || "POSITION");
+            detailLine(side + " · POSITION " + id, "ENTRY " + fmtStudy(position.entryPrice, digits) +
+              " · SL " + fmtStudy(position.stopLoss, digits) + " · TP " + fmtStudy(position.takeProfit, digits) +
+              " · P/L " + (position.unrealizedNetProfit == null ? "UNAVAILABLE" : Number(position.unrealizedNetProfit).toFixed(2)));
+          }
+        } else {
+          detailLine("BROKER POSITION", "No open position confirmed");
+        }
+        detailsButton.addEventListener("click", () => {
+          details.hidden = !details.hidden;
+          detailsButton.setAttribute("aria-expanded", String(!details.hidden));
+          detailsButton.textContent = details.hidden ? "VIEW DETAILS" : "HIDE DETAILS";
+        });
+
+        const chartButton = document.createElement("button");
+        chartButton.type = "button";
+        chartButton.className = "multi-symbol-select";
+        chartButton.textContent = selected ? "CHART SELECTED" : "OPEN IN CHART";
+        chartButton.setAttribute("aria-pressed", String(selected));
+        chartButton.disabled = busy || !symbolSelect || !Array.from(symbolSelect.options).some(option => option.value === symbol);
+        chartButton.addEventListener("click", () => {
           if (selected || busy) return;
           symbolSelect.value = symbol;
           symbolSelect.dispatchEvent(new Event("change", { bubbles: true }));
         });
-        card.append(head, quote, detail, studies, select);
+        controls.append(detailsButton, chartButton);
+
+        if (!enabled) {
+          const enableButton = document.createElement("button");
+          enableButton.type = "button";
+          enableButton.className = "multi-symbol-select multi-symbol-enable";
+          enableButton.textContent = "ENABLE DEMO AUTO-TRADING";
+          enableButton.disabled = busy || enableBusy;
+          enableButton.addEventListener("click", async () => {
+            if (enableBusy || enabled) return;
+            enableBusy = true;
+            enableButton.disabled = true;
+            enableButton.textContent = "VERIFYING DEMO…";
+            try {
+              const response = await fetch("/api/auto-trader/control", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                body: JSON.stringify({ enabled: true })
+              });
+              const result = await response.json();
+              if (!response.ok || result.ok !== true) {
+                const messages = {
+                  CTRADER_NOT_READY: "Connect and authorize cTrader first",
+                  DEMO_ACCOUNT_REQUIRED: "Demo account required",
+                  BROKER_TRADING_PERMISSION_REQUIRED: "Broker trading permission required",
+                  UNSUPPORTED_SYMBOL_OR_NOT_DISCOVERED: "No supported broker symbol"
+                };
+                throw new Error(messages[result.error] || result.error || "Enable request failed");
+              }
+              enabled = result.enabled === true;
+              await readStatus();
+              await refreshMultiSymbolStatus();
+            } catch (error) {
+              statusEl.textContent = "ENABLE BLOCKED · " + (error.message || "CONTROL REQUEST FAILED");
+              statusEl.classList.add("blocked");
+            } finally {
+              enableBusy = false;
+              await refreshMultiSymbolStatus();
+            }
+          });
+          controls.appendChild(enableButton);
+        } else {
+          const enabledBadge = document.createElement("div");
+          enabledBadge.className = "multi-symbol-enable-state";
+          enabledBadge.textContent = study.executionEligible ? "AUTO-TRADING ON · SIGNAL ELIGIBLE" : "AUTO-TRADING ON · WAITING FOR VALID ENTRY";
+          controls.appendChild(enabledBadge);
+        }
+        card.append(head, quote, detail, studies, details, controls);
         multiSymbolGrid.appendChild(card);
       }
       if (!markets.length) {
