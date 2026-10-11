@@ -868,8 +868,13 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     body.innerHTML = confirmed.map(row => {
       const signal=String(first(row?.signal,row?.direction,row?.decision,"")).toUpperCase();
       const confidence=row?.confidence == null || row?.confidence === "" ? NaN : Number(row.confidence);
-      const price=first(row?.entryPrice,row?.price,row?.mid,row?.close);
-      const time=first(row?.timestamp,row?.createdAt,row?.created_at,row?.time,row?.created);
+      const detail = row?.decision && typeof row.decision === "object" ? row.decision : {};
+      const price=first(
+        row?.entryPrice,row?.entry_price,row?.plannedEntryPrice,row?.planned_entry_price,
+        row?.price,row?.mid,row?.close,detail?.entryPrice,detail?.entry_price,
+        detail?.plannedEntryPrice,detail?.price,detail?.mid,detail?.close
+      );
+      const time=first(row?.timestamp,row?.createdAt,row?.created_at,row?.time,row?.created,detail?.timestamp,detail?.createdAt);
       const trade=findTrade(row,signal,price);
       let tradeStatus="NOT TRADED", cls="";
       if(trade){
@@ -881,9 +886,9 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
         else if(status==="SUBMITTED") tradeStatus="TRADE SUBMITTED";
         else if(trade.gateReason) tradeStatus="BLOCKED";
       }
-      const rowSymbol = String(first(row?.symbol, row?.symbolName, $("instrument")?.textContent, "UNKNOWN")).toUpperCase();
+      const rowSymbol = String(first(row?.symbol,row?.symbolName,row?.symbol_name,detail?.symbol,detail?.symbolName, "UNKNOWN")).toUpperCase().replace(/[^A-Z0-9._/-]/g,"");
       return '<div class="confirmed-signal-row">'+
-        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'">'+escapeHTML(signal + " · " + rowSymbol)+'</strong>'+
+        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'" title="'+escapeHTML(signal + " · " + rowSymbol)+'">'+escapeHTML(signal + " · " + rowSymbol)+'</strong>'+
         '<span>'+escapeHTML(Number.isFinite(confidence)?number(confidence,0)+"%":"—")+'</span>'+
         '<span>'+escapeHTML(Number.isFinite(Number(price))?number(price,2):"—")+'</span>'+
         '<span>'+escapeHTML(formatTime(time))+'</span>'+
