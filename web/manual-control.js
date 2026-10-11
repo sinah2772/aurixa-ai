@@ -89,8 +89,8 @@
       const data = await response.json();
       if (!response.ok || data.ok !== true) throw new Error(data.error || "MULTI_SYMBOL_STATUS_UNAVAILABLE");
       const markets = Array.isArray(data.markets) ? data.markets : [];
-      const readyCount = Number(data.readyCount || markets.filter(item => item.ready === true).length);
-      const discoveredCount = Number(data.discovered || markets.length);
+      const readyCount = Number(data.readyCount ?? markets.filter(item => item.ready === true).length);
+      const discoveredCount = Number(data.discovered ?? markets.length);
       multiSymbolSummary.textContent =
         readyCount + " / " + discoveredCount + " MARKETS WITH DATA READY  ·  " +
         (data.enabled ? "AUTO-TRADING ON" : "AUTO-TRADING OFF") +
@@ -122,9 +122,10 @@
 
         const quote = document.createElement("div");
         quote.className = "multi-symbol-quote";
-        const bid = Number(market.bid), ask = Number(market.ask);
+        const bid = market.bid == null || market.bid === "" ? NaN : Number(market.bid);
+        const ask = market.ask == null || market.ask === "" ? NaN : Number(market.ask);
         const digits = ({XAUUSD:2, EURUSD:5, NZDUSD:5, USDCHF:5, USDCAD:5, AUDUSD:5, USDJPY:3, GBPUSD:5, XAGUSD:3, BTCUSD:2})[symbol] ?? 2;
-        const fmt = value => Number.isFinite(value) ? value.toLocaleString(undefined, {minimumFractionDigits:digits, maximumFractionDigits:digits}) : "—";
+        const fmt = value => Number.isFinite(value) && value > 0 ? value.toLocaleString(undefined, {minimumFractionDigits:digits, maximumFractionDigits:digits}) : "—";
         quote.textContent = "BID " + fmt(bid) + "  ·  ASK " + fmt(ask);
 
         const detail = document.createElement("div");
@@ -174,8 +175,10 @@
         why.textContent = study.reason || "Waiting for per-symbol strategy evaluation.";
         studies.appendChild(why);
 
+        const marketAliases = new Set([symbol, canonical(market.symbolName), canonical(market.canonicalName)].filter(Boolean));
         const symbolPositions = latestPositions.filter(position =>
-          canonical(position.symbol || position.symbolName) === symbol);
+          marketAliases.has(canonical(position.symbol || position.symbolName)) ||
+          marketAliases.has(canonical(position.symbolName)));
         const positionBadge = document.createElement("div");
         positionBadge.className = "multi-symbol-position-state" + (symbolPositions.length ? " has-position" : "");
         positionBadge.textContent = symbolPositions.length
