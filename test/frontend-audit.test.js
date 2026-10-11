@@ -62,3 +62,18 @@ test("signal and closed-trade history identify their symbol", () => {
   assert.match(app, /tradeSymbol/);
   assert.match(app, /aiDecisionSymbol/);
 });
+
+
+test("scanner shows per-symbol candidate status without claiming broker execution", () => {
+  const manual = read("web/manual-control.js");
+  const html = read("web/index.html");
+  const css = read("web/multi-market-ui.css");
+  assert.match(manual, /\/api\/ai\/signals\?limit=100/);
+  assert.match(manual, /SIGNAL_MAX_AGE_MS = 5 \* 60 \* 1000/);
+  assert.match(manual, /CANDIDATE · GATES PASSED/);
+  assert.match(manual, /NOT APPROVED/);
+  assert.match(manual, /does not confirm a broker order/);
+  assert.match(manual, /signalForSymbol\(symbol\)/);
+  assert.match(html, /AUTO-TRADE CHECK is based on the latest backend signal/);
+  assert.match(css, /\.multi-symbol-candidate/);
+});
