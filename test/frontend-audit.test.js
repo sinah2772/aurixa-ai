@@ -11,6 +11,8 @@ const read = relative => fs.readFileSync(path.join(root, relative), "utf8");
 test("frontend JavaScript parses", () => {
   assert.doesNotThrow(() => new Function(read("web/app.js")));
   assert.doesNotThrow(() => new Function(read("web/manual-control.js")));
+  assert.doesNotThrow(() => new Function(read("web/auto-trade-candidate.js")));
+  assert.doesNotThrow(() => new Function(read("server/server.js")));
 });
 
 test("HTML element IDs are unique", () => {
@@ -78,4 +80,35 @@ test("auto-trade candidate panel distinguishes AI eligibility from broker positi
   assert.match(app, /OPEN POSITION VERIFIED/);
   assert.match(css, /\.auto-candidate-grid/);
   assert.match(html, /scans supported markets independently/i);
+});
+
+
+test("auto-trade candidate panel reflects per-symbol scanner decisions and broker execution", () => {
+  const html = read("web/index.html");
+  const frontend = read("web/auto-trade-candidate.js");
+  const server = read("server/server.js");
+  const app = read("web/app.js");
+  assert.match(html, /id="candidateSymbol"/);
+  assert.match(html, /id="candidateApproval"/);
+  assert.match(html, /id="candidateBrokerStatus"/);
+  assert.match(html, /id="autoCandidateList"/);
+  assert.match(html, /auto-trade-candidate\.js/);
+  assert.match(frontend, /\/api\/auto-trader\/candidate/);
+  assert.match(server, /app\.get\("\/api\/auto-trader\/candidate"/);
+  assert.match(server, /latestAutoTradeCandidates\.set\(symbol, candidate\)/);
+  assert.match(server, /ORDER ACCEPTED BY BROKER/);
+  assert.match(frontend, /STALE · WAITING FOR REFRESH/);
+  assert.doesNotMatch(app, /updateAutoTradeCandidate\(liveAi, ctrader, autoStatus, autoPositions\)/);
+});
+
+test("candidate status distinguishes strategy approval from an accepted broker order", () => {
+  const html = read("web/index.html");
+  const frontend = read("web/auto-trade-candidate.js");
+  const server = read("server/server.js");
+  assert.match(html, /Chart selection is separate from auto-trade candidate selection/i);
+  assert.match(html, /This panel does not enable auto-trading/i);
+  assert.match(frontend, /NOT SUBMITTED · ENTRY NOT APPROVED/);
+  assert.match(frontend, /executionStatus/);
+  assert.match(server, /selectedForAutoTrade/);
+  assert.match(server, /AUTO_TRADING_OFF/);
 });
