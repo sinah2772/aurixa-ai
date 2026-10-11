@@ -114,3 +114,21 @@ main > .panel, main > .dashboard-grid { margin: 0; }
 .auto-candidate-panel.is-blocked { border-color:rgba(255,91,101,.45); }
 @media (max-width:850px) { .auto-candidate-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:420px) { .auto-candidate-grid { gap:7px; } .auto-candidate-stat { padding:9px; } .auto-candidate-stat strong { font-size:11px; } }
+
+
+/* Candidate scanner detail table and risk levels. */
+.auto-candidate-levels { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; margin-top:10px; }
+.auto-candidate-levels > div { min-width:0; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--panel2,#080a0d); }
+.auto-candidate-levels span, .auto-candidate-levels strong { display:block; }
+.auto-candidate-levels span { color:var(--muted); font-size:9px; margin-bottom:5px; }
+.auto-candidate-levels strong { font-size:12px; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.auto-candidate-table-wrap { margin-top:12px; max-width:100%; overflow-x:auto; }
+.auto-candidate-table-head, .auto-candidate-row { display:grid; grid-template-columns:minmax(70px,.7fr) minmax(90px,.9fr) minmax(120px,1.3fr) minmax(160px,1.5fr); gap:10px; align-items:center; min-width:510px; }
+.auto-candidate-table-head { padding:8px 10px; color:var(--muted); font-size:9px; font-weight:900; }
+.auto-candidate-row { padding:10px; border-top:1px solid var(--border); font-size:11px; }
+.auto-candidate-row strong { font-size:11px; }
+.auto-candidate-row .candidate-status-cell { overflow-wrap:anywhere; }
+.auto-candidate-updated { margin-top:8px; color:var(--muted); font-size:10px; }
+@media(max-width:520px) {
+  .auto-candidate-levels { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
