@@ -270,8 +270,14 @@ app.get("/api/auto-trader/multi-symbol-status", (req, res) => {
         } };
     });
     res.set("Cache-Control", "no-store");
-    res.json({ ok:true, enabled:autoTrader.getStatus().enabled, demoOnly:true,
-      discovered:markets.length, readyCount:markets.filter(m=>m.ready).length, markets });
+    const autoStatus = autoTrader.getStatus();
+    const enabledSymbols = Array.isArray(autoStatus.enabledSymbols) ? autoStatus.enabledSymbols : [];
+    const symbolScoped = autoStatus.symbolScoped === true;
+    res.set("Cache-Control", "no-store");
+    res.json({ ok:true, enabled:autoStatus.enabled, demoOnly:true, symbolScoped,
+      enabledSymbols, discovered:markets.length, readyCount:markets.filter(m=>m.ready).length,
+      markets:markets.map(m=>({...m, autoTradeEnabled:autoStatus.enabled &&
+        (!symbolScoped || enabledSymbols.includes(normalizeSymbolName(m.symbol)))})) });
   } catch (err) {
     res.status(500).json({ok:false,error:"MULTI_SYMBOL_STATUS_UNAVAILABLE"});
   }
@@ -316,21 +322,15 @@ app.get("/api/auto-trader/candidate", (req, res) => {
 });
 
 // Manual auto-trading control. Defaults to OFF after each process start.
-// Enabling is allowed only on a connected, authorized demo account with
-// broker trading permission. Only explicitly supported and broker-discovered symbols can be armed.
+// A request with symbol arms/disarms only that broker-discovered demo market.
+// A request without symbol controls the global master switch.
 app.post("/api/auto-trader/control", (req, res) => {
   const enabled = req.body?.enabled;
   if (typeof enabled !== "boolean") {
     return res.status(400).json({ ok: false, error: "enabled must be true or false" });
   }
 
-  if (!enabled) {
-    process.env.AUTO_TRADING = "false";
-    return res.json({ ok: true, enabled: false, message: "Auto-trading disabled. Existing broker positions are not automatically closed." });
-  }
-
   const ct = getCTraderStatus() || {};
-  const symbol = normalizeSymbolName(ct.symbolName || ct.symbol || "");
   if (!ct.connected || !ct.authorized) {
     return res.status(409).json({ ok: false, enabled: false, error: "CTRADER_NOT_READY" });
   }
@@ -340,12 +340,58 @@ app.post("/api/auto-trader/control", (req, res) => {
   if (ct.tradingPermission !== true) {
     return res.status(409).json({ ok: false, enabled: false, error: "BROKER_TRADING_PERMISSION_REQUIRED" });
   }
-  if (!isSupportedSymbol(symbol) || !(ct.symbols || []).some(item => normalizeSymbolName(item.symbolName || item.canonicalName) === symbol)) {
-    return res.status(409).json({ ok: false, enabled: false, error: "UNSUPPORTED_SYMBOL_OR_NOT_DISCOVERED" });
+
+  const supportedDiscovered = symbol => isSupportedSymbol(symbol) &&
+    (ct.symbols || []).some(item =>
+      normalizeSymbolName(item.canonicalName || item.symbolName) === symbol);
+  const requestedSymbol = req.body?.symbol == null ? "" : normalizeSymbolName(req.body.symbol);
+
+  if (requestedSymbol) {
+    if (!supportedDiscovered(requestedSymbol)) {
+      return res.status(409).json({ ok: false, error: "UNSUPPORTED_SYMBOL_OR_NOT_DISCOVERED", symbol: requestedSymbol });
+    }
+    let armed = [];
+    try {
+      const parsed = JSON.parse(process.env.AUTO_TRADING_SYMBOLS || "[]");
+      if (Array.isArray(parsed)) armed = parsed.map(normalizeSymbolName).filter(supportedDiscovered);
+    } catch (_) { armed = []; }
+
+    // When converting from global mode to pair mode, arm only the requested pair.
+    const wasScoped = String(process.env.AUTO_TRADING_SYMBOL_SCOPE || "false").toLowerCase() === "true";
+    if (!wasScoped) armed = [];
+    const next = new Set(armed);
+    if (enabled) next.add(requestedSymbol);
+    else next.delete(requestedSymbol);
+
+    process.env.AUTO_TRADING_SYMBOL_SCOPE = "true";
+    process.env.AUTO_TRADING_SYMBOLS = JSON.stringify([...next]);
+    process.env.AUTO_TRADING = next.size ? "true" : "false";
+    return res.json({
+      ok: true, enabled: next.has(requestedSymbol), symbol: requestedSymbol,
+      enabledSymbols: [...next], symbolScoped: true, demoOnly: true,
+      message: next.has(requestedSymbol)
+        ? requestedSymbol + " demo auto-trading enabled; other pairs remain independently controlled."
+        : requestedSymbol + " demo auto-trading disabled."
+    });
   }
 
+  if (!enabled) {
+    process.env.AUTO_TRADING = "false";
+    process.env.AUTO_TRADING_SYMBOL_SCOPE = "false";
+    process.env.AUTO_TRADING_SYMBOLS = "[]";
+    return res.json({ ok: true, enabled: false, symbolScoped: false, enabledSymbols: [],
+      message: "Auto-trading disabled. Existing broker positions are not automatically closed." });
+  }
+
+  const symbol = normalizeSymbolName(ct.symbolName || ct.symbol || "");
+  if (!supportedDiscovered(symbol)) {
+    return res.status(409).json({ ok: false, enabled: false, error: "UNSUPPORTED_SYMBOL_OR_NOT_DISCOVERED" });
+  }
+  process.env.AUTO_TRADING_SYMBOL_SCOPE = "false";
+  process.env.AUTO_TRADING_SYMBOLS = "[]";
   process.env.AUTO_TRADING = "true";
-  return res.json({ ok: true, enabled: true, symbol, demoOnly: true, message: "Demo auto-trading enabled. Orders still require a confirmed eligible signal and all risk gates to pass." });
+  return res.json({ ok: true, enabled: true, symbol, symbolScoped: false, demoOnly: true,
+    message: "Demo auto-trading enabled for all supported markets. Orders still require a confirmed eligible signal and all risk gates to pass." });
 });
 
 app.get("/api/auto-trader/dry-run", async (req, res) => {
