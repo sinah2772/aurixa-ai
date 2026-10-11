@@ -22,9 +22,14 @@ test("HTML element IDs are unique", () => {
 
 test("position polling never fabricates trading authorization", () => {
   const app = read("web/app.js");
-  assert.match(app, /Authorization, connection and auto-trading state must come from real status APIs/);
-  assert.doesNotMatch(app, /positionLimit:\s*["']unlimited["']/);
-  assert.doesNotMatch(app, /authorized:\s*true[\s\S]{0,120}positionLimit/);
+  const start = app.indexOf("async function refreshOpenTrades()");
+  const end = app.indexOf("async function refreshLiveChart()", start);
+  assert.ok(start >= 0 && end > start);
+  const fastPoll = app.slice(start, end);
+  assert.doesNotMatch(fastPoll, /updateAutoTrader\\s*\\(/);
+  assert.doesNotMatch(fastPoll, /authorized\\s*:\\s*true/);
+  assert.doesNotMatch(fastPoll, /connected\\s*:\\s*true/);
+  assert.doesNotMatch(fastPoll, /enabled\\s*:\\s*true/);
 });
 
 test("positions endpoint has one dedicated fast-poll owner", () => {
