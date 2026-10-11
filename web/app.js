@@ -28,6 +28,9 @@
   };
 
   let chart = null;
+  let fullRefreshBusy = false;
+  let latestPositions = null;
+  let lastPositionRefresh = 0;
 
   async function getJSON(url) {
     try {
@@ -41,9 +44,7 @@
         return null;
       }
 
-      const json = await r.json();
-      console.log("AURIXA API RESPONSE:", url, json);
-      return json;
+      return await r.json();
     } catch {
       return null;
     }
@@ -95,7 +96,16 @@
   }
 
   function updateConnection(status) {
-    if (!status) return;
+    if (!status) {
+      text("ctraderConnection", "STATUS UNAVAILABLE");
+      text("dataStatus", "STALE");
+      const badge = $(".live-badge");
+      if (badge) {
+        badge.innerHTML = '<span class="dot"></span> STATUS UNKNOWN';
+        badge.classList.add("offline");
+      }
+      return;
+    }
 
     const liveSymbol = String(first(status.symbol, status.symbolName, "XAUUSD")).toUpperCase();
     text("instrument", liveSymbol);
@@ -376,6 +386,7 @@
 
     setSignal(signal);
     text("confidence", Number.isFinite(confidence) ? number(confidence,0) + "%" : "—");
+    text("aiDecisionSymbol", String(first(data.symbol, data.symbolName, $("instrument")?.textContent, "XAUUSD")).toUpperCase());
     text("aiRegime", String(first(data.regime,"—")).replaceAll("_"," "));
     text("aiTrend", first(data.trend,"—"));
     text("aiRsi", Number.isFinite(Number(data.rsi)) ? number(data.rsi,1) : "—");
@@ -400,10 +411,10 @@
     } else {
       reason = "AI " + signal + " — " +
         (logicFailed ? "logic weak: " + logicFailed : "logic aligned") +
-        (failed.length ? " · blocked: " + failed.join(" · ") : " · all execution gates passed");
+        (failed.length ? " · blocked: " + failed.join(" · ") : data.executionEligible === true ? " · all execution gates passed" : " · execution eligibility not confirmed");
     }
     text("reason", reason);
-    text("aiGate", failed.length ? "BLOCKED · " + failed.join(" · ") : "ALL GATES PASSED");
+    text("aiGate", failed.length ? "BLOCKED · " + failed.join(" · ") : data.executionEligible === true ? "ALL GATES PASSED" : "WAITING FOR GATES");
   }
 
   function updateMarketSession(market, ctrader) {
@@ -466,10 +477,10 @@
     const hasPosition = Number(first(positions?.count, 0)) > 0;
     const ready = eligible && !hasPosition;
 
-    text("gateMarket", gates.dataReady === false ? "NO DATA" : (gates.spreadAllowed === false ? "SPREAD BLOCKED" : "READY"));
+    text("gateMarket", gates.dataReady === false ? "NO DATA" : (gates.spreadAllowed === false ? "SPREAD BLOCKED" : "DATA READY"));
     text("gateSignal", direction);
     const failedGates = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
-    text("gateQuality", failedGates.length ? "BLOCKED · " + failedGates.map(k => String(k).replaceAll("_", " ").toUpperCase()).join(" / ") : "PASSED");
+    text("gateQuality", failedGates.length ? "BLOCKED · " + failedGates.map(k => String(k).replaceAll("_", " ").toUpperCase()).join(" / ") : eligible ? "PASSED" : "WAITING FOR GATES");
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
     text("gateEntry", number(first(data.entry, data.entryPrice), digits));
     text("gateSL", number(first(data.stopLoss, data.stop), digits));
@@ -495,7 +506,11 @@
   }
 
   function updateAutoTrader(status, positions) {
-    if (!status) return;
+    if (!status) {
+      text("autoTradeStatus", "STATUS UNAVAILABLE");
+      text("autoTradeNotice", "Auto-trader status unavailable. The frontend will not assume trading is enabled.");
+      return;
+    }
     const enabled = status.enabled === true;
     const demo = status.demoAccount === true && status.demoOnly === true;
     const connected = status.connected === true && status.authorized === true;
@@ -683,7 +698,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const logic = data.logic || {};
     const failed = Array.isArray(data.blockedBy) ? data.blockedBy : [];
     const rr = first(data.rewardRisk, data.riskReward);
-    text("activityLast", new Date().toLocaleTimeString());
+    const evaluationTime = first(data.evaluatedAt, data.evaluated_at, data.evaluationTime, data.timestamp, data.createdAt, data.created_at);
+    text("activityLast", evaluationTime ? formatTime(evaluationTime) : "UI UPDATE · " + new Date().toLocaleTimeString());
     text("activityDecision", signal + " · " + number(data.confidence, 0) + "%");
     text("activityLogic", Number.isFinite(Number(logic.passed)) ? String(logic.passed) + "/" + String(first(logic.total, 6)) + " checks passed" : "Logic unavailable");
     text("activityGates", failed.length ? "BLOCKED · " + failed.map(x => x.replaceAll("_"," ")).join(" · ").toUpperCase() : (data.executionEligible === true ? "ALL GATES PASSED" : "WAITING FOR GATES"));
@@ -770,8 +786,9 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
         else if(status==="SUBMITTED") tradeStatus="TRADE SUBMITTED";
         else if(trade.gateReason) tradeStatus="BLOCKED";
       }
+      const rowSymbol = String(first(row?.symbol, row?.symbolName, $("instrument")?.textContent, "UNKNOWN")).toUpperCase();
       return '<div class="confirmed-signal-row">'+
-        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'">'+signal+'</strong>'+
+        '<strong class="'+(signal==="BUY"?"history-buy":"history-sell")+'">'+escapeHTML(signal + " · " + rowSymbol)+'</strong>'+
         '<span>'+escapeHTML(Number.isFinite(confidence)?number(confidence,0)+"%":"—")+'</span>'+
         '<span>'+escapeHTML(Number.isFinite(Number(price))?number(price,2):"—")+'</span>'+
         '<span>'+escapeHTML(formatTime(time))+'</span>'+
@@ -842,7 +859,8 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
 
     body.innerHTML = closed.map(t => {
       const direction = String(t.direction || "").toUpperCase();
-      const digits = priceDigits(t.symbol || "XAUUSD");
+      const tradeSymbol = String(first(t.symbol, t.symbolName, "UNKNOWN")).toUpperCase();
+      const digits = priceDigits(tradeSymbol);
       const toNumber = value => {
         if (value === null || value === undefined || value === "") return null;
         const n = Number(value);
@@ -856,7 +874,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       const opened = formatTime(t.openedAt || t.createdAt);
       const closedAt = formatTime(t.closedAt);
       return '<div class="confirmed-signal-row">' +
-        '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML(direction || "TRADE") + '</strong>' +
+        '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML((direction || "TRADE") + " · " + tradeSymbol) + '</strong>' +
         '<span>' + escapeHTML((entry !== null && entry > 0 ? number(entry, digits) : "—") + " → " + (exit !== null && exit > 0 ? number(exit, digits) : "—")) + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(pnl !== null ? (pnl > 0 ? "+" : "") + number(pnl, 2) : "—") + '</span>' +
         '<span class="' + cls + '">' + escapeHTML(result + " · " + closedAt) + '</span>' +
@@ -864,13 +882,27 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }).join("");
   }
 
+  function updateFrontendFreshness(responses) {
+    const el = $("frontendDataFreshness");
+    if (!el) return;
+    const positionFeedFresh = lastPositionRefresh > 0 && Date.now() - lastPositionRefresh < 10000;
+    const healthy = positionFeedFresh && responses.every(value => value !== null && value !== undefined && value?.ok !== false);
+    el.textContent = healthy
+      ? "API DATA UPDATED · " + new Date().toLocaleTimeString()
+      : "DATA PARTIAL / STALE · ONE OR MORE API REQUESTS FAILED";
+    el.classList.toggle("is-stale", !healthy);
+    el.classList.toggle("is-fresh", healthy);
+  }
+
   async function refresh() {
+    if (fullRefreshBusy) return;
+    fullRefreshBusy = true;
+    try {
     const [
       market,
       marketState,
       ctrader,
       autoStatus,
-      autoPositions,
       aiDecision,
       aiHistory,
       aiSignals,
@@ -881,7 +913,6 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       getJSON(API.marketState),
       getJSON(API.ctrader),
       getJSON(API.autoStatus),
-      getJSON(API.autoPositions),
       getJSON(API.aiDecision),
       getJSON(API.aiHistory + "?limit=20"),
       getJSON(API.aiSignals + "?limit=100"),
@@ -889,6 +920,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       getJSON(API.account)
     ]);
 
+    const autoPositions = latestPositions;
     const mergedMarket = {
       ...(marketState || {}),
       ...(market || {})
@@ -901,13 +933,26 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const liveAi = aiDecision?.decision || aiDecision?.result || aiDecision || {};
     updateSignal(liveAi);
     updateAutoTrader(autoStatus, autoPositions);
-    renderOpenTrades(autoPositions);
     updateAccountPanel(account, autoStatus, ctrader);
     updateFinalTradeGate(mergedMarket, null, liveAi, autoPositions);
     updateActivity(liveAi, ctrader, autoStatus, autoPositions);
-    renderConfirmedSignalHistory(aiSignals, autoTrades?.trades || []);
-    renderClosedTradeHistory(autoTrades);
-    updatePerformance(autoTrades);
+    if (aiSignals && aiSignals.ok !== false) {
+      renderConfirmedSignalHistory(aiSignals, autoTrades?.trades || []);
+    } else {
+      text("confirmedSignalHistorySummary", "SIGNAL HISTORY UNAVAILABLE");
+      const signalBody = $("confirmedSignalHistory");
+      if (signalBody) signalBody.innerHTML = '<div class="empty">Signal history API unavailable. Existing signal records cannot be verified right now.</div>';
+    }
+    if (autoTrades && autoTrades.ok !== false) {
+      renderClosedTradeHistory(autoTrades);
+      updatePerformance(autoTrades);
+    } else {
+      text("closedTradeHistorySummary", "HISTORY UNAVAILABLE");
+      const tradeBody = $("closedTradeHistory");
+      if (tradeBody) tradeBody.innerHTML = '<div class="empty">Closed-trade history API unavailable. No result is being assumed.</div>';
+      for (const id of ["performanceWinRate", "performanceWins", "performanceLosses", "performanceFlat", "performancePnl"]) text(id, "—");
+      text("performanceSample", "Performance data unavailable; retrying the backend.");
+    }
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
@@ -922,6 +967,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     );
 
     const system = await getJSON(API.system);
+    updateFrontendFreshness([market, marketState, ctrader, autoStatus, aiDecision, aiHistory, aiSignals, autoTrades, account, system]);
 
     if (system) {
       const online =
@@ -938,6 +984,9 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       "lastRefresh",
       new Date().toLocaleTimeString()
     );
+    } finally {
+      fullRefreshBusy = false;
+    }
   }
 
   let openTradesRefreshBusy = false;
@@ -949,20 +998,24 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     try {
       const live = await getJSON(API.autoPositions);
       if (live?.ok === true) {
+        latestPositions = live;
+        lastPositionRefresh = Date.now();
+        // This fast poll owns only the broker position list. Authorization,
+        // connection and auto-trading state must come from real status APIs.
         renderOpenTrades(live);
-        // Keep the compact account/execution position display synchronized
-        // with the same broker snapshot used by OPEN TRADES.
-        updateAutoTrader(
-          {
-            enabled: true,
-            demoOnly: true,
-            demoAccount: true,
-            connected: true,
-            authorized: true,
-            positionLimit: "unlimited"
-          },
-          live
-        );
+        const freshness = $("frontendDataFreshness");
+        if (freshness && !freshness.classList.contains("is-stale")) {
+          freshness.textContent = "API + POSITION DATA UPDATED · " + new Date().toLocaleTimeString();
+        }
+      } else {
+        const updated = $("openTradesUpdated");
+        if (updated) updated.textContent = "POSITION FEED STALE / UNAVAILABLE · LAST SUCCESS " + (lastPositionRefresh ? new Date(lastPositionRefresh).toLocaleTimeString() : "NONE");
+        const freshness = $("frontendDataFreshness");
+        if (freshness) {
+          freshness.textContent = "DATA PARTIAL / STALE · POSITION API FAILED";
+          freshness.classList.add("is-stale");
+          freshness.classList.remove("is-fresh");
+        }
       }
     } finally {
       openTradesRefreshBusy = false;

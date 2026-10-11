@@ -95,3 +95,9 @@ main > .panel, main > .dashboard-grid { margin: 0; }
 
 /* Hide the top chart-symbol dropdown; symbol cards remain the visible chart switcher. */
 .manual-control-row:has(#tradingSymbol) { display: none !important; }
+
+
+/* Audit fix: make frontend API freshness explicit without implying broker status. */
+.frontend-data-freshness { margin-top: 8px; font-size: 11px; color: var(--muted, #a0a0a0); overflow-wrap: anywhere; }
+.frontend-data-freshness.is-fresh { color: var(--success, #65d6a0); }
+.frontend-data-freshness.is-stale { color: var(--danger, #ff7777); }
