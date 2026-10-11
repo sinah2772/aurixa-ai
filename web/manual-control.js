@@ -13,6 +13,8 @@
   let selectedSymbol = "";
   let latestPositions = [];
   let enableBusy = false;
+  let multiSymbolRefreshBusy = false;
+  const expandedSymbols = new Set();
 
   function canonical(value) {
     return String(value || "").trim().toUpperCase().replace(/[\/\s_-]/g, "");
@@ -80,7 +82,8 @@
   }
 
   async function refreshMultiSymbolStatus() {
-    if (!multiSymbolGrid || !multiSymbolSummary) return;
+    if (!multiSymbolGrid || !multiSymbolSummary || multiSymbolRefreshBusy) return;
+    multiSymbolRefreshBusy = true;
     try {
       const response = await fetch("/api/auto-trader/multi-symbol-status", { cache: "no-store" });
       const data = await response.json();
@@ -185,12 +188,11 @@
         const detailsButton = document.createElement("button");
         detailsButton.type = "button";
         detailsButton.className = "multi-symbol-select multi-symbol-details-toggle";
-        detailsButton.textContent = "VIEW DETAILS";
-        detailsButton.setAttribute("aria-expanded", "false");
-
         const details = document.createElement("div");
         details.className = "multi-symbol-expanded-details";
-        details.hidden = true;
+        details.hidden = !expandedSymbols.has(symbol);
+        detailsButton.textContent = details.hidden ? "VIEW DETAILS" : "HIDE DETAILS";
+        detailsButton.setAttribute("aria-expanded", String(!details.hidden));
         const detailLine = (label, value) => {
           const row = document.createElement("div");
           row.className = "multi-symbol-expanded-row";
@@ -216,6 +218,8 @@
         }
         detailsButton.addEventListener("click", () => {
           details.hidden = !details.hidden;
+          if (details.hidden) expandedSymbols.delete(symbol);
+          else expandedSymbols.add(symbol);
           detailsButton.setAttribute("aria-expanded", String(!details.hidden));
           detailsButton.textContent = details.hidden ? "VIEW DETAILS" : "HIDE DETAILS";
         });
@@ -294,6 +298,8 @@
       errorCard.className = "empty-state";
       errorCard.textContent = "Unable to load broker market readiness. Auto-trading controls remain governed by the backend.";
       multiSymbolGrid.appendChild(errorCard);
+    } finally {
+      multiSymbolRefreshBusy = false;
     }
   }
 
