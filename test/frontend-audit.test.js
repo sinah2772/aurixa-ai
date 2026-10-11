@@ -81,7 +81,7 @@ test("auto-trade candidate panel distinguishes AI eligibility from broker positi
   assert.match(candidate, /executionStatus/);
   assert.match(candidate, /NOT SUBMITTED · ENTRY NOT APPROVED/);
   assert.match(css, /\.auto-candidate-grid/);
-  assert.match(html, /scans supported markets independently/i);
+  assert.match(html, /Chart selection is separate from auto-trade candidate selection/i);
 });
 
 
