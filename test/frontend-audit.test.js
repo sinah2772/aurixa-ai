@@ -69,15 +69,17 @@ test("signal and closed-trade history identify their symbol", () => {
 test("auto-trade candidate panel distinguishes AI eligibility from broker position confirmation", () => {
   const html = read("web/index.html");
   const app = read("web/app.js");
+  const candidate = read("web/auto-trade-candidate.js");
   const css = read("web/multi-market-ui.css");
   for (const id of ["candidateSymbol", "candidateDirection", "candidateApproval", "candidateAutoStatus", "candidateBrokerStatus", "candidateReason"]) {
     assert.match(html, new RegExp('id="' + id + '"'));
-    assert.match(app, new RegExp('text\\("' + id + '"'));
   }
+  assert.match(candidate, /candidateSymbol/);
+  assert.match(candidate, /candidateBrokerStatus/);
   assert.match(app, /function updateAutoTradeCandidate/);
-  assert.match(app, /execution eligibility/);
-  assert.match(app, /not proof that an order was accepted/);
-  assert.match(app, /OPEN POSITION VERIFIED/);
+  assert.doesNotMatch(app, /updateAutoTradeCandidate\(liveAi, ctrader, autoStatus, autoPositions\)/);
+  assert.match(candidate, /executionStatus/);
+  assert.match(candidate, /NOT SUBMITTED · ENTRY NOT APPROVED/);
   assert.match(css, /\.auto-candidate-grid/);
   assert.match(html, /scans supported markets independently/i);
 });
