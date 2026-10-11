@@ -62,3 +62,20 @@ test("signal and closed-trade history identify their symbol", () => {
   assert.match(app, /tradeSymbol/);
   assert.match(app, /aiDecisionSymbol/);
 });
+
+
+test("auto-trade candidate panel distinguishes AI eligibility from broker position confirmation", () => {
+  const html = read("web/index.html");
+  const app = read("web/app.js");
+  const css = read("web/multi-market-ui.css");
+  for (const id of ["candidateSymbol", "candidateDirection", "candidateApproval", "candidateAutoStatus", "candidateBrokerStatus", "candidateReason"]) {
+    assert.match(html, new RegExp('id="' + id + '"'));
+    assert.match(app, new RegExp('text\\("' + id + '"'));
+  }
+  assert.match(app, /function updateAutoTradeCandidate/);
+  assert.match(app, /execution eligibility/);
+  assert.match(app, /not proof that an order was accepted/);
+  assert.match(app, /OPEN POSITION VERIFIED/);
+  assert.match(css, /\.auto-candidate-grid/);
+  assert.match(html, /scans supported markets independently/i);
+});
