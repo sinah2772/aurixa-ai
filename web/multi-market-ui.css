@@ -101,3 +101,20 @@ main > .panel, main > .dashboard-grid { margin: 0; }
 .frontend-data-freshness { margin-top: 8px; font-size: 11px; color: var(--muted, #a0a0a0); overflow-wrap: anywhere; }
 .frontend-data-freshness.is-fresh { color: var(--success, #65d6a0); }
 .frontend-data-freshness.is-stale { color: var(--danger, #ff7777); }
+
+
+/* Per-symbol auto-trade candidate state: eligibility is not broker execution. */
+.multi-symbol-candidate {
+  display:flex; flex-direction:column; gap:4px; padding:8px;
+  border:1px solid var(--border); border-radius:8px; background:rgba(255,255,255,.025);
+  font-size:10px; line-height:1.5; overflow-wrap:anywhere;
+}
+.multi-symbol-candidate strong { font-size:10px; letter-spacing:.035em; }
+.multi-symbol-candidate span { color:var(--muted, #a0a0a0); }
+.candidate-eligible { border-color:rgba(48,214,138,.5); background:rgba(48,214,138,.07); }
+.candidate-eligible strong { color:var(--success, #65d6a0); }
+.candidate-blocked, .candidate-stale { border-color:rgba(255,119,119,.4); }
+.candidate-blocked strong, .candidate-stale strong { color:var(--danger, #ff7777); }
+.candidate-wait strong { color:var(--yellow, #f5c451); }
+.candidate-unknown strong { color:var(--muted, #a0a0a0); }
+.multi-symbol-candidate-legend { margin:8px 0 12px; color:var(--muted, #a0a0a0); font-size:11px; line-height:1.6; }
