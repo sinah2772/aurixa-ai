@@ -20,6 +20,7 @@
   if (!button || !statusEl || !symbolSelect) return;
 
   let enabled = false;
+  let symbolScoped = false;
   let busy = false;
   let selectedSymbol = "";
   let latestPositions = [];
@@ -37,7 +38,8 @@
     if (kind) statusEl.classList.add(kind);
     button.classList.toggle("enabled", enabled);
     button.setAttribute("aria-pressed", String(enabled));
-    button.textContent = enabled ? "DISABLE AUTO-TRADING" : "ENABLE AUTO-TRADING";
+    button.textContent = enabled && symbolScoped ? "ENABLE ALL MARKETS" :
+      enabled ? "DISABLE AUTO-TRADING" : "ENABLE AUTO-TRADING";
     button.disabled = busy;
     symbolSelect.disabled = busy || symbolSelect.options.length === 0;
   }
@@ -317,13 +319,16 @@
       const data = await response.json();
       if (!response.ok || data.ok === false) throw new Error(data.error || "STATUS_UNAVAILABLE");
       enabled = data.enabled === true;
+      symbolScoped = data.symbolScoped === true;
       const demoReady = data.demoAccount === true && data.demoOnly === true;
       if (modeEl) modeEl.textContent = demoReady ? "DEMO ONLY · VERIFIED" : "DEMO ONLY · VERIFY ACCOUNT";
       // The cTrader symbols endpoint is the source of truth for the active chart
       // symbol. Auto-trader status may report its own/default symbol and must not
       // silently reset a user's market selection in the dropdown.
       await refreshSymbols();
-      render(enabled ? "ENABLED · DEMO ONLY · ALL MARKETS SCANNED" : "OFF · MANUAL START REQUIRED",
+      render(!enabled ? "OFF · MANUAL START REQUIRED" :
+        symbolScoped ? "PAIR-SCOPED MODE · TAP ENABLE ALL MARKETS TO ARM EVERY SUPPORTED PAIR" :
+        "ON · ALL SUPPORTED MARKETS SCANNED · DEMO ONLY",
         enabled && demoReady && data.connected && data.authorized ? "ready" : "");
     } catch (error) {
       render("STATUS / SYMBOL DISCOVERY UNAVAILABLE", "blocked");
@@ -370,9 +375,11 @@
       render("NO BROKER-DISCOVERED SYMBOL AVAILABLE", "blocked");
       return;
     }
-    const nextEnabled = !enabled;
+    // If only one pair is armed, the master control must promote that state
+    // to global all-market mode instead of disabling auto-trading.
+    const nextEnabled = !enabled || symbolScoped;
     busy = true;
-    render(nextEnabled ? "VERIFYING DEMO ACCOUNT…" : "DISABLING…");
+    render(nextEnabled ? (enabled && symbolScoped ? "ENABLING ALL MARKETS…" : "VERIFYING DEMO ACCOUNT…") : "DISABLING…");
     try {
       const response = await fetch("/api/auto-trader/control", {
         method: "POST",
@@ -390,8 +397,10 @@
         throw new Error(messages[data.error] || data.error || "CONTROL_REQUEST_FAILED");
       }
       enabled = data.enabled === true;
-      render(enabled ? "ENABLED · DEMO ONLY · ALL MARKETS SCANNED" : "OFF · NEW ENTRIES DISABLED",
-        enabled ? "ready" : "");
+      symbolScoped = data.symbolScoped === true;
+      render(!enabled ? "OFF · NEW ENTRIES DISABLED" :
+        symbolScoped ? "PAIR-SCOPED MODE · ENABLE ALL MARKETS TO ARM EVERY SUPPORTED PAIR" :
+        "ON · ALL SUPPORTED MARKETS SCANNED · DEMO ONLY", enabled ? "ready" : "");
     } catch (error) {
       render(error.message || "CONTROL REQUEST FAILED", "blocked");
       await readStatus();
@@ -399,7 +408,8 @@
       busy = false;
       button.disabled = false;
       symbolSelect.disabled = symbolSelect.options.length === 0;
-      button.textContent = enabled ? "DISABLE AUTO-TRADING" : "ENABLE AUTO-TRADING";
+      button.textContent = enabled && symbolScoped ? "ENABLE ALL MARKETS" :
+        enabled ? "DISABLE AUTO-TRADING" : "ENABLE AUTO-TRADING";
       button.setAttribute("aria-pressed", String(enabled));
       button.classList.toggle("enabled", enabled);
     }
