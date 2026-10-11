@@ -903,8 +903,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       investigationField("Exit price",investigationValue(ex.closePrice))+investigationField("Realized P/L",pnl)+
       investigationField("Exit reason",ex.exitReason||"Not recorded")+
       investigationField("Stored planned SL / TP",investigationValue(ex.plannedStopLoss)+" / "+investigationValue(ex.plannedTakeProfit))+
-      '</div></section>'+
-      '<details class="signal-raw-evidence"><summary>View raw stored decision evidence</summary><pre>'+escapeHTML(JSON.stringify(d,null,2))+'</pre></details>';
+      '</div></section>';
   }
   async function openSignalInvestigation(id) {
     const modal=$("signalInvestigation"),content=$("signalInvestigationContent");
