@@ -20,6 +20,9 @@ const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const aiTraderEngine = require("./ai-trader-engine");
 const { normalizeSymbolName, isSupportedSymbol } = require("./symbol-support");
+
+// Latest per-symbol scanner decision and execution outcome for the dashboard.
+const latestAutoTradeCandidates = new Map();
 async function auditAiDecision(decision){
  try{
   await queryDatabase("CREATE SCHEMA IF NOT EXISTS aurixa");
@@ -245,6 +248,44 @@ app.get("/api/auto-trader/multi-symbol-status", (req, res) => {
       discovered:markets.length, readyCount:markets.filter(m=>m.ready).length, markets });
   } catch (err) {
     res.status(500).json({ok:false,error:"MULTI_SYMBOL_STATUS_UNAVAILABLE"});
+  }
+});
+
+// Live scanner decisions: distinguish chart selection, data readiness, strategy approval and broker execution.
+app.get("/api/auto-trader/candidate", (req, res) => {
+  try {
+    const enabled = autoTrader.getStatus().enabled === true;
+    const now = Date.now();
+    const candidates = Array.from(latestAutoTradeCandidates.values()).map(item => {
+      const checkedAt = Date.parse(item.checkedAt || "");
+      const fresh = Number.isFinite(checkedAt) && now - checkedAt <= 45000;
+      const selectedForAutoTrade = enabled && fresh && item.executionEligible === true &&
+        item.executionResult !== "BLOCKED" && item.executionResult !== "AUTO_TRADING_OFF";
+      return { ...item, fresh, selectedForAutoTrade };
+    }).sort((a, b) =>
+      Number(b.selectedForAutoTrade) - Number(a.selectedForAutoTrade) ||
+      Number(b.executionEligible) - Number(a.executionEligible) ||
+      Number(b.confidence || 0) - Number(a.confidence || 0) ||
+      String(b.checkedAt || "").localeCompare(String(a.checkedAt || ""))
+    );
+    const selected = candidates.find(item => item.selectedForAutoTrade) ||
+      candidates.find(item => item.fresh && ["BUY", "SELL"].includes(item.bias)) || null;
+    res.set("Cache-Control", "no-store");
+    res.json({
+      ok: true,
+      enabled,
+      scannerCount: candidates.length,
+      selectedSymbol: selected?.symbol || null,
+      selectedForAutoTrade: Boolean(selected?.selectedForAutoTrade),
+      selectionStatus: !selected ? "WAITING FOR SCANNER EVALUATION" :
+        selected.selectedForAutoTrade ? "CANDIDATE APPROVED · EXECUTION GATES PASSED" :
+        selected.executionEligible ? "STRATEGY APPROVED · AUTO-TRADING OFF OR EXECUTION BLOCKED" :
+        "NO ENTRY APPROVED · " + (selected.blockedBy?.join(", ") || selected.reason || "WAITING FOR GATES"),
+      candidate: selected,
+      candidates
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: "AUTO_TRADE_CANDIDATE_UNAVAILABLE" });
   }
 });
 
@@ -668,18 +709,49 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
           if (!market || !Array.isArray(market.candles) || market.candles.length < 50 ||
               !Number.isFinite(Number(ct?.bid)) || !Number.isFinite(Number(ct?.ask)) ||
               Number(ct.ask) <= Number(ct.bid) || !quoteFresh) {
+            const reason = !market ? "MARKET_NOT_REGISTERED" :
+              (market.candles.length < 50 ? "INSUFFICIENT_M5_HISTORY" :
+              (!quoteFresh ? "QUOTE_STALE" : "QUOTE_UNAVAILABLE"));
+            latestAutoTradeCandidates.set(symbol, {
+              symbol, signal: "WAIT", bias: null, confidence: null,
+              executionEligible: false, executionStatus: "WAITING FOR MARKET DATA",
+              reason, blockedBy: [reason], candleCount: market?.candles?.length || 0,
+              quoteFresh, checkedAt: new Date().toISOString()
+            });
             console.log("AURIXA_MULTI_SYMBOL_WAIT:", JSON.stringify({
-              symbol, candleCount: market?.candles?.length || 0, quoteFresh,
-              reason: !market ? "MARKET_NOT_REGISTERED" :
-                (market.candles.length < 50 ? "INSUFFICIENT_M5_HISTORY" :
-                (!quoteFresh ? "QUOTE_STALE" : "QUOTE_UNAVAILABLE"))
+              symbol, candleCount: market?.candles?.length || 0, quoteFresh, reason
             }));
             continue;
           }
           const decision = aiTraderEngine.decide(market.candles, ct);
           const decisionId = await auditAiDecision(decision);
+          const bias = Number(decision.score?.buy) > Number(decision.score?.sell) ? "BUY" :
+            Number(decision.score?.sell) > Number(decision.score?.buy) ? "SELL" : null;
+          const candidate = {
+            symbol, signal: decision.signal, bias, confidence: decision.confidence,
+            executionEligible: decision.executionEligible === true,
+            executionStatus: decision.executionEligible === true ? "ENTRY GATES PASSED · CHECKING EXECUTION" : "NOT APPROVED",
+            reason: (decision.blockedBy || []).join(", ") || null,
+            blockedBy: decision.blockedBy || [], gates: decision.gates || {},
+            entry: decision.entry ?? null, stopLoss: decision.stopLoss ?? null,
+            takeProfit: decision.takeProfit ?? null, rewardRisk: decision.rewardRisk ?? null,
+            candleCount: market.candles.length, quoteFresh: true,
+            decisionId, checkedAt: new Date().toISOString()
+          };
+          latestAutoTradeCandidates.set(symbol, candidate);
           if (decision.executionEligible === true) {
             const result = await autoTrader.executeAiDecision({...decision, decisionId}, decisionId);
+            candidate.executionStatus = result.executed === true ? "ORDER ACCEPTED BY BROKER" :
+              (result.reason ? "BLOCKED · " + result.reason : "NOT EXECUTED");
+            candidate.executionReason = result.reason || null;
+            candidate.executionResult = result.executed === true ? "ACCEPTED" :
+              (result.reason === "AUTO_TRADING_DISABLED" ? "AUTO_TRADING_OFF" : "BLOCKED");
+            candidate.orderId = result.orderId || null;
+            candidate.positionId = result.positionId || null;
+            candidate.volume = result.volume ?? null;
+            candidate.protectionStatus = result.protectionStatus || null;
+            candidate.checkedAt = new Date().toISOString();
+            latestAutoTradeCandidates.set(symbol, candidate);
             console.log("AURIXA_MULTI_SYMBOL_EXECUTION:", JSON.stringify({
               symbol, decisionId, signal: decision.signal, executed: result.executed,
               reason: result.reason || null, orderId: result.orderId || null,
