@@ -71,6 +71,7 @@
   }
 
   function number(v, digits = 2) {
+    if (v === null || v === undefined || v === "") return "—";
     const n = Number(v);
 
     if (!Number.isFinite(n)) return "—";
@@ -82,11 +83,18 @@
   }
 
   function percent(v) {
+    if (v === null || v === undefined || v === "") return "—";
     const n = Number(v);
 
     if (!Number.isFinite(n)) return "—";
 
     return `${number(n, 1)}%`;
+  }
+
+  function priceNumber(v, digits = 2) {
+    if (v === null || v === undefined || v === "") return "—";
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? number(n, digits) : "—";
   }
 
   function text(id, value) {
@@ -261,12 +269,15 @@
 
     const activeSymbol = String(first(ctrader?.symbolName, ctrader?.symbol, market.symbol, market.symbolName, "XAUUSD")).toUpperCase();
     const digits = priceDigits(activeSymbol);
-    text("price", number(price, digits));
-    text("bid", number(bid, digits));
-    text("ask", number(ask, digits));
+    text("price", priceNumber(price, digits));
+    text("bid", priceNumber(bid, digits));
+    text("ask", priceNumber(ask, digits));
 
-    if (Number.isFinite(Number(bid)) && Number.isFinite(Number(ask))) {
+    if (bid !== null && bid !== undefined && bid !== "" && ask !== null && ask !== undefined && ask !== "" &&
+        Number.isFinite(Number(bid)) && Number.isFinite(Number(ask)) && Number(bid) > 0 && Number(ask) > 0) {
       text("spread", number(Number(ask) - Number(bid), digits));
+    } else {
+      text("spread", "—");
     }
 
     const marketSymbol = activeSymbol;
@@ -563,9 +574,9 @@
     const failedGates = Object.entries(gates).filter(([,v]) => v === false).map(([k]) => k);
     text("gateQuality", failedGates.length ? "BLOCKED · " + failedGates.map(k => String(k).replaceAll("_", " ").toUpperCase()).join(" / ") : eligible ? "PASSED" : "WAITING FOR GATES");
     text("gatePosition", hasPosition ? "OPEN" : "FLAT");
-    text("gateEntry", number(first(data.entry, data.entryPrice), digits));
-    text("gateSL", number(first(data.stopLoss, data.stop), digits));
-    text("gateTP", number(first(data.takeProfit, data.target), digits));
+    text("gateEntry", priceNumber(first(data.entry, data.entryPrice), digits));
+    text("gateSL", priceNumber(first(data.stopLoss, data.stop), digits));
+    text("gateTP", priceNumber(first(data.takeProfit, data.target), digits));
     text("gateRR", Number.isFinite(Number(first(data.rewardRisk, data.riskReward))) ? number(first(data.rewardRisk, data.riskReward), 1) + "R" : "—");
 
     const decision = $("gateDecision");
@@ -637,10 +648,10 @@
       const sl = first(p?.tradeData?.stopLoss, p?.stopLoss);
       const pnl = first(p?.unrealizedNetProfit, p?.tradeData?.unrealizedNetProfit, p?.netProfit, p?.profit);
       text("autoPositionDirection", side);
-      text("autoPositionEntry", number(entry, positionDigits));
-      text("autoPositionCurrent", number(current, positionDigits));
+      text("autoPositionEntry", priceNumber(entry, positionDigits));
+      text("autoPositionCurrent", priceNumber(current, positionDigits));
       text("autoPositionVolume", volume ?? "—");
-      text("autoPositionSL", number(sl, positionDigits));
+      text("autoPositionSL", priceNumber(sl, positionDigits));
       text("autoPositionPnl", pnl === null || pnl === undefined || pnl === "" || !Number.isFinite(Number(pnl)) ? "—" : number(pnl, 2));
       text("autoTradeNotice", "Showing " + positionSymbol + " as the first of " + list.length + " open broker position(s). Full list is below.");
     }
@@ -700,10 +711,11 @@
         p.profit
       );
       const opened = first(p.openTime, p.openedAt, td.openTime, td.openedAt);
-      const entryN = Number(entry);
-      const currentN = Number(current);
-      const slN = Number(sl);
-      const tpN = Number(tp);
+      const toNumeric = value => value === null || value === undefined || value === "" ? NaN : Number(value);
+      const entryN = toNumeric(entry);
+      const currentN = toNumeric(current);
+      const slN = toNumeric(sl);
+      const tpN = toNumeric(tp);
       const pnlN = pnl === null || pnl === undefined || pnl === "" ? NaN : Number(pnl);
       const pnlClass = Number.isFinite(pnlN) ? (pnlN > 0 ? "profit" : pnlN < 0 ? "loss" : "flat") : "";
       const sideClass = direction === "BUY" ? "buy" : direction === "SELL" ? "sell" : "flat";
