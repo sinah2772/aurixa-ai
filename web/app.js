@@ -920,7 +920,9 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
 
   function updatePerformance(trades) {
     const rows = Array.isArray(trades?.trades) ? trades.trades : [];
-    const closed = rows.filter(t => String(t?.status || "").toUpperCase() === "CLOSED");
+    const closed = Array.isArray(trades?.closedTrades)
+      ? trades.closedTrades
+      : rows.filter(t => String(t?.status || "").toUpperCase() === "CLOSED");
     // Match Trade History: only numeric realized P/L is included in statistics.
     const verified = closed
       .map(t => t.profit === null || t.profit === undefined || t.profit === "" ? null : Number(t.profit))
@@ -941,8 +943,12 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const body = $("closedTradeHistory");
     const summary = $("closedTradeHistorySummary");
     if (!body) return;
+    // Prefer the dedicated close-time-ordered feed. Older servers fall back
+    // to filtering the general trade/audit feed for compatibility.
     const trades = Array.isArray(data?.trades) ? data.trades : [];
-    const closed = trades.filter(t => String(t?.status || "").toUpperCase() === "CLOSED");
+    const closed = Array.isArray(data?.closedTrades)
+      ? data.closedTrades
+      : trades.filter(t => String(t?.status || "").toUpperCase() === "CLOSED");
     if (!closed.length) {
       if (summary) summary.textContent = "0 CLOSED TRADES";
       body.innerHTML = '<div class="empty">No closed trades yet.</div>';
