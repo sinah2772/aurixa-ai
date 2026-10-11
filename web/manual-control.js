@@ -159,9 +159,10 @@
       enabled = data.enabled === true;
       const demoReady = data.demoAccount === true && data.demoOnly === true;
       if (modeEl) modeEl.textContent = demoReady ? "DEMO ONLY · VERIFIED" : "DEMO ONLY · VERIFY ACCOUNT";
-      if (data.symbol && canonical(data.symbol) !== selectedSymbol) {
-        await refreshSymbols(data.symbol);
-      }
+      // The cTrader symbols endpoint is the source of truth for the active chart
+      // symbol. Auto-trader status may report its own/default symbol and must not
+      // silently reset a user's market selection in the dropdown.
+      await refreshSymbols();
       render(enabled ? "ENABLED · DEMO ONLY · ALL MARKETS SCANNED" : "OFF · MANUAL START REQUIRED",
         enabled && demoReady && data.connected && data.authorized ? "ready" : "");
     } catch (error) {
@@ -183,7 +184,7 @@
       const data = await response.json();
       if (!response.ok || data.ok !== true) {
         const messages = {
-          OPEN_POSITIONS_MUST_BE_CLOSED_BEFORE_SWITCHING_SYMBOL: "CLOSE ACTIVE-SYMBOL POSITIONS BEFORE SWITCHING",
+          OPEN_POSITIONS_MUST_BE_CLOSED_BEFORE_SWITCHING_SYMBOL: "CLOSE OPEN POSITIONS ON " + String(data.activeSymbol || selectedSymbol || "THE ACTIVE SYMBOL") + " BEFORE SWITCHING",
           CTRADER_NOT_READY: "CONNECT / AUTHORIZE cTRADER FIRST",
           "cTrader WebSocket is not connected": "cTRADER FEED DISCONNECTED"
         };
