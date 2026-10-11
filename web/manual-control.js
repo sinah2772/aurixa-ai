@@ -192,14 +192,15 @@
       selectedSymbol = canonical(data.symbol);
       await refreshSymbols(selectedSymbol);
       render("CHART SELECTED · " + selectedSymbol + " · MULTI-MARKET SCANNER CONTINUES", "ready");
-      window.location.reload();
+      // The main dashboard refreshes prices and candles on its own polling
+      // cycle; avoid a full reload that resets chart/UI state.
     } catch (error) {
       await refreshSymbols(selectedSymbol).catch(() => {});
       render(error.message || "SYMBOL SELECTION FAILED", "blocked");
     } finally {
       busy = false;
       button.disabled = false;
-      symbolSelect.disabled = symbolSelect.options.length === 0;
+      symbolSelect.disabled = busy || symbolSelect.options.length === 0;
     }
   });
 
