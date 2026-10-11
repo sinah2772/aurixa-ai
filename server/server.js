@@ -774,6 +774,17 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             decisionId, checkedAt: new Date().toISOString()
           };
           latestAutoTradeCandidates.set(symbol, candidate);
+          // Emit one concise, auditable record per evaluated symbol, including
+          // WAIT decisions. Without this, the absence of an order log is
+          // ambiguous between "no approved signal" and an execution failure.
+          console.log("AURIXA_MULTI_SYMBOL_DECISION:", JSON.stringify({
+            symbol, signal: decision.signal, confidence: decision.confidence,
+            executionEligible: decision.executionEligible === true,
+            blockedBy: decision.blockedBy || [],
+            candleTime: decision.candleTime ?? null,
+            autoTradingEnabled: autoTrader.getStatus().enabled === true,
+            quoteFresh: true, decisionId
+          }));
           if (decision.executionEligible === true) {
             const result = await autoTrader.executeAiDecision({...decision, decisionId}, decisionId);
             candidate.executionStatus = result.executed === true ? "ORDER ACCEPTED BY BROKER" :
