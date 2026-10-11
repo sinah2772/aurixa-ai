@@ -496,7 +496,6 @@
 
   function updateAutoTrader(status, positions) {
     if (!status) return;
-    const digits = priceDigits(status.symbol || "XAUUSD");
     const enabled = status.enabled === true;
     const demo = status.demoAccount === true && status.demoOnly === true;
     const connected = status.connected === true && status.authorized === true;
@@ -525,8 +524,10 @@
       text("autoPositionVolume", "—");
       text("autoPositionSL", "—");
       text("autoPositionPnl", "—");
-      text("autoTradeNotice", state === "READY" ? "Demo auto-trader is armed. No " + String(first(status?.symbol, "selected-symbol")) + " position is open." : state);
+      text("autoTradeNotice", state === "READY" ? "Demo auto-trader is armed. No open positions across supported markets." : state);
     } else {
+      const positionSymbol = String(first(p.symbol, p.symbolName, status.symbol, "XAUUSD")).toUpperCase().replace(/[\/\s_-]/g, "");
+      const positionDigits = priceDigits(positionSymbol);
       const side = Number(p?.tradeData?.tradeSide) === 1 ? "BUY" : Number(p?.tradeData?.tradeSide) === 2 ? "SELL" : first(p.direction, "—");
       const entry = first(p?.tradeData?.openPrice, p?.tradeData?.price, p?.price, p?.entryPrice);
       const current = first(p?.currentPrice, p?.tradeData?.currentPrice, p?.price);
@@ -534,12 +535,12 @@
       const sl = first(p?.tradeData?.stopLoss, p?.stopLoss);
       const pnl = first(p?.unrealizedNetProfit, p?.tradeData?.unrealizedNetProfit, p?.netProfit, p?.profit);
       text("autoPositionDirection", side);
-      text("autoPositionEntry", number(entry, digits));
-      text("autoPositionCurrent", number(current, digits));
+      text("autoPositionEntry", number(entry, positionDigits));
+      text("autoPositionCurrent", number(current, positionDigits));
       text("autoPositionVolume", volume ?? "—");
-      text("autoPositionSL", number(sl, digits));
+      text("autoPositionSL", number(sl, positionDigits));
       text("autoPositionPnl", pnl === null || pnl === undefined || pnl === "" || !Number.isFinite(Number(pnl)) ? "—" : number(pnl, 2));
-      text("autoTradeNotice", "Demo " + String(first(status?.symbol, "selected-symbol")) + " position is open.");
+      text("autoTradeNotice", "Demo " + positionSymbol + " position is open.");
     }
 
 
