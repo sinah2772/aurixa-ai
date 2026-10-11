@@ -132,3 +132,17 @@ main > .panel, main > .dashboard-grid { margin: 0; }
 @media(max-width:520px) {
   .auto-candidate-levels { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+
+/* Per-symbol strategy studies. These are populated from fresh backend decisions only. */
+.multi-symbol-studies { display:grid; gap:5px; margin-top:2px; padding-top:8px; border-top:1px solid var(--border); }
+.multi-symbol-study-row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:10px; line-height:1.45; }
+.multi-symbol-study-row span { color:var(--muted); font-size:9px; letter-spacing:.035em; }
+.multi-symbol-study-row strong { text-align:right; overflow-wrap:anywhere; font-size:10px; }
+.multi-symbol-study-row.study-buy strong { color:var(--green); }
+.multi-symbol-study-row.study-sell strong { color:var(--red); }
+.multi-symbol-study-row.study-wait strong { color:var(--yellow); }
+.multi-symbol-execution { margin-top:3px; font-size:9px; font-weight:850; line-height:1.5; overflow-wrap:anywhere; }
+.multi-symbol-study-reason { color:var(--muted); font-size:9px; line-height:1.5; overflow-wrap:anywhere; }
+.multi-symbol-card { min-height:250px; }
+@media (max-width:520px) { .multi-symbol-card { min-height:255px; } }
