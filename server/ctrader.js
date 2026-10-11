@@ -1840,7 +1840,8 @@ function registerCTrader(app) {
         symbol: state.symbolName,
         symbolId: state.symbolId,
         digits: symbol.digits,
-        tradingEnabled: false,
+        tradingEnabled: String(process.env.AUTO_TRADING || "false").toLowerCase() === "true",
+        multiSymbolScanning: true,
         paperTrading: true
       });
 
