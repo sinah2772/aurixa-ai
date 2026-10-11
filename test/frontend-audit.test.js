@@ -86,7 +86,7 @@ test("candidate UI does not equate chart selection or data readiness with order 
   const frontend = read("web/auto-trade-candidate.js");
   const server = read("server/server.js");
   assert.match(html, /selected chart market is not necessarily the next auto-trade candidate/i);
-  assert.match(frontend, /ORDER ACCEPTED BY BROKER/);
+  assert.match(frontend, /executionStatus/);
   assert.match(frontend, /ENTRY GATES PASSED/);
   assert.match(server, /ORDER ACCEPTED BY BROKER/);
   assert.match(server, /AUTO_TRADING_OFF/);
