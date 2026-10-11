@@ -234,3 +234,38 @@ button { touch-action: manipulation; }
 .closed-trade-table .pnl-pending { color:var(--yellow); font-weight:850; }
 .closed-trade-table-wrap:focus-visible { outline:2px solid var(--yellow); outline-offset:2px; }
 @media (max-width:520px) { .closed-trade-table th, .closed-trade-table td { padding:9px 10px; } }
+
+
+/* Pair controls live in a native modal so the main trading dashboard stays uncluttered. */
+.topbar-actions { display:flex; align-items:center; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+.market-controls-open, .market-controls-close {
+  min-height:40px; padding:9px 13px; border:1px solid rgba(245,196,81,.48);
+  border-radius:9px; background:rgba(245,196,81,.08); color:var(--yellow);
+  font-size:10px; font-weight:900; letter-spacing:.06em; cursor:pointer;
+}
+.market-controls-open:hover, .market-controls-close:hover { background:rgba(245,196,81,.15); }
+.market-controls-open:focus-visible, .market-controls-close:focus-visible { outline:2px solid var(--yellow); outline-offset:3px; }
+.multi-symbol-dialog {
+  width:min(1280px, calc(100vw - 24px)); max-width:1280px; max-height:calc(100dvh - 24px);
+  padding:16px; border:1px solid rgba(245,196,81,.35); border-radius:16px;
+  background:#080b10; color:var(--text); overflow:auto; box-shadow:0 24px 80px rgba(0,0,0,.7);
+}
+.multi-symbol-dialog::backdrop { background:rgba(0,0,0,.76); backdrop-filter:blur(4px); }
+.multi-symbol-dialog[open] { animation:pair-dialog-in .16s ease-out; }
+.multi-symbol-dialog-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+.multi-symbol-dialog .multi-symbol-panel { margin:0; padding:12px; }
+.multi-symbol-dialog .multi-symbol-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+@keyframes pair-dialog-in { from { opacity:0; transform:translateY(8px) scale(.99); } to { opacity:1; transform:translateY(0) scale(1); } }
+@media(max-width:850px) {
+  .multi-symbol-dialog .multi-symbol-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:520px) {
+  .topbar-actions { width:100%; justify-content:space-between; }
+  .market-controls-open { flex:1; }
+  .multi-symbol-dialog { width:calc(100vw - 12px); max-height:calc(100dvh - 12px); padding:9px; border-radius:12px; }
+  .multi-symbol-dialog-toolbar { align-items:flex-start; }
+  .market-controls-close { min-height:36px; padding:7px 9px; }
+  .multi-symbol-dialog .multi-symbol-panel { padding:8px; }
+  .multi-symbol-dialog .multi-symbol-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+}
+@media(prefers-reduced-motion:reduce) { .multi-symbol-dialog[open] { animation:none; } }
