@@ -162,3 +162,60 @@ main > .panel, main > .dashboard-grid { margin: 0; }
 .multi-symbol-expanded-row span { color:var(--muted); flex:0 0 38%; }
 .multi-symbol-expanded-row strong { text-align:right; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 .multi-symbol-card-controls button:focus-visible { outline:2px solid var(--yellow); outline-offset:2px; }
+
+
+/* Frontend reliability and responsive layout pass. */
+html { scroll-behavior: smooth; }
+body { overflow-x: hidden; }
+button, select { font: inherit; }
+button { touch-action: manipulation; }
+.panel, .dashboard-grid, .dashboard-grid > .panel, .account-grid, .logic-grid,
+.activity-summary, .gate-conditions, .gate-levels, .account-stat { min-width: 0; }
+.dashboard-grid > .panel { margin-bottom: 0; }
+.hero-price, .price-row, .market-meta, .activity-summary > div,
+.gate-condition, .gate-level, .account-stat { overflow-wrap: anywhere; }
+.price-row { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.chart-wrap, #marketChart { width: 100%; min-width: 0; max-width: 100%; }
+#marketChart { overflow: hidden; }
+.empty-state, .notice, .reason, .gate-reason, .auto-candidate-reason { overflow-wrap: anywhere; }
+.multi-symbol-card-controls button { white-space: normal; overflow-wrap: anywhere; }
+.multi-symbol-expanded-details[hidden] { display: none !important; }
+.multi-symbol-expanded-details { min-width: 0; }
+.multi-symbol-expanded-row strong { min-width: 0; }
+.confirmed-signal-row { min-width: 540px; }
+.confirmed-history-panel, .open-trades-panel, .closed-history-panel { overflow: hidden; }
+.confirmed-signal-history, #closedTradeHistory, #openTradesList { overflow-x: auto; overscroll-behavior-x: contain; }
+.system-footer { overflow-wrap: anywhere; }
+@media (max-width: 850px) {
+  .auto-candidate-levels { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .activity-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gate-conditions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gate-levels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .app { padding-top: 10px; }
+  .topbar { gap: 8px; flex-wrap: wrap; }
+  .brand { font-size: 21px; }
+  .live-badge { padding: 7px 9px; font-size: 9px; }
+  .panel { border-radius: 12px; }
+  .instrument { font-size: 28px; margin-bottom: 10px; }
+  .price { font-size: clamp(24px, 8vw, 34px); overflow-wrap: anywhere; }
+  .price-row { gap: 6px 10px; font-size: 11px; }
+  .chart-wrap { height: 270px; }
+  .signal { font-size: 36px; }
+  .logic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .auto-candidate-levels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .auto-candidate-table-head, .auto-candidate-row { min-width: 500px; }
+  .confirmed-signal-head { min-width: 540px; }
+  .confirmed-history-panel, .open-trades-panel, .closed-history-panel { overflow: hidden; }
+  .account-stat { padding: 9px; }
+  .account-stat strong { overflow-wrap: anywhere; }
+  .multi-symbol-expanded-row { align-items: flex-start; }
+  .multi-symbol-expanded-row span { flex-basis: 34%; }
+  .multi-symbol-expanded-row strong { flex: 1; }
+}
+@media (max-width: 360px) {
+  .multi-symbol-grid { grid-template-columns: minmax(0, 1fr); }
+  .multi-symbol-card { min-height: 0; }
+  .auto-candidate-grid, .auto-candidate-levels { grid-template-columns: minmax(0, 1fr); }
+}
