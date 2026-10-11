@@ -6,6 +6,17 @@
   const symbolSelect = document.getElementById("tradingSymbol");
   const multiSymbolGrid = document.getElementById("multiSymbolGrid");
   const multiSymbolSummary = document.getElementById("multiSymbolSummary");
+  const multiSymbolDialog = document.getElementById("multiSymbolDialog");
+  const multiSymbolOpenButton = document.getElementById("multiSymbolOpenButton");
+  const multiSymbolCloseButton = document.getElementById("multiSymbolCloseButton");
+  if (multiSymbolOpenButton && multiSymbolDialog) {
+    multiSymbolOpenButton.addEventListener("click", () => {
+      if (!multiSymbolDialog.open) multiSymbolDialog.showModal();
+    });
+  }
+  if (multiSymbolCloseButton && multiSymbolDialog) {
+    multiSymbolCloseButton.addEventListener("click", () => multiSymbolDialog.close());
+  }
   if (!button || !statusEl || !symbolSelect) return;
 
   let enabled = false;
