@@ -91,3 +91,7 @@ main > .panel, main > .dashboard-grid { margin: 0; }
   .account-grid, .position-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .open-trade-card { overflow-wrap: anywhere; }
 }
+
+
+/* Hide the top chart-symbol dropdown; symbol cards remain the visible chart switcher. */
+.manual-control-row:has(#tradingSymbol) { display: none !important; }
