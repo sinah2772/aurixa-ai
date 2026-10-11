@@ -98,3 +98,19 @@ The stylesheet is large and contains multiple generations of layout overrides. T
 ## Audit boundary
 
 This report assesses frontend code and deployment metadata only. It does not certify trading strategy quality, broker execution, position protection, P/L reconciliation, or profitability. Those require separate backend/broker verification.
+
+
+## Remediation pass — 2026-10-11
+
+The first remediation pass is implemented on branch `fix/frontend-audit-findings` and includes automated regression checks:
+
+- Removed fabricated `enabled/demo/connected/authorized` values from the fast position polling path. The compact auto-trader state now comes from the actual status endpoint only.
+- Made position polling the single owner of the fast open-position list, avoiding a second position request in the full dashboard refresh. Added a full-refresh overlap guard.
+- Added a visible API/position freshness state and explicit unavailable states for missing status and history responses.
+- Clarified scanner labels as **DATA READY / DATA WAIT** and states that data readiness is not entry approval.
+- Added the current symbol to the AI signal, symbol labels to signal/closed-trade history, and avoids claiming all execution gates passed when the backend has not confirmed eligibility.
+- Changed the activity timestamp to prefer a backend evaluation timestamp; otherwise it is explicitly labelled as a UI update.
+- Removed full API-response payloads from browser console logging.
+- Added `test/frontend-audit.test.js` to verify JS syntax, unique HTML IDs, non-fabricated status, polling ownership, readiness wording, stale-data UI, and symbol identity.
+
+This is a frontend remediation, not proof of broker execution or profitability. The changes require CI and Render deployment verification before being called live.
