@@ -613,6 +613,10 @@ app.get("/api/auto-trader/trades", async (req, res) => {
       `, [limit])
     ]);
 
+    // Closed-trade history is refreshed frequently and must never be served from a browser/proxy cache.
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
     res.json({
       ok: true,
       autoTradingEnabled:
