@@ -121,6 +121,46 @@
           (market.symbolName && market.symbolName !== symbol ? " · Broker: " + market.symbolName : "") +
           (market.symbolId != null ? " · ID " + market.symbolId : "");
 
+        // Show the same server-evaluated studies used by the scanner. Null or
+        // stale values remain unavailable instead of being fabricated in UI.
+        const study = market.study || {};
+        const studies = document.createElement("div");
+        studies.className = "multi-symbol-studies";
+        const studyRow = (label, value) => {
+          const row = document.createElement("div");
+          row.className = "multi-symbol-study-row";
+          const key = document.createElement("span");
+          key.textContent = label;
+          const val = document.createElement("strong");
+          val.textContent = value == null || value === "" ? "—" : String(value);
+          row.append(key, val);
+          return row;
+        };
+        const fmtStudy = (value, digits = 2) => {
+          const n = Number(value);
+          return value == null || value === "" || !Number.isFinite(n) ? "—" :
+            n.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+        };
+        const signal = String(study.signal || "WAIT").toUpperCase();
+        const signalRow = studyRow("AI SIGNAL", study.fresh ? signal + (study.confidence == null ? "" : " · " + Math.round(Number(study.confidence)) + "%") : "WAITING");
+        signalRow.classList.add(signal === "BUY" ? "study-buy" : signal === "SELL" ? "study-sell" : "study-wait");
+        studies.append(
+          signalRow,
+          studyRow("EMA TREND", study.fresh ? (study.trend || "—") : "—"),
+          studyRow("RSI 14", study.fresh ? fmtStudy(study.rsi, 1) : "—"),
+          studyRow("MOMENTUM", study.fresh ? fmtStudy(study.momentum, 2) + (study.momentum == null ? "" : " ATR") : "—"),
+          studyRow("REGIME", study.fresh ? String(study.regime || "—").replaceAll("_", " ") : "—"),
+          studyRow("RISK / R:R", study.fresh && study.rewardRisk != null ? fmtStudy(study.rewardRisk, 2) + "R" : "—")
+        );
+        const execution = document.createElement("div");
+        execution.className = "multi-symbol-execution";
+        execution.textContent = study.executionStatus || "WAITING FOR SCANNER";
+        studies.appendChild(execution);
+        const why = document.createElement("div");
+        why.className = "multi-symbol-study-reason";
+        why.textContent = study.reason || "Waiting for per-symbol strategy evaluation.";
+        studies.appendChild(why);
+
         const select = document.createElement("button");
         select.type = "button";
         select.className = "multi-symbol-select";
@@ -132,7 +172,7 @@
           symbolSelect.value = symbol;
           symbolSelect.dispatchEvent(new Event("change", { bubbles: true }));
         });
-        card.append(head, quote, detail, select);
+        card.append(head, quote, detail, studies, select);
         multiSymbolGrid.appendChild(card);
       }
       if (!markets.length) {
