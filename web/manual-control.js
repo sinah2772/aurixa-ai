@@ -11,6 +11,8 @@
   let enabled = false;
   let busy = false;
   let selectedSymbol = "";
+  let latestSignalsBySymbol = new Map();
+  const SIGNAL_MAX_AGE_MS = 5 * 60 * 1000;
 
   function canonical(value) {
     return String(value || "").trim().toUpperCase().replace(/[\/\s_-]/g, "");
@@ -58,6 +60,41 @@
     symbolSelect.disabled = busy;
     // Keep the scanner's selected-market highlight in sync with the dropdown.
     refreshMultiSymbolStatus();
+  }
+
+  function signalForSymbol(symbol) {
+    const item = latestSignalsBySymbol.get(canonical(symbol));
+    if (!item) return { label: "NO RECENT SIGNAL", kind: "unknown", detail: "Waiting for a recorded per-symbol AI signal." };
+    const timestamp = Date.parse(item.createdAt || item.candleTime || item.timestamp || "");
+    const age = Number.isFinite(timestamp) ? Date.now() - timestamp : Infinity;
+    if (age < 0 || age > SIGNAL_MAX_AGE_MS) return { label: "SIGNAL STALE", kind: "stale", detail: "Last signal is older than 5 minutes; it is not treated as a current candidate." };
+    const direction = String(item.signal || item.direction || "WAIT").toUpperCase();
+    let blocked = item.blockedBy;
+    if (typeof blocked === "string") { try { blocked = JSON.parse(blocked); } catch { blocked = [blocked]; } }
+    if (!Array.isArray(blocked)) blocked = [];
+    const reasons = blocked.map(value => String(value).replaceAll("_", " ").toUpperCase()).filter(Boolean);
+    if ((direction === "BUY" || direction === "SELL") && item.executionEligible === true) return { label: direction + " CANDIDATE · GATES PASSED", kind: "eligible", detail: "Strategy entry gates passed. This does not confirm a broker order; check Open Trades for execution." };
+    if (direction === "BUY" || direction === "SELL") return { label: direction + " · NOT APPROVED", kind: "blocked", detail: reasons.length ? "Blocked by: " + reasons.join(" · ") : "Entry eligibility has not been confirmed by the backend." };
+    return { label: "WAIT · NO ENTRY", kind: "wait", detail: reasons.length ? "Waiting / blocked by: " + reasons.join(" · ") : "No confirmed BUY or SELL entry." };
+  }
+
+  async function refreshLatestSignals() {
+    try {
+      const response = await fetch("/api/ai/signals?limit=100", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok || data.ok !== true || !Array.isArray(data.signals)) throw new Error(data.error || "AI_SIGNALS_UNAVAILABLE");
+      const next = new Map();
+      for (const item of data.signals) {
+        const symbol = canonical(item.symbol || item.symbolName);
+        if (!symbol || next.has(symbol)) continue;
+        next.set(symbol, item);
+      }
+      latestSignalsBySymbol = next;
+      refreshMultiSymbolStatus();
+    } catch {
+      latestSignalsBySymbol = new Map();
+      refreshMultiSymbolStatus();
+    }
   }
 
   function marketReasonLabel(reason) {
@@ -114,6 +151,15 @@
         const fmt = value => Number.isFinite(value) ? value.toLocaleString(undefined, {minimumFractionDigits:digits, maximumFractionDigits:digits}) : "—";
         quote.textContent = "BID " + fmt(bid) + "  ·  ASK " + fmt(ask);
 
+        const candidateState = signalForSymbol(symbol);
+        const candidate = document.createElement("div");
+        candidate.className = "multi-symbol-candidate candidate-" + candidateState.kind;
+        const candidateTitle = document.createElement("strong");
+        candidateTitle.textContent = candidateState.label;
+        const candidateDetail = document.createElement("span");
+        candidateDetail.textContent = candidateState.detail;
+        candidate.append(candidateTitle, candidateDetail);
+
         const detail = document.createElement("div");
         detail.className = "multi-symbol-detail";
         detail.textContent = "M5 HISTORY  " + String(market.candleCount || 0) + " candles · " +
@@ -132,7 +178,7 @@
           symbolSelect.value = symbol;
           symbolSelect.dispatchEvent(new Event("change", { bubbles: true }));
         });
-        card.append(head, quote, detail, select);
+        card.append(head, quote, candidate, detail, select);
         multiSymbolGrid.appendChild(card);
       }
       if (!markets.length) {
@@ -246,7 +292,9 @@
   });
 
   refreshMultiSymbolStatus();
+  refreshLatestSignals();
   window.setInterval(refreshMultiSymbolStatus, 5000);
+  window.setInterval(refreshLatestSignals, 5000);
   refreshSymbols().then(readStatus).catch(() => {
     render("WAITING FOR cTRADER SYMBOL DISCOVERY", "blocked");
   });
