@@ -355,6 +355,11 @@ app.get("/api/auto-trader/positions", async (req, res) => {
     const getPositions = ctrader.getOpenSymbolPositions || ctrader.getOpenXAUUSDPositions;
     const positions = await getPositions(true);
 
+    // Route-level quote fields are also returned in the API response below.
+    // Keep these in route scope; per-position symbol quotes are resolved inside the map.
+    const bid = Number(status.bid);
+    const ask = Number(status.ask);
+
     const livePositions = positions.map(position => {
       const td = position?.tradeData || {};
       const symbol = normalizeSymbolName(position?.symbol || position?.symbolName || status.symbolName || status.symbol || "XAUUSD");
