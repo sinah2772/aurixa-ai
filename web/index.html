@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261010-phase5">
-  <link rel="stylesheet" href="/multi-market-ui.css?v=20261011-1">
+  <link rel="stylesheet" href="/style.css?v=20261011-audit1">
+  <link rel="stylesheet" href="/multi-market-ui.css?v=20261011-audit1">
   </head>
 <body>
 <div class="app">
@@ -71,7 +71,7 @@
         <button id="manualAutoTradingButton" type="button" class="manual-trading-button" aria-pressed="false">ENABLE AUTO-TRADING</button>
         <strong id="manualAutoTradingStatus" role="status" aria-live="polite">CHECKING STATUS…</strong>
       </div>
-      <p class="notice">Auto-trading is OFF after every restart. When enabled, AURIXA scans every broker-verified supported symbol independently, sizing each entry from the current demo balance and each symbol's broker volume rules. A symbol with stale quotes, insufficient candles, invalid spread, unsafe position protection, or failed risk checks is blocked. Changing the chart symbol disables new entries; turning auto-trading off does not close existing positions.</p>
+      <p class="notice">Auto-trading starts OFF after every server restart and must be enabled manually. When enabled, AURIXA scans broker-verified symbols independently; changing the chart only changes the displayed market and does not stop the scanner. Entries remain blocked per symbol when quotes are stale, M5 history is insufficient, spread or risk checks fail, or broker protection cannot be verified. Turning auto-trading off blocks new entries but does not close existing positions.</p>
     </section>
 
     <section class="panel multi-symbol-panel">
@@ -227,7 +227,7 @@
         <div class="account-stat"><span>POSITIONS</span><strong id="autoTradePosition">LOADING BROKER POSITIONS</strong></div>
       </div>
       <div class="position-card">
-        <div class="position-title" id="activePositionTitle">OPEN POSITION · SELECTED SYMBOL</div>
+        <div class="position-title" id="activePositionTitle">BROKER POSITION SNAPSHOT · MULTI-MARKET</div>
         <div class="position-grid">
           <div><span>DIRECTION</span><strong id="autoPositionDirection">FLAT</strong></div>
           <div><span>ENTRY</span><strong id="autoPositionEntry">—</strong></div>
@@ -246,12 +246,12 @@
       <div class="history-board-title">
         <div>
           <div class="section-title">OPEN TRADES</div>
-          <div class="section-heading">LIVE POSITIONS · SELECTED SYMBOL</div>
+          <div class="section-heading">LIVE POSITIONS · ALL SUPPORTED MARKETS</div>
         </div>
         <span id="openTradesSummary">0 OPEN POSITIONS</span>
       </div>
       <div id="openTradesList" class="open-trades-list">
-        <div class="empty">No open positions for the selected symbol.</div>
+        <div class="empty">No open positions across supported markets.</div>
       </div>
       <div id="openTradesUpdated" class="open-trades-updated">Waiting for live cTrader position data...</div>
     </section>
@@ -261,7 +261,7 @@
       <div class="history-board-title">
         <div>
           <div class="section-title">AI TRADER TRADE HISTORY</div>
-          <div class="section-heading">CLOSED POSITIONS &amp; PROFIT / LOSS</div>
+          <div class="section-heading">CLOSED POSITIONS · VERIFIED PROFIT / LOSS</div>
         </div>
         <span id="closedTradeHistorySummary">0 CLOSED TRADES</span>
       </div>
@@ -301,7 +301,7 @@
 
   </main>
 </div>
-<script defer src="/manual-control.js?v=20261011-2"></script>
-<script defer src="/app.js?v=20261011-1"></script>
+<script defer src="/manual-control.js?v=20261011-audit1"></script>
+<script defer src="/app.js?v=20261011-audit1"></script>
 </body>
 </html>

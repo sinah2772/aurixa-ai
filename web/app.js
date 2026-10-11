@@ -516,6 +516,10 @@
 
     const list = Array.isArray(positions?.positions) ? positions.positions : [];
     const p = list[0];
+    const activeTitle = $("activePositionTitle");
+    if (activeTitle) activeTitle.textContent = list.length
+      ? "BROKER POSITION SNAPSHOT · " + list.length + " OPEN ACROSS MARKETS"
+      : "BROKER POSITION SNAPSHOT · MULTI-MARKET";
 
     if (!p) {
       text("autoPositionDirection", "FLAT");
@@ -524,6 +528,8 @@
       text("autoPositionVolume", "—");
       text("autoPositionSL", "—");
       text("autoPositionPnl", "—");
+      const activeTitle = $("activePositionTitle");
+      if (activeTitle) activeTitle.textContent = "BROKER POSITION SNAPSHOT · MULTI-MARKET";
       text("autoTradeNotice", state === "READY" ? "Demo auto-trader is armed. No open positions across supported markets." : state);
     } else {
       const positionSymbol = String(first(p.symbol, p.symbolName, status.symbol, "XAUUSD")).toUpperCase().replace(/[\/\s_-]/g, "");
@@ -540,7 +546,7 @@
       text("autoPositionVolume", volume ?? "—");
       text("autoPositionSL", number(sl, positionDigits));
       text("autoPositionPnl", pnl === null || pnl === undefined || pnl === "" || !Number.isFinite(Number(pnl)) ? "—" : number(pnl, 2));
-      text("autoTradeNotice", "Demo " + positionSymbol + " position is open.");
+      text("autoTradeNotice", "Showing " + positionSymbol + " as the first of " + list.length + " open broker position(s). Full list is below.");
     }
 
 
