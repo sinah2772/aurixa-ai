@@ -895,10 +895,20 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
 
   function updateAccountPanel(account, autoStatus, ctrader) {
     const a = account?.account || account || {};
-    text("accountBalance", Number.isFinite(Number(a.balance)) ? number(a.balance, 2) : "—");
-    text("accountEquity", Number.isFinite(Number(a.equity)) ? number(a.equity, 2) : "—");
-    text("accountFreeMargin", Number.isFinite(Number(a.freeMargin)) ? number(a.freeMargin, 2) : "—");
-    text("accountUsedMargin", Number.isFinite(Number(a.usedMargin)) ? number(a.usedMargin, 2) : "—");
+    // Missing broker values stay unavailable; null must never display as 0.00.
+    const accountNumber = value => {
+      if (value === null || value === undefined || value === "") return null;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    };
+    const balance = accountNumber(a.balance);
+    const equity = accountNumber(a.equity);
+    const freeMargin = accountNumber(a.freeMargin);
+    const usedMargin = accountNumber(a.usedMargin);
+    text("accountBalance", balance === null ? "—" : number(balance, 2));
+    text("accountEquity", equity === null ? "—" : number(equity, 2));
+    text("accountFreeMargin", freeMargin === null ? "—" : number(freeMargin, 2));
+    text("accountUsedMargin", usedMargin === null ? "—" : number(usedMargin, 2));
     text("accountCurrency", first(a.currency, "—"));
     text("accountBroker", first(a.brokerTitleShort, ctrader?.account?.brokerTitleShort, "—"));
     text("accountLogin", first(a.traderLogin, ctrader?.account?.traderLogin, "—"));
@@ -939,42 +949,59 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       return;
     }
 
-    const realizedValues = closed
-      .map(t => t.profit === null || t.profit === undefined || t.profit === "" ? null : Number(t.profit))
-      .filter(v => Number.isFinite(v));
+    const toNumber = value => {
+      if (value === null || value === undefined || value === "") return null;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    };
+    const realizedValues = closed.map(t => toNumber(t.profit)).filter(v => v !== null);
     const pendingPnl = closed.length - realizedValues.length;
     const netPnl = realizedValues.reduce((sum, value) => sum + value, 0);
     if (summary) {
-      const netLabel = realizedValues.length
-        ? " · NET " + (netPnl > 0 ? "+" : "") + number(netPnl, 2)
-        : "";
+      const netLabel = realizedValues.length ? " · NET " + (netPnl > 0 ? "+" : "") + number(netPnl, 2) : "";
       const pendingLabel = pendingPnl ? " · " + pendingPnl + " P/L PENDING" : "";
       summary.textContent = closed.length + " CLOSED TRADES" + netLabel + pendingLabel;
     }
 
-    body.innerHTML = closed.map(t => {
-      const direction = String(t.direction || "").toUpperCase();
-      const tradeSymbol = String(first(t.symbol, t.symbolName, "UNKNOWN")).toUpperCase();
-      const digits = priceDigits(tradeSymbol);
-      const toNumber = value => {
-        if (value === null || value === undefined || value === "") return null;
-        const n = Number(value);
-        return Number.isFinite(n) ? n : null;
-      };
-      const entry = toNumber(first(t.executionEntryPrice, t.plannedEntryPrice, t.signalEntryPrice));
-      const exit = toNumber(t.closePrice);
-      const pnl = toNumber(t.profit);
-      const result = pnl === null ? "P/L PENDING" : (pnl > 0 ? "PROFIT" : pnl < 0 ? "LOSS" : "BREAKEVEN");
-      const cls = result === "PROFIT" ? "history-buy" : result === "LOSS" ? "history-sell" : "";
-      const opened = formatTime(t.openedAt || t.createdAt);
-      const closedAt = formatTime(t.closedAt);
-      return '<div class="confirmed-signal-row">' +
-        '<strong class="' + (direction === "BUY" ? "history-buy" : "history-sell") + '">' + escapeHTML((direction || "TRADE") + " · " + tradeSymbol) + '</strong>' +
-        '<span>' + escapeHTML((entry !== null && entry > 0 ? number(entry, digits) : "—") + " → " + (exit !== null && exit > 0 ? number(exit, digits) : "—")) + '</span>' +
-        '<span class="' + cls + '">' + escapeHTML(pnl !== null ? (pnl > 0 ? "+" : "") + number(pnl, 2) : "—") + '</span>' +
-        '<span class="' + cls + '">' + escapeHTML(result + " · " + closedAt) + '</span>' +
-        '</div>';
-    }).join("");
+    const cell = value => '<td>' + escapeHTML(value == null || value === "" ? "—" : String(value)) + '</td>';
+    const priceCell = (value, digits) => {
+      const n = toNumber(value);
+      return n !== null && n > 0 ? number(n, digits) : "—";
+    };
+    body.innerHTML =
+      '<div class="closed-trade-table-wrap" role="region" aria-label="Closed trade history table" tabindex="0">' +
+      '<table class="closed-trade-table"><thead><tr>' +
+      '<th scope="col">TIME</th><th scope="col">SIDE / SYMBOL</th><th scope="col">ENTRY</th>' +
+      '<th scope="col">SL (RECORDED)</th><th scope="col">TP (RECORDED)</th><th scope="col">EXIT</th>' +
+      '<th scope="col">STATUS</th><th scope="col">RESULT</th><th scope="col">EXIT REASON</th><th scope="col">P/L</th>' +
+      '</tr></thead><tbody>' +
+      closed.map(t => {
+        const direction = String(t.direction || "—").toUpperCase();
+        const tradeSymbol = String(first(t.symbol, t.symbolName, "UNKNOWN")).toUpperCase();
+        const digits = priceDigits(tradeSymbol);
+        const entry = first(t.executionEntryPrice, t.plannedEntryPrice, t.signalEntryPrice);
+        const sl = first(t.plannedStopPrice, t.stopLoss);
+        const tp = first(t.plannedTakeProfitPrice, t.takeProfit);
+        const exit = t.closePrice;
+        const pnl = toNumber(t.profit);
+        const result = pnl === null ? "P/L PENDING" : pnl > 0 ? "PROFIT" : pnl < 0 ? "LOSS" : "BREAKEVEN";
+        const pnlClass = pnl === null ? "pnl-pending" : pnl > 0 ? "pnl-positive" : pnl < 0 ? "pnl-negative" : "pnl-flat";
+        const time = formatTime(t.closedAt || t.openedAt || t.createdAt);
+        const pnlLabel = pnl === null ? "PENDING" : (pnl > 0 ? "+" : "") + number(pnl, 2);
+        return '<tr>' +
+          cell(time) +
+          '<td><strong class="' + (direction === "BUY" ? "history-buy" : direction === "SELL" ? "history-sell" : "") + '">' + escapeHTML(direction + " · " + tradeSymbol) + '</strong></td>' +
+          cell(priceCell(entry, digits)) +
+          cell(priceCell(sl, digits)) +
+          cell(priceCell(tp, digits)) +
+          cell(priceCell(exit, digits)) +
+          cell("CLOSED") +
+          '<td class="' + pnlClass + '">' + escapeHTML(result) + '</td>' +
+          cell(first(t.exitReason, t.gateReason, "—")) +
+          '<td class="' + pnlClass + '">' + escapeHTML(pnlLabel) + '</td>' +
+        '</tr>';
+      }).join("") +
+      '</tbody></table></div>';
   }
 
   function updateFrontendFreshness(responses) {
