@@ -27,13 +27,13 @@ function observe(candles,quote={},decision={}){
   const trendAligned=side==="BUY"?decision.trend==="BULLISH":side==="SELL"?decision.trend==="BEARISH":null;
   const momentumAligned=side==="BUY"?momentum!==null&&momentum>0:side==="SELL"?momentum!==null&&momentum<0:null;
   const rsiAligned=side==="BUY"?rsi!==null&&rsi>=52&&rsi<=72:side==="SELL"?rsi!==null&&rsi>=28&&rsi<=48:null;
-  const recent=valid.slice(-20);
   // M5 history often includes the still-forming candle. Do not use that candle
   // to diagnose entry-candle body strength when its open timestamp is known.
-  const completedRecent=recent.filter(c=>{
+  const completedValid=valid.filter(c=>{
     const candleMs=timestampMs(c?.time??c?.timestamp??c?.openTime??c?.open_time??c?.date);
     return candleMs===null||candleMs+300000<=now;
   });
+  const completedRecent=completedValid.slice(-20);
   const last=completedRecent.at(-1),close=num(last?.close),open=num(last?.open);
   const lastCandleTimestamp=last?timestampMs(last?.time??last?.timestamp??last?.openTime??last?.open_time??last?.date):null;
   const bodyCandleIsTimestamped=lastCandleTimestamp!==null;
@@ -62,7 +62,7 @@ function observe(candles,quote={},decision={}){
     mode:"observe_only",version:"2.2.0",evaluatedAt:new Date(now).toISOString(),
     symbol:decision.symbol||quote.symbolName||quote.symbol||null,signalObserved:decision.signal||"WAIT",
     v1ExecutionEligible:decision.executionEligible===true,wouldFlag,checks,
-    metrics:{validCandleCount:valid.length,completedCandleCount:completedRecent.length,entryCandleTimestamp:lastCandleTimestamp===null?null:new Date(lastCandleTimestamp).toISOString(),quoteAgeMs,spread,atr,
+    metrics:{validCandleCount:valid.length,completedCandleCount:completedValid.length,entryCandleTimestamp:lastCandleTimestamp===null?null:new Date(lastCandleTimestamp).toISOString(),quoteAgeMs,spread,atr,
       spreadAtrRatio:spreadAtrRatio===null?null:Number(spreadAtrRatio.toFixed(4)),
       entryBodyAtr:bodyAtr===null?null:Number(bodyAtr.toFixed(4)),
       entryExtensionAtr:entryExtensionAtr===null?null:Number(entryExtensionAtr.toFixed(4)),
