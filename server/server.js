@@ -21,6 +21,8 @@ const marketEngine = require("./market-engine");
 const aiTraderEngine = require("./ai-trader-engine");
 const aiQualityCheckV2 = require("./ai-quality-check-v2");
 const aiQualityCheckV2Monitor = require("./ai-quality-check-v2-monitor");
+const aiQualityCheckV2Persistence = require("./ai-quality-check-v2-persistence");
+aiQualityCheckV2Persistence.configure(queryDatabase);
 const { normalizeSymbolName, isSupportedSymbol } = require("./symbol-support");
 
 // Latest per-symbol scanner decision and execution outcome for the dashboard.
@@ -28,6 +30,9 @@ const latestAutoTradeCandidates = new Map();
 function storeAutoTradeCandidate(symbol, candidate) {
   latestAutoTradeCandidates.set(symbol, candidate);
   aiQualityCheckV2Monitor.record(candidate);
+  aiQualityCheckV2Persistence.persist(candidate).catch(err => {
+    console.warn("Quality Check V2 history persistence unavailable:", err.message);
+  });
 }
 async function auditAiDecision(decision){
  try{
@@ -379,8 +384,16 @@ app.get("/api/auto-trader/candidate", (req, res) => {
 
 // Read-only Quality Check V2 monitoring. This endpoint reports observations only:
  // it never changes V1 decisions, execution gates, broker orders, or trading settings.
-app.get("/api/ai/quality-check-v2", (req, res) => {
+app.get("/api/ai/quality-check-v2", async (req, res) => {
   try {
+    // Prefer durable PostgreSQL telemetry so trends survive Render restarts/deploys.
+    // If the database is unavailable, keep serving the in-memory observe-only view.
+    try {
+      const persisted = await aiQualityCheckV2Persistence.loadRecent(2000);
+      if (persisted.length) aiQualityCheckV2Monitor.replaceHistory(persisted);
+    } catch (historyError) {
+      console.warn("Quality Check V2 durable history unavailable; using memory:", historyError.message);
+    }
     const report = aiQualityCheckV2Monitor.summarize(Array.from(latestAutoTradeCandidates.values()));
     const history = aiQualityCheckV2Monitor.summarizeHistory();
     res.set("Cache-Control", "no-store");
