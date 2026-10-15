@@ -32,6 +32,12 @@ test("comparison replays both strategies on same chronological candles without l
   assert.ok(Number.isFinite(result.comparison.netRDelta));
   assert.equal(result.comparison.deploymentRecommendation, "DO_NOT_SWITCH_FROM_THIS_REPORT_ALONE");
   assert.ok(Array.isArray(result.trades.v1));
+  assert.ok(Number.isInteger(result.skippedInvalidatedSetups.v1));
+  assert.ok(Number.isInteger(result.skippedInvalidatedSetups.trendPullback));
+  for (const trade of [...result.trades.v1, ...result.trades.trendPullback]) {
+    assert.ok(Number.isFinite(trade.risk) && trade.risk > 0);
+    assert.ok(Math.abs(trade.risk - Math.abs(trade.entry - trade.stop)) < 1e-8);
+  }
 });
 
 test("comparison rejects invalid, unordered, and short datasets", () => {
