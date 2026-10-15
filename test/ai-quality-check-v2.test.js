@@ -44,3 +44,29 @@ test("completed-candle swing-extreme diagnostics remain available for directiona
   assert.ok(["pass","warning"].includes(report.checks.nearSwingExtreme.status));
   assert.equal(typeof report.metrics.swingExtremeDistanceAtr,"number");
 });
+
+
+const monitor = require("../server/ai-quality-check-v2-monitor");
+function monitorCandidate(symbol, evaluatedAt, warning) {
+  return {
+    symbol, signal: "WAIT", executionEligible: false, checkedAt: evaluatedAt,
+    qualityCheckV2: {
+      mode: "observe_only", symbol, evaluatedAt, signalObserved: "WAIT",
+      v1ExecutionEligible: false, executionDecisionUnaffected: true,
+      wouldFlag: [warning], checks: { [warning]: { status: "warning" } }
+    }
+  };
+}
+test("restored newest-first history evicts oldest records, not newest records", () => {
+  const now = Date.now();
+  const chronological = Array.from({ length: 2000 }, (_, i) =>
+    monitorCandidate("EURUSD", new Date(now - (2000 - i) * 1000).toISOString(), i === 0 ? "oldestMarker" : "historicWarning")
+  );
+  monitor.replaceHistory([...chronological].reverse(), now);
+  monitor.record(monitorCandidate("GBPUSD", new Date(now).toISOString(), "newestMarker"), now);
+  const history = monitor.summarizeHistory(now);
+  assert.equal(history.sampleCount, 2000);
+  const types = new Map(history.warningTypes.map(row => [row.type, row.occurrences]));
+  assert.equal(types.has("newestMarker"), true);
+  assert.equal(types.has("oldestMarker"), false);
+});
