@@ -14,6 +14,7 @@ const reversalCloseAttempts = new Map();
 const profitDetectedPositions = new Set();
 // One symbol is backfilled per scanner cycle to avoid hammering cTrader deal history.
 let closedBackfillSymbolIndex = 0;
+let lastClosedBackfillAt = 0;
 
 function configure({ctrader,query,ai}){cTrader=ctrader;dbQuery=query;aiEngine=ai;}
 
@@ -762,7 +763,9 @@ async function syncOpenPositions(symbolName=null){
   // repair at most five rows, filtering by symbol to keep broker API traffic bounded.
   if(typeof dbQuery==="function" && cTrader.getDealsByPositionId &&
       SUPPORTED_SYMBOLS.length > 0 &&
+      Date.now() - lastClosedBackfillAt >= 15000 &&
       targetSymbol === SUPPORTED_SYMBOLS[closedBackfillSymbolIndex % SUPPORTED_SYMBOLS.length]){
+    lastClosedBackfillAt = Date.now();
     try{
       const missing=await dbQuery(`SELECT id,position_id,opened_at,created_at FROM aurixa.auto_trades
         WHERE status='CLOSED' AND UPPER(BTRIM(symbol))=$1 AND position_id IS NOT NULL
