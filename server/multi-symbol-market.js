@@ -14,8 +14,11 @@ function timestampMs(value) {
   return Number.isFinite(parsed) ? parsed : Date.now();
 }
 function quoteFresh(market, now = Date.now()) {
-  const bidTime = Number(market?.bidUpdatedAt), askTime = Number(market?.askUpdatedAt);
-  return Number.isFinite(bidTime) && Number.isFinite(askTime) && now - bidTime >= 0 && now - askTime >= 0 && now - bidTime <= QUOTE_MAX_AGE_MS && now - askTime <= QUOTE_MAX_AGE_MS;
+  // cTrader sends partial spot updates: an omitted side means unchanged, not
+  // necessarily stale. Freshness follows the last event that changed a valid
+  // side, while events containing neither side must not refresh the quote.
+  const last = Date.parse(market?.lastUpdate || "");
+  return Number.isFinite(last) && now - last >= 0 && now - last <= QUOTE_MAX_AGE_MS;
 }
 
 function registerSymbols(symbols) {
@@ -75,11 +78,17 @@ function updateQuote(key, bid, ask, timestamp) {
   const a = ask == null || ask === "" ? NaN : Number(ask);
   // cTrader spot events can contain only one side. Do not refresh the age of
   // the opposite side unless that side was actually received in this event.
-  if (Number.isFinite(b) && b > 0) { market.bid = b; market.bidUpdatedAt = receivedAt; }
-  if (Number.isFinite(a) && a > 0) { market.ask = a; market.askUpdatedAt = receivedAt; }
-  const bidTime = Number(market.bidUpdatedAt), askTime = Number(market.askUpdatedAt);
-  const pairTime = Number.isFinite(bidTime) && Number.isFinite(askTime) ? Math.min(bidTime, askTime) : NaN;
-  market.lastUpdate = Number.isFinite(pairTime) ? new Date(pairTime).toISOString() : null;
+  let changed = false;
+  if (Number.isFinite(b) && b > 0 && (!Number.isFinite(Number(market.bidUpdatedAt)) || receivedAt >= Number(market.bidUpdatedAt))) {
+    market.bid = b; market.bidUpdatedAt = receivedAt; changed = true;
+  }
+  if (Number.isFinite(a) && a > 0 && (!Number.isFinite(Number(market.askUpdatedAt)) || receivedAt >= Number(market.askUpdatedAt))) {
+    market.ask = a; market.askUpdatedAt = receivedAt; changed = true;
+  }
+  if (changed) {
+    const previous = Date.parse(market.lastUpdate || "");
+    market.lastUpdate = new Date(Math.max(Number.isFinite(previous) ? previous : 0, receivedAt)).toISOString();
+  }
   return true;
 }
 
