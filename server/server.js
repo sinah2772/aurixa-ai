@@ -25,6 +25,10 @@ const { normalizeSymbolName, isSupportedSymbol } = require("./symbol-support");
 
 // Latest per-symbol scanner decision and execution outcome for the dashboard.
 const latestAutoTradeCandidates = new Map();
+function storeAutoTradeCandidate(symbol, candidate) {
+  latestAutoTradeCandidates.set(symbol, candidate);
+  aiQualityCheckV2Monitor.record(candidate);
+}
 async function auditAiDecision(decision){
  try{
   await queryDatabase("CREATE SCHEMA IF NOT EXISTS aurixa");
@@ -378,10 +382,12 @@ app.get("/api/auto-trader/candidate", (req, res) => {
 app.get("/api/ai/quality-check-v2", (req, res) => {
   try {
     const report = aiQualityCheckV2Monitor.summarize(Array.from(latestAutoTradeCandidates.values()));
+    const history = aiQualityCheckV2Monitor.summarizeHistory();
     res.set("Cache-Control", "no-store");
     res.json({
       ok: true,
       ...report,
+      history,
       note: "Observe-only diagnostics. WARNING/STALE statuses are monitoring labels, not order blocks."
     });
   } catch (err) {
@@ -889,7 +895,7 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
               market?.candles || [], ct || {},
               { symbol, signal: "WAIT", executionEligible: false }
             );
-            latestAutoTradeCandidates.set(symbol, {
+            storeAutoTradeCandidate(symbol, {
               symbol, signal: "WAIT", bias: null, confidence: null,
               executionEligible: false, executionStatus: "WAITING FOR MARKET DATA",
               reason, blockedBy: [reason], candleCount: market?.candles?.length || 0,
@@ -921,7 +927,7 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             candleCount: market.candles.length, quoteFresh: true,
             decisionId, checkedAt: new Date().toISOString()
           };
-          latestAutoTradeCandidates.set(symbol, candidate);
+          storeAutoTradeCandidate(symbol, candidate);
           // Emit one concise, auditable record per evaluated symbol, including
           // WAIT decisions. Without this, the absence of an order log is
           // ambiguous between "no approved signal" and an execution failure.
@@ -946,7 +952,7 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             candidate.protectionStatus = result.protectionStatus || null;
             candidate.qualityCheckV2.executionObservation = aiQualityCheckV2.observeExecution(result);
             candidate.checkedAt = new Date().toISOString();
-            latestAutoTradeCandidates.set(symbol, candidate);
+            storeAutoTradeCandidate(symbol, candidate);
             console.log("AURIXA_MULTI_SYMBOL_EXECUTION:", JSON.stringify({
               symbol, decisionId, signal: decision.signal, executed: result.executed,
               reason: result.reason || null, orderId: result.orderId || null,
