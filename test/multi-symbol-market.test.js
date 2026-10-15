@@ -49,5 +49,5 @@ test("a one-sided spot event cannot refresh the stale opposite side", () => {
   assert.equal(snapshot.bid, 1.251);
   assert.equal(snapshot.ask, 1.2502);
   assert.equal(snapshot.quoteFresh, false);
-  assert.equal(snapshot.ready, false);
+  assert.equal(markets.list().find(item => item.symbol === "GBPUSD").ready, false);
 });
