@@ -1334,19 +1334,23 @@ function connectOpenApi() {
             : (getSymbolProfile(symbol.symbolName)?.digits ?? 5);
 
           const discoveredSymbols = getSupportedSymbols();
-          // Every discovered supported symbol receives an independent live stream.
-          send(ws, 2127, {
-            ctidTraderAccountId: Number(state.accountId),
-            symbolId: discoveredSymbols.map(item => Number(item.symbolId)),
-            subscribeToSpotTimestamp: true
-          });
+          // cTrader may omit individual symbol streams when a large spot
+          // subscription is batched. Subscribe each broker-discovered symbol
+          // separately so one market's subscription cannot starve another.
+          // Pace all Open API requests to avoid broker throttling.
+          const requestGap = () => new Promise(resolve => setTimeout(resolve, 350));
+          for (const item of discoveredSymbols) {
+            send(ws, 2127, {
+              ctidTraderAccountId: Number(state.accountId),
+              symbolId: Number(item.symbolId),
+              subscribeToSpotTimestamp: true
+            });
+            await requestGap();
+          }
           const now = Date.now();
           const toTimestampM5 = Math.floor(now / (5 * 60000)) * (5 * 60000);
-          // cTrader throttles bursts of Open API messages. Pace subscriptions
-          // and historical requests so every discovered symbol gets its own
-          // history response instead of silently falling back to one live bar.
-          const requestGap = () => new Promise(resolve => setTimeout(resolve, 350));
-          await requestGap();
+          // Every symbol also receives its own live M5 trendbar subscription
+          // and history request; late responses are routed by their symbol ID.
           for (const item of discoveredSymbols) {
             subscribeLiveTrendbar(ws, state.accountId, item.symbolId, 5);
             await requestGap();
