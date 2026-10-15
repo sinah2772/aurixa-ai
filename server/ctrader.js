@@ -127,7 +127,7 @@ function getSupportedSymbols() {
 // blocked; this never authorizes trading or relaxes a market-data gate.
 const spotResubscribeLastAt = new Map();
 let spotResubscribeCursor = 0;
-function resubscribeOneStaleSpot() {
+async function resubscribeOneStaleSpot() {
   if (!state.ws || state.ws.readyState !== 1 || !state.connected || !state.authorized || !state.accountId) {
     return { attempted: false, reason: "CTRADER_NOT_READY" };
   }
@@ -143,21 +143,53 @@ function resubscribeOneStaleSpot() {
     if (now - lastAttempt < 60000) continue;
     spotResubscribeLastAt.set(item.canonicalName, now);
     spotResubscribeCursor = (index + 1) % symbols.length;
-    send(state.ws, 2127, {
-      ctidTraderAccountId: Number(state.accountId),
-      symbolId: Number(item.symbolId),
-      subscribeToSpotTimestamp: true
-    });
     const quoteTime = Date.parse(market?.lastUpdate || "");
     const quoteAgeMs = Number.isFinite(quoteTime) ? Math.max(0, now - quoteTime) : null;
-    console.warn("AURIXA_STALE_SPOT_RESUBSCRIBE:", JSON.stringify({
-      symbol: item.canonicalName,
-      symbolId: item.symbolId,
-      quoteAgeMs,
-      lastUpdate: market?.lastUpdate || null,
-      cooldownMs: 60000
-    }));
-    return { attempted: true, symbol: item.canonicalName, symbolId: item.symbolId, quoteAgeMs };
+    try {
+      // cTrader rejects a second subscribe with ALREADY_SUBSCRIBED. A real
+      // recovery must unsubscribe first, await its acknowledgement, then
+      // subscribe again and await the new acknowledgement.
+      const unsub = await request(state.ws, 2129, {
+        ctidTraderAccountId: Number(state.accountId),
+        symbolId: Number(item.symbolId)
+      }, 5000);
+      const unsubType = Number(unsub?.payloadType);
+      const unsubError = unsub?.payload?.errorCode || null;
+      if (unsubType === 2142 && !["NOT_SUBSCRIBED", "ALREADY_UNSUBSCRIBED"].includes(String(unsubError))) {
+        throw new Error("unsubscribe rejected: " + String(unsubError || "unknown cTrader error"));
+      }
+      if (unsubType !== 2130 && unsubType !== 2142) {
+        throw new Error("unexpected unsubscribe response: " + String(unsubType));
+      }
+      const sub = await request(state.ws, 2127, {
+        ctidTraderAccountId: Number(state.accountId),
+        symbolId: Number(item.symbolId),
+        subscribeToSpotTimestamp: true
+      }, 5000);
+      const subType = Number(sub?.payloadType);
+      if (subType !== 2128) {
+        throw new Error("subscribe was not acknowledged: " + String(sub?.payload?.errorCode || subType));
+      }
+      console.warn("AURIXA_STALE_SPOT_RESUBSCRIBE:", JSON.stringify({
+        symbol: item.canonicalName,
+        symbolId: item.symbolId,
+        quoteAgeMs,
+        lastUpdate: market?.lastUpdate || null,
+        unsubscribed: true,
+        subscribed: true,
+        acknowledged: true,
+        cooldownMs: 60000
+      }));
+      return { attempted: true, symbol: item.canonicalName, symbolId: item.symbolId, quoteAgeMs, acknowledged: true };
+    } catch (err) {
+      console.warn("AURIXA_STALE_SPOT_RESUBSCRIBE_FAILED:", JSON.stringify({
+        symbol: item.canonicalName,
+        symbolId: item.symbolId,
+        quoteAgeMs,
+        error: safeError(err)
+      }));
+      return { attempted: true, symbol: item.canonicalName, symbolId: item.symbolId, quoteAgeMs, acknowledged: false, error: safeError(err) };
+    }
   }
   return { attempted: false, reason: "NO_STALE_SYMBOL_READY_FOR_RETRY" };
 }
