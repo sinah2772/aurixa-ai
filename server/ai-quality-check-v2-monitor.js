@@ -82,7 +82,15 @@ function summarize(candidates, now=Date.now()) {
     else summary.unknown++;
     if (!item.executionDecisionUnaffected) summary.executionDecisionUnaffected = false;
   }
-  return { mode: "observe_only", version: "2.1.0", generatedAt: new Date(now).toISOString(), summary, markets: items };
+  return { mode: "observe_only", version: "2.2.0", generatedAt: new Date(now).toISOString(), summary, markets: items };
+}
+
+function replaceHistory(candidates, now = Date.now()) {
+  observations.length = 0;
+  observationKeys.clear();
+  for (const candidate of (Array.isArray(candidates) ? candidates : []).slice(-MAX_HISTORY)) {
+    record(candidate, now);
+  }
 }
 
 function summarizeHistory(now = Date.now()) {
@@ -135,4 +143,4 @@ function summarizeHistory(now = Date.now()) {
   };
 }
 
-module.exports = { summarize, record, summarizeHistory };
+module.exports = { summarize, record, replaceHistory, summarizeHistory };
