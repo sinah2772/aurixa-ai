@@ -20,6 +20,7 @@ const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const aiTraderEngine = require("./ai-trader-engine");
 const aiQualityCheckV2 = require("./ai-quality-check-v2");
+const aiQualityCheckV2Monitor = require("./ai-quality-check-v2-monitor");
 const { normalizeSymbolName, isSupportedSymbol } = require("./symbol-support");
 
 // Latest per-symbol scanner decision and execution outcome for the dashboard.
@@ -369,6 +370,23 @@ app.get("/api/auto-trader/candidate", (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: "AUTO_TRADE_CANDIDATE_UNAVAILABLE" });
+  }
+});
+
+// Read-only Quality Check V2 monitoring. This endpoint reports observations only:
+ // it never changes V1 decisions, execution gates, broker orders, or trading settings.
+app.get("/api/ai/quality-check-v2", (req, res) => {
+  try {
+    const report = aiQualityCheckV2Monitor.summarize(Array.from(latestAutoTradeCandidates.values()));
+    res.set("Cache-Control", "no-store");
+    res.json({
+      ok: true,
+      ...report,
+      note: "Observe-only diagnostics. WARNING/STALE statuses are monitoring labels, not order blocks."
+    });
+  } catch (err) {
+    console.error("Quality Check V2 monitoring error:", err);
+    res.status(500).json({ ok: false, mode: "observe_only", error: "QUALITY_CHECK_V2_MONITOR_UNAVAILABLE" });
   }
 });
 
@@ -866,11 +884,16 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             const reason = !market ? "MARKET_NOT_REGISTERED" :
               (market.candles.length < 50 ? "INSUFFICIENT_M5_HISTORY" :
               (!quoteFresh ? "QUOTE_STALE" : "QUOTE_UNAVAILABLE"));
+            const checkedAt = new Date().toISOString();
+            const qualityCheckV2 = aiQualityCheckV2.observe(
+              market?.candles || [], ct || {},
+              { symbol, signal: "WAIT", executionEligible: false }
+            );
             latestAutoTradeCandidates.set(symbol, {
               symbol, signal: "WAIT", bias: null, confidence: null,
               executionEligible: false, executionStatus: "WAITING FOR MARKET DATA",
               reason, blockedBy: [reason], candleCount: market?.candles?.length || 0,
-              quoteFresh, checkedAt: new Date().toISOString()
+              quoteFresh, qualityCheckV2, checkedAt
             });
             console.log("AURIXA_MULTI_SYMBOL_WAIT:", JSON.stringify({
               symbol, candleCount: market?.candles?.length || 0, quoteFresh, reason
