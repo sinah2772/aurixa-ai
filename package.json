@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "start": "node server/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "compare:strategies": "node scripts/compare-strategies.js"
   },
   "dependencies": {
     "cors": "latest",
