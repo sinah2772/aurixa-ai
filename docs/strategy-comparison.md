@@ -28,7 +28,7 @@ The values above are format examples only, **not recommended broker costs**. Rep
 npm run compare:strategies -- ./your-m5-data.json
 ```
 
-The JSON report contains both strategies' trade lists and comparable metrics: trade count, win rate, net R, expectancy, profit factor and maximum drawdown in R. Both strategies use the same supplied cost assumptions. The simulator enters no earlier than the next candle open and assumes the stop was hit first if stop and target both occur inside one candle.
+The JSON report contains both strategies' trade lists and comparable metrics: trade count, win rate, net R, expectancy, profit factor and maximum drawdown in R. Both strategies use the same supplied cost assumptions. The simulator enters no earlier than the next candle open, calculates R using the actual simulated fill-to-stop distance, and counts setups invalidated by a gap through the planned stop/target separately. If stop and target both occur inside one candle, it assumes the stop was hit first.
 
 ## Interpretation limits
 
