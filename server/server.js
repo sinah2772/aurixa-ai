@@ -969,6 +969,17 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
     setInterval(async () => {
       const ctrader = require("./ctrader");
       const supported = ctrader.getSupportedSymbols();
+      // Retry one stale broker spot subscription per scanner cycle. This is
+      // market-data recovery only: stale quotes still block strategy evaluation
+      // and no trading/risk/arming setting is changed.
+      try {
+        const retry = ctrader.resubscribeOneStaleSpot?.();
+        if (retry?.attempted) {
+          console.log("AURIXA_STALE_SPOT_RESUBSCRIBE_REQUESTED:", JSON.stringify(retry));
+        }
+      } catch (err) {
+        console.warn("AURIXA_STALE_SPOT_RESUBSCRIBE_ERROR:", err.message);
+      }
       for (const item of supported) {
         const symbol = item.canonicalName;
         try {
