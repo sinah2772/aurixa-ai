@@ -72,6 +72,7 @@ function summarize(trades, costs) {
 }
 function runOne(candles, symbol, costs, strategy) {
   const trades = [];
+  let skippedInvalidatedSetups = 0;
   let i = 54;
   while (i < candles.length - 1) {
     const history = candles.slice(0, i + 1), bar = candles[i], next = candles[i + 1];
@@ -93,8 +94,20 @@ function runOne(candles, symbol, costs, strategy) {
     const side = setup.side, halfSpread = costs.spreadPrice / 2, slip = costs.slippagePricePerSide;
     // Signal is known only after bar i closes; fill at next bar open, never at bar i.
     const entry = next.open + (side === "BUY" ? halfSpread + slip : -halfSpread - slip);
-    const stop = setup.stop, target = setup.target;
-    // If next-bar open has already crossed protection, use open as the adverse exit.
+    const stop = Number(setup.stop), target = Number(setup.target);
+    // Measure R from the simulated fill, not the previous candle's signal
+    // close. If a gap means the fill is already beyond the planned stop/target,
+    // the setup is invalidated and must not be counted as a zero-risk trade.
+    const actualRisk = Math.abs(entry - stop);
+    const validGeometry = side === "BUY"
+      ? Number.isFinite(stop) && Number.isFinite(target) && stop < entry && target > entry
+      : Number.isFinite(stop) && Number.isFinite(target) && stop > entry && target < entry;
+    if (!validGeometry || !Number.isFinite(actualRisk) || actualRisk <= 0) {
+      skippedInvalidatedSetups++;
+      i++;
+      continue;
+    }
+    // If a later candle gaps through protection, use its open as the adverse exit.
     let exit = null, exitIndex = i + 1, reason = null;
     for (let j = i + 1; j < candles.length; j++) {
       const c = candles[j];
@@ -115,12 +128,12 @@ function runOne(candles, symbol, costs, strategy) {
     // Exit cost is applied adversely to both systems. Commission is supplied in R
     // units because contract value varies by broker symbol and account currency.
     exit += side === "BUY" ? -halfSpread - slip : halfSpread + slip;
-    const grossR = (side === "BUY" ? exit - entry : entry - exit) / setup.risk;
+    const grossR = (side === "BUY" ? exit - entry : entry - exit) / actualRisk;
     const netR = grossR - costs.commissionRPerTrade;
-    trades.push({ symbol, strategy, side, signalTime: bar.time ?? i, entryIndex: i + 1, exitIndex, entry, exit, stop, target, reason, grossR: Number(grossR.toFixed(4)), netR: Number(netR.toFixed(4)) });
+    trades.push({ symbol, strategy, side, signalTime: bar.time ?? i, entryIndex: i + 1, exitIndex, entry, exit, stop, target, risk: actualRisk, reason, grossR: Number(grossR.toFixed(4)), netR: Number(netR.toFixed(4)) });
     i = Math.max(i + 1, exitIndex); // one position at a time per strategy
   }
-  return { summary: summarize(trades, costs), trades };
+  return { summary: summarize(trades, costs), trades, skippedInvalidatedSetups };
 }
 function compareStrategies(input = {}) {
   const candles = Array.isArray(input.candles) ? input.candles : [];
@@ -158,6 +171,10 @@ function compareStrategies(input = {}) {
       "V1 quote freshness is synthesized for offline replay; live execution eligibility is not being tested."
     ],
     results: { v1: v1.summary, trendPullback: candidate.summary },
+    skippedInvalidatedSetups: {
+      v1: v1.skippedInvalidatedSetups,
+      trendPullback: candidate.skippedInvalidatedSetups
+    },
     comparison: {
       expectancyDeltaR: v1.summary.expectancyR === null || candidate.summary.expectancyR === null ? null : Number((candidate.summary.expectancyR - v1.summary.expectancyR).toFixed(4)),
       netRDelta: Number((candidate.summary.netR - v1.summary.netR).toFixed(3)),
