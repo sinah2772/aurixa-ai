@@ -34,6 +34,7 @@ function observe(candles,quote={},decision={}){
     return candleMs===null||candleMs+300000<=now;
   });
   const completedRecent=completedValid.slice(-20);
+  const recent=completedRecent;
   const last=completedRecent.at(-1),close=num(last?.close),open=num(last?.open);
   const lastCandleTimestamp=last?timestampMs(last?.time??last?.timestamp??last?.openTime??last?.open_time??last?.date):null;
   const bodyCandleIsTimestamped=lastCandleTimestamp!==null;
