@@ -5,13 +5,15 @@
  * Demo-only by default. The AI engine decides; this module enforces execution gates.
  */
 
-const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile } = require("./symbol-support");
+const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMBOLS } = require("./symbol-support");
 
 let cTrader=null, dbQuery=null, aiEngine=null;
 const inFlightSignalKeys = new Set();
 const reversalConfirmations = new Map();
 const reversalCloseAttempts = new Map();
 const profitDetectedPositions = new Set();
+// One symbol is backfilled per scanner cycle to avoid hammering cTrader deal history.
+let closedBackfillSymbolIndex = 0;
 
 function configure({ctrader,query,ai}){cTrader=ctrader;dbQuery=query;aiEngine=ai;}
 
@@ -753,12 +755,19 @@ async function syncOpenPositions(symbolName=null){
       closed++;
     }
   }
-  if(typeof dbQuery==="function" && cTrader.getDealsByPositionId){
+  // Closed-trade history repair is deliberately throttled across symbols.
+  // syncOpenPositions runs once per supported symbol every scanner cycle; the
+  // previous global LIMIT 100 query ran for every symbol and could issue up to
+  // 1,000 broker-history requests per cycle. Rotate one symbol per cycle and
+  // repair at most five rows, filtering by symbol to keep broker API traffic bounded.
+  if(typeof dbQuery==="function" && cTrader.getDealsByPositionId &&
+      SUPPORTED_SYMBOLS.length > 0 &&
+      targetSymbol === SUPPORTED_SYMBOLS[closedBackfillSymbolIndex % SUPPORTED_SYMBOLS.length]){
     try{
       const missing=await dbQuery(`SELECT id,position_id,opened_at,created_at FROM aurixa.auto_trades
-        WHERE status='CLOSED' AND position_id IS NOT NULL
+        WHERE status='CLOSED' AND UPPER(BTRIM(symbol))=$1 AND position_id IS NOT NULL
           AND (profit IS NULL OR close_price IS NULL)
-        ORDER BY closed_at DESC NULLS LAST,id DESC LIMIT 100`);
+        ORDER BY closed_at DESC NULLS LAST,id DESC LIMIT 5`,[targetSymbol]);
       for(const t of missing.rows){
         try{
           const dealFrom = new Date(t.opened_at || t.created_at || Date.now()-30*86400000).getTime();
@@ -776,6 +785,8 @@ async function syncOpenPositions(symbolName=null){
       }
     }catch(e){
       console.warn("AURIXA_CLOSED_TRADE_BACKFILL_QUERY_FAILED:",e.message);
+    } finally {
+      closedBackfillSymbolIndex = (closedBackfillSymbolIndex + 1) % SUPPORTED_SYMBOLS.length;
     }
   }
 
