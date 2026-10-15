@@ -19,6 +19,7 @@ const {
 const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const aiTraderEngine = require("./ai-trader-engine");
+const strategyComparison = require("./strategy-comparison");
 const aiQualityCheckV2 = require("./ai-quality-check-v2");
 const aiQualityCheckV2Monitor = require("./ai-quality-check-v2-monitor");
 const aiQualityCheckV2Persistence = require("./ai-quality-check-v2-persistence");
@@ -271,6 +272,84 @@ function getMarketSessionStatus(ct = getCTraderStatus()) {
     reason: "Fresh cTrader market data is available"
   };
 }
+
+
+// Offline-only strategy comparison. Reads the current in-memory broker candle
+// cache and never changes execution, risk, symbol arming, or auto-trading state.
+app.get("/api/research/market-candles", (req, res) => {
+  try {
+    const ctrader = require("./ctrader");
+    const symbol = normalizeSymbolName(req.query.symbol || "XAUUSD");
+    if (!isSupportedSymbol(symbol)) {
+      return res.status(400).json({ ok: false, error: "UNSUPPORTED_SYMBOL", supportedSymbols: require("./symbol-support").SUPPORTED_SYMBOLS });
+    }
+    const market = ctrader.getMultiSymbolMarket(symbol);
+    const candles = Array.isArray(market?.candles) ? market.candles : [];
+    res.set("Cache-Control", "no-store");
+    res.json({
+      ok: true, mode: "research_data_only", symbol, timeframe: "M5",
+      count: candles.length, required: 100,
+      ready: candles.length >= 100,
+      candles: candles.map(c => ({
+        time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume ?? null
+      })),
+      note: "Broker-cached M5 OHLC only. Historical spread, commission and slippage are not inferred."
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: "RESEARCH_CANDLES_UNAVAILABLE" });
+  }
+});
+
+app.get("/api/research/compare-strategies", (req, res) => {
+  try {
+    const ctrader = require("./ctrader");
+    const symbol = normalizeSymbolName(req.query.symbol || "XAUUSD");
+    if (!isSupportedSymbol(symbol)) {
+      return res.status(400).json({ ok: false, error: "UNSUPPORTED_SYMBOL" });
+    }
+    const market = ctrader.getMultiSymbolMarket(symbol);
+    const candles = Array.isArray(market?.candles) ? market.candles : [];
+    if (candles.length < 100) {
+      return res.status(409).json({
+        ok: false, error: "INSUFFICIENT_M5_HISTORY", symbol,
+        availableCandles: candles.length, requiredCandles: 100,
+        message: "Wait for broker M5 history to load before comparing strategies."
+      });
+    }
+    const costs = {
+      spreadPrice: Number(req.query.spreadPrice),
+      slippagePricePerSide: Number(req.query.slippagePricePerSide),
+      commissionRPerTrade: Number(req.query.commissionRPerTrade)
+    };
+    if (Object.values(costs).some(v => !Number.isFinite(v) || v < 0) ||
+        ["spreadPrice", "slippagePricePerSide", "commissionRPerTrade"].some(k => req.query[k] === undefined || req.query[k] === "")) {
+      return res.status(400).json({
+        ok: false, error: "EXPLICIT_COSTS_REQUIRED",
+        requiredQueryParameters: {
+          symbol: "Supported symbol, e.g. XAUUSD",
+          spreadPrice: "Spread in symbol price units",
+          slippagePricePerSide: "Slippage estimate per side in symbol price units",
+          commissionRPerTrade: "Round-trip commission divided by monetary risk per trade, in R units"
+        },
+        note: "Do not use guessed costs. Replace these with measured costs for the same broker/account."
+      });
+    }
+    const report = strategyComparison.compareStrategies({ symbol, candles, costs });
+    res.set("Cache-Control", "no-store");
+    res.json({
+      ...report,
+      dataQuality: {
+        candleCount: candles.length,
+        lastCandleTime: candles.at(-1)?.time ?? null,
+        currentQuoteSpread: Number.isFinite(Number(market?.ask)) && Number.isFinite(Number(market?.bid))
+          ? Number((Number(market.ask) - Number(market.bid)).toFixed(8)) : null,
+        historicalSpreadUsed: false
+      }
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: "STRATEGY_COMPARISON_FAILED", message: err.message });
+  }
+});
 
 app.get("/api/auto-trader/status", (req, res) => {
   try {
