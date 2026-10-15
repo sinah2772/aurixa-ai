@@ -121,6 +121,47 @@ function getSupportedSymbols() {
     }));
 }
 
+// A spot subscription can silently stop delivering updates for one symbol.
+// Recover one stale symbol per scanner cycle, with a per-symbol cooldown, while
+// keeping the 30-second freshness gate intact. Stale/closed markets remain
+// blocked; this never authorizes trading or relaxes a market-data gate.
+const spotResubscribeLastAt = new Map();
+let spotResubscribeCursor = 0;
+function resubscribeOneStaleSpot() {
+  if (!state.ws || state.ws.readyState !== 1 || !state.connected || !state.authorized || !state.accountId) {
+    return { attempted: false, reason: "CTRADER_NOT_READY" };
+  }
+  const symbols = getSupportedSymbols();
+  if (!symbols.length) return { attempted: false, reason: "NO_SUPPORTED_SYMBOLS" };
+  const now = Date.now();
+  for (let offset = 0; offset < symbols.length; offset++) {
+    const index = (spotResubscribeCursor + offset) % symbols.length;
+    const item = symbols[index];
+    const market = multiSymbolMarket.getSnapshot(item.canonicalName);
+    if (market?.quoteFresh === true) continue;
+    const lastAttempt = Number(spotResubscribeLastAt.get(item.canonicalName) || 0);
+    if (now - lastAttempt < 60000) continue;
+    spotResubscribeLastAt.set(item.canonicalName, now);
+    spotResubscribeCursor = (index + 1) % symbols.length;
+    send(state.ws, 2127, {
+      ctidTraderAccountId: Number(state.accountId),
+      symbolId: Number(item.symbolId),
+      subscribeToSpotTimestamp: true
+    });
+    const quoteTime = Date.parse(market?.lastUpdate || "");
+    const quoteAgeMs = Number.isFinite(quoteTime) ? Math.max(0, now - quoteTime) : null;
+    console.warn("AURIXA_STALE_SPOT_RESUBSCRIBE:", JSON.stringify({
+      symbol: item.canonicalName,
+      symbolId: item.symbolId,
+      quoteAgeMs,
+      lastUpdate: market?.lastUpdate || null,
+      cooldownMs: 60000
+    }));
+    return { attempted: true, symbol: item.canonicalName, symbolId: item.symbolId, quoteAgeMs };
+  }
+  return { attempted: false, reason: "NO_STALE_SYMBOL_READY_FOR_RETRY" };
+}
+
 const CLIENT_ID = process.env.CTRADER_CLIENT_ID;
 const CLIENT_SECRET = process.env.CTRADER_CLIENT_SECRET;
 const REDIRECT_URI =
@@ -2577,6 +2618,7 @@ module.exports = {
   getCTraderStatusForSymbol: (symbol) => getCTraderStatus(symbol),
   getMultiSymbolMarkets: () => multiSymbolMarket.list(),
   getMultiSymbolMarket: (symbol) => multiSymbolMarket.getSnapshot(symbol),
+  resubscribeOneStaleSpot,
   setMarketEngine,
   getDatabaseHealth,
   queryDatabase,
