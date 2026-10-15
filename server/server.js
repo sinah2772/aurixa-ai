@@ -973,7 +973,7 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
       // market-data recovery only: stale quotes still block strategy evaluation
       // and no trading/risk/arming setting is changed.
       try {
-        const retry = ctrader.resubscribeOneStaleSpot?.();
+        const retry = await ctrader.resubscribeOneStaleSpot?.();
         if (retry?.attempted) {
           console.log("AURIXA_STALE_SPOT_RESUBSCRIBE_REQUESTED:", JSON.stringify(retry));
         }
