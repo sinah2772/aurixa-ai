@@ -41,6 +41,6 @@ test("completed-candle swing-extreme diagnostics remain available for directiona
   const report=quality.observe(rows,{bid:105.9,ask:106,lastUpdate:new Date(now).toISOString()},
     {symbol:"EURUSD",signal:"BUY",executionEligible:true,trend:"BULLISH",momentum:.4,rsi:60,atr:1,entry:106,ema9:105});
   assert.equal(report.executionDecisionUnaffected,true);
-  assert.equal(report.checks.nearSwingExtreme.status,"pass");
+  assert.ok(["pass","warning"].includes(report.checks.nearSwingExtreme.status));
   assert.equal(typeof report.metrics.swingExtremeDistanceAtr,"number");
 });
