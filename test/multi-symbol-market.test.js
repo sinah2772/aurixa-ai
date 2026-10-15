@@ -40,14 +40,16 @@ test("unknown broker symbols are never registered for execution", () => {
 });
 
 
-test("a one-sided spot event cannot refresh the stale opposite side", () => {
+test("partial spot updates refresh the composite quote but empty events do not", () => {
   markets.registerSymbols([{ symbolName: "GBPUSD", canonicalName: "GBPUSD", symbolId: 13 }]);
   const old = Date.now() - 60000;
   markets.updateQuote(13, 1.25, 1.2502, old);
+  assert.equal(markets.getSnapshot("GBPUSD").quoteFresh, false);
+  markets.updateQuote(13, undefined, undefined, Date.now());
+  assert.equal(markets.getSnapshot("GBPUSD").quoteFresh, false);
   markets.updateQuote(13, 1.251, undefined, Date.now());
   const snapshot = markets.getSnapshot("GBPUSD");
   assert.equal(snapshot.bid, 1.251);
   assert.equal(snapshot.ask, 1.2502);
-  assert.equal(snapshot.quoteFresh, false);
-  assert.equal(markets.list().find(item => item.symbol === "GBPUSD").ready, false);
+  assert.equal(snapshot.quoteFresh, true);
 });
