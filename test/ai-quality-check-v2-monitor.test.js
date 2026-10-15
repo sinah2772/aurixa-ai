@@ -74,3 +74,20 @@ test("empty scanner report is safe and serializable", () => {
   assert.equal(report.summary.executionDecisionUnaffected, true);
   assert.deepEqual(report.markets, []);
 });
+
+test("durable history hydration replaces transient samples without duplicating evaluations", () => {
+  const now = Date.now();
+  const candidate = {
+    symbol: "XAUUSD", signal: "BUY", executionEligible: true,
+    checkedAt: new Date(now).toISOString(),
+    qualityCheckV2: {
+      mode: "observe_only", evaluatedAt: new Date(now).toISOString(),
+      executionDecisionUnaffected: true, checks: { entryCandleBody: { status: "warning" } }
+    }
+  };
+  monitor.replaceHistory([candidate], now);
+  const history = summarizeHistory(now);
+  assert.equal(history.sampleCount, 1);
+  assert.equal(history.eligibleSignals, 1);
+  assert.equal(history.warningTypes[0].type, "entryCandleBody");
+});
