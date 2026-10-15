@@ -38,3 +38,22 @@ The JSON report contains both strategies' trade lists and comparable metrics: tr
 - Use a training period to develop rules and a separate untouched out-of-sample period to evaluate them. Include multiple market regimes and symbols, and use realistic costs.
 - Do not choose a strategy by win rate alone. Compare net expectancy, profit factor, drawdown, trade count and stability across out-of-sample periods.
 - The report intentionally says `DO_NOT_SWITCH_FROM_THIS_REPORT_ALONE`. Strategy selection and any production change require separate review and explicit authorization.
+
+
+## Render read-only API
+
+After the API change is deployed, inspect the currently cached broker M5 history in a browser:
+
+```text
+https://aurixa-ai.onrender.com/api/research/market-candles?symbol=XAUUSD
+```
+
+Supported canonical symbols are `XAUUSD`, `EURUSD`, `NZDUSD`, `USDCHF`, `USDCAD`, `AUDUSD`, `USDJPY`, `GBPUSD`, `XAGUSD`, and `BTCUSD`. This endpoint returns only cached OHLC candles and whether at least 100 are available. It does not request or execute orders.
+
+To run the comparison, call the read-only endpoint with explicit measured costs, for example:
+
+```text
+https://aurixa-ai.onrender.com/api/research/compare-strategies?symbol=XAUUSD&spreadPrice=YOUR_SPREAD&slippagePricePerSide=YOUR_SLIPPAGE&commissionRPerTrade=YOUR_COMMISSION_IN_R
+```
+
+Replace each `YOUR_...` value with measured broker/account values; these placeholders are not valid numeric inputs. `spreadPrice` and `slippagePricePerSide` use the instrument's price units. `commissionRPerTrade` is round-trip commission divided by the monetary risk of one trade. The service rejects missing or invalid costs rather than inventing assumptions. Historical spread is not available in OHLC candles, so a single supplied spread is only a proxy unless you have a historical spread series. Do not treat the report as a realistic net-cost backtest unless those assumptions are defensible.
