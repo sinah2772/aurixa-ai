@@ -19,6 +19,7 @@ const {
 const autoTrader = require("./auto-trader");
 const marketEngine = require("./market-engine");
 const aiTraderEngine = require("./ai-trader-engine");
+const aiQualityCheckV2 = require("./ai-quality-check-v2");
 const { normalizeSymbolName, isSupportedSymbol } = require("./symbol-support");
 
 // Latest per-symbol scanner decision and execution outcome for the dashboard.
@@ -86,7 +87,9 @@ registerCTrader(app);
 app.get("/api/ai/decision", async (req,res)=>{
  try{
   const state=marketEngine.getState()||{},ct=getCTraderStatus()||{};
-  const decision=aiTraderEngine.decide(state.candles||[],ct),decisionId=await auditAiDecision(decision);
+  const decision=aiTraderEngine.decide(state.candles||[],ct);
+  decision.qualityCheckV2=aiQualityCheckV2.observe(state.candles||[],ct,decision);
+  const decisionId=await auditAiDecision(decision);
   res.json({ok:true,decision,...decision,decisionId});
  }catch(e){res.status(500).json({ok:false,signal:"WAIT",executionEligible:false,error:e.message});}
 });
@@ -875,6 +878,7 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             continue;
           }
           const decision = aiTraderEngine.decide(market.candles, ct);
+          decision.qualityCheckV2 = aiQualityCheckV2.observe(market.candles, ct, decision);
           const decisionId = await auditAiDecision(decision);
           const bias = Number(decision.score?.buy) > Number(decision.score?.sell) ? "BUY" :
             Number(decision.score?.sell) > Number(decision.score?.buy) ? "SELL" : null;
@@ -890,6 +894,7 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             ema9: decision.ema9 ?? null, ema21: decision.ema21 ?? null, ema50: decision.ema50 ?? null,
             rsi: decision.rsi ?? null, atr: decision.atr ?? null, momentum: decision.momentum ?? null,
             score: decision.score ?? null, logic: decision.logic ?? null,
+            qualityCheckV2: decision.qualityCheckV2,
             candleCount: market.candles.length, quoteFresh: true,
             decisionId, checkedAt: new Date().toISOString()
           };
@@ -903,7 +908,7 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             blockedBy: decision.blockedBy || [],
             candleTime: decision.candleTime ?? null,
             autoTradingEnabled: autoTrader.getStatus().enabled === true,
-            quoteFresh: true, decisionId
+            quoteFresh: true, qualityCheckV2: decision.qualityCheckV2, decisionId
           }));
           if (decision.executionEligible === true) {
             const result = await autoTrader.executeAiDecision({...decision, decisionId}, decisionId);
@@ -916,6 +921,7 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             candidate.positionId = result.positionId || null;
             candidate.volume = result.volume ?? null;
             candidate.protectionStatus = result.protectionStatus || null;
+            candidate.qualityCheckV2.executionObservation = aiQualityCheckV2.observeExecution(result);
             candidate.checkedAt = new Date().toISOString();
             latestAutoTradeCandidates.set(symbol, candidate);
             console.log("AURIXA_MULTI_SYMBOL_EXECUTION:", JSON.stringify({
