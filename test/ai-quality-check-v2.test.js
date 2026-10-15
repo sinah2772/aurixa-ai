@@ -35,3 +35,12 @@ test("entry candle body uses the last completed M5 candle when the feed includes
   assert.equal(report.metrics.entryBodyAtr,0.5);
   assert.match(report.checks.entryCandleBody.detail,/Completed candle body\/ATR 0.500/);
 });
+
+test("completed-candle swing-extreme diagnostics remain available for directional signals",()=>{
+  const rows=candles(60),now=Date.now();
+  const report=quality.observe(rows,{bid:105.9,ask:106,lastUpdate:new Date(now).toISOString()},
+    {symbol:"EURUSD",signal:"BUY",executionEligible:true,trend:"BULLISH",momentum:.4,rsi:60,atr:1,entry:106,ema9:105});
+  assert.equal(report.executionDecisionUnaffected,true);
+  assert.equal(report.checks.nearSwingExtreme.status,"pass");
+  assert.equal(typeof report.metrics.swingExtremeDistanceAtr,"number");
+});
