@@ -24,3 +24,14 @@ test("broker protection requires explicit evidence",()=>{
   assert.equal(quality.observeExecution({executed:true,protectionStatus:{verified:true}}).brokerProtection,"VERIFIED");
   assert.equal(quality.observeExecution({executed:true,protectionStatus:{verified:false}}).brokerProtection,"FAILED");
 });
+
+test("entry candle body uses the last completed M5 candle when the feed includes a forming candle",()=>{
+  const rows=candles(60),now=Date.now();
+  rows[58]={time:now-6*60*1000,open:100,high:100.6,low:99.9,close:100.5,volume:1};
+  rows[59]={time:now-60*1000,open:100,high:100.1,low:99.9,close:100,volume:1};
+  const report=quality.observe(rows,{bid:100.9,ask:101,lastUpdate:new Date(now).toISOString()},
+    {symbol:"EURUSD",signal:"WAIT",executionEligible:false,atr:1});
+  assert.equal(report.metrics.completedCandleCount,59);
+  assert.equal(report.metrics.entryBodyAtr,0.5);
+  assert.match(report.checks.entryCandleBody.detail,/Completed candle body\/ATR 0.500/);
+});
