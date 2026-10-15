@@ -25,17 +25,14 @@ function record(candidate, now = Date.now()) {
     executionObservation: report.executionObservation ? { ...report.executionObservation } : null,
     executionDecisionUnaffected: report.executionDecisionUnaffected === true
   };
-  const existingIndex = observationKeys.get(key);
-  if (existingIndex !== undefined) {
-    // Scanner writes the same evaluation again after execution returns. Update
-    // that observation rather than counting it twice.
-    const previous = observations.findIndex(row => row.key === key);
-    if (previous >= 0) observations[previous] = item;
-    else observations.push(item);
-  } else {
-    observations.push(item);
-    observationKeys.set(key, true);
-  }
+  const existingIndex = observations.findIndex(row => row.key === key);
+  if (existingIndex >= 0) observations[existingIndex] = item;
+  else observations.push(item);
+  // Persisted rows are loaded newest-first; sort before trimming so the oldest
+  // observation is evicted rather than accidentally dropping the newest.
+  observations.sort((a, b) => Date.parse(a.evaluatedAt) - Date.parse(b.evaluatedAt));
+  observationKeys.clear();
+  for (const row of observations) observationKeys.set(row.key, true);
   while (observations.length > MAX_HISTORY) {
     const removed = observations.shift();
     if (removed) observationKeys.delete(removed.key);
@@ -88,9 +85,12 @@ function summarize(candidates, now=Date.now()) {
 function replaceHistory(candidates, now = Date.now()) {
   observations.length = 0;
   observationKeys.clear();
-  for (const candidate of (Array.isArray(candidates) ? candidates : []).slice(-MAX_HISTORY)) {
-    record(candidate, now);
-  }
+  const ordered = (Array.isArray(candidates) ? candidates : []).slice(-MAX_HISTORY).sort((a, b) => {
+    const at = Date.parse(a?.qualityCheckV2?.evaluatedAt || a?.checkedAt || "");
+    const bt = Date.parse(b?.qualityCheckV2?.evaluatedAt || b?.checkedAt || "");
+    return (Number.isFinite(at) ? at : 0) - (Number.isFinite(bt) ? bt : 0);
+  });
+  for (const candidate of ordered) record(candidate, now);
 }
 
 function summarizeHistory(now = Date.now()) {
@@ -125,7 +125,7 @@ function summarizeHistory(now = Date.now()) {
   }
   return {
     windowHours: 24,
-    retention: "bounded in-memory; resets when the service restarts or deploys",
+    retention: "PostgreSQL-backed when available; bounded in-memory fallback resets on restart",
     sampleCount: recent.length,
     maxSamples: MAX_HISTORY,
     eligibleSignals,

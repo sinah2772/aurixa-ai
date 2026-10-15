@@ -5,13 +5,25 @@
 const { normalizeSymbolName, isSupportedSymbol } = require("./symbol-support");
 const markets = new Map();
 const byId = new Map();
+const QUOTE_MAX_AGE_MS = 30000;
+function timestampMs(value) {
+  if (value === null || value === undefined || value === "") return Date.now();
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric < 1e11 ? numeric * 1000 : numeric;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+function quoteFresh(market, now = Date.now()) {
+  const bidTime = Number(market?.bidUpdatedAt), askTime = Number(market?.askUpdatedAt);
+  return Number.isFinite(bidTime) && Number.isFinite(askTime) && now - bidTime >= 0 && now - askTime >= 0 && now - bidTime <= QUOTE_MAX_AGE_MS && now - askTime <= QUOTE_MAX_AGE_MS;
+}
 
 function registerSymbols(symbols) {
   for (const item of Array.isArray(symbols) ? symbols : []) {
     const symbol = normalizeSymbolName(item.canonicalName || item.symbolName);
     const symbolId = Number(item.symbolId);
     if (!isSupportedSymbol(symbol) || !Number.isInteger(symbolId) || symbolId <= 0) continue;
-    const previous = markets.get(symbol) || { candles: [], bid: null, ask: null, lastUpdate: null };
+    const previous = markets.get(symbol) || { candles: [], bid: null, ask: null, lastUpdate: null, bidUpdatedAt: null, askUpdatedAt: null };
     Object.assign(previous, { symbol, symbolName: String(item.symbolName || symbol), symbolId,
       digits: item.digits != null && Number.isInteger(Number(item.digits)) ? Number(item.digits) : null });
     markets.set(symbol, previous);
@@ -24,10 +36,11 @@ function list() {
   return [...markets.values()].map(m => ({
     symbol: m.symbol, symbolName: m.symbolName, symbolId: m.symbolId,
     digits: m.digits, bid: m.bid, ask: m.ask, lastUpdate: m.lastUpdate,
-    candleCount: m.candles.length,
+    bidUpdatedAt: m.bidUpdatedAt ? new Date(m.bidUpdatedAt).toISOString() : null,
+    askUpdatedAt: m.askUpdatedAt ? new Date(m.askUpdatedAt).toISOString() : null,
+    quoteFresh: quoteFresh(m), candleCount: m.candles.length,
     ready: Number.isFinite(m.bid) && Number.isFinite(m.ask) && m.ask > m.bid &&
-      Array.isArray(m.candles) && m.candles.length >= 50 &&
-      Boolean(m.lastUpdate) && Date.now() - Date.parse(m.lastUpdate) <= 30000
+      Array.isArray(m.candles) && m.candles.length >= 50 && quoteFresh(m)
   }));
 }
 
@@ -51,19 +64,22 @@ function setHistory(key, candles) {
   const sorted = candles.map(normalizeCandle).filter(Boolean).sort((a,b) => a.time-b.time);
   const unique = new Map(sorted.map(c => [String(c.time), c]));
   market.candles = [...unique.values()].slice(-300);
-  market.lastUpdate = market.lastUpdate || new Date().toISOString();
   return true;
 }
 
 function updateQuote(key, bid, ask, timestamp) {
   const market = resolve(key);
   if (!market) return false;
-  const b = Number(bid), a = Number(ask);
-  if (Number.isFinite(b) && b > 0) market.bid = b;
-  if (Number.isFinite(a) && a > 0) market.ask = a;
-  const timestampMs = Number(timestamp);
-  market.lastUpdate = timestamp != null && Number.isFinite(timestampMs) && timestampMs > 0
-    ? new Date(timestampMs).toISOString() : new Date().toISOString();
+  const receivedAt = timestampMs(timestamp);
+  const b = bid == null || bid === "" ? NaN : Number(bid);
+  const a = ask == null || ask === "" ? NaN : Number(ask);
+  // cTrader spot events can contain only one side. Do not refresh the age of
+  // the opposite side unless that side was actually received in this event.
+  if (Number.isFinite(b) && b > 0) { market.bid = b; market.bidUpdatedAt = receivedAt; }
+  if (Number.isFinite(a) && a > 0) { market.ask = a; market.askUpdatedAt = receivedAt; }
+  const bidTime = Number(market.bidUpdatedAt), askTime = Number(market.askUpdatedAt);
+  const pairTime = Number.isFinite(bidTime) && Number.isFinite(askTime) ? Math.min(bidTime, askTime) : NaN;
+  market.lastUpdate = Number.isFinite(pairTime) ? new Date(pairTime).toISOString() : null;
   return true;
 }
 
@@ -82,7 +98,7 @@ function updateCandle(key, candle) {
 function getSnapshot(key) {
   const m = resolve(key);
   if (!m) return null;
-  return { ...m, candles: m.candles.slice(), mid: Number.isFinite(m.bid) && Number.isFinite(m.ask) ? (m.bid+m.ask)/2 : null };
+  return { ...m, candles: m.candles.slice(), quoteFresh: quoteFresh(m), mid: Number.isFinite(m.bid) && Number.isFinite(m.ask) ? (m.bid+m.ask)/2 : null };
 }
 
-module.exports = { registerSymbols, list, setHistory, updateQuote, updateCandle, getSnapshot };
+module.exports = { registerSymbols, list, setHistory, updateQuote, updateCandle, getSnapshot, quoteFresh };
