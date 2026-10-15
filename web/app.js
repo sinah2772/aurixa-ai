@@ -976,7 +976,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     // the general trade feed already contains closed rows. Never hide those.
     const closed = dedicatedClosed.length
       ? dedicatedClosed
-      : rows.filter(t => String(t?.status || "").trim().toUpperCase() === "CLOSED" || Boolean(t?.closedAt));
+      : rows.filter(t => String(t?.status || "").trim().toUpperCase().startsWith("CLOSED") || Boolean(t?.closedAt));
     // Match Trade History: only numeric realized P/L is included in statistics.
     const verified = closed
       .map(t => t.profit === null || t.profit === undefined || t.profit === "" ? null : Number(t.profit))
@@ -1046,7 +1046,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
         field("Realized P/L", money(life.profit)) + field("Recorded exit reason", reason || "Not recorded") +
         '</div><p class="signal-investigation-explanation"><b>Closure explanation:</b> ' + escapeHTML(explanation) + '</p>' +
         (t.error ? '<p class="signal-investigation-explanation"><b>Execution error:</b> ' + escapeHTML(t.error) + '</p>' : '') +
-        '</section><details class="signal-raw-evidence"><summary>View raw decision evidence</summary><pre>' + escapeHTML(JSON.stringify(d.data || {}, null, 2)) + '</pre></details>';
+        '</section>';
     } catch (error) {
       content.innerHTML = '<div class="empty">Could not load trade investigation: ' + escapeHTML(error.message || "Request failed") + '</div>';
     }
@@ -1063,7 +1063,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     // An empty dedicated feed must not mask closed records in the general feed.
     const closed = dedicatedClosed.length
       ? dedicatedClosed
-      : trades.filter(t => String(t?.status || "").trim().toUpperCase() === "CLOSED" || Boolean(t?.closedAt));
+      : trades.filter(t => String(t?.status || "").trim().toUpperCase().startsWith("CLOSED") || Boolean(t?.closedAt));
     if (!closed.length) {
       if (summary) summary.textContent = "0 CLOSED TRADES";
       body.innerHTML = '<div class="empty">No closed trades yet.</div>';
