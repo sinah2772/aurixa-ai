@@ -2262,6 +2262,23 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null,
       const rawCurrentTP = position.takeProfit ?? td.takeProfit;
       const currentSL = rawCurrentSL == null || rawCurrentSL === "" ? NaN : Number(rawCurrentSL);
       const currentTP = rawCurrentTP == null || rawCurrentTP === "" ? NaN : Number(rawCurrentTP);
+      const tradeSide = Number(td.tradeSide ?? position.tradeSide);
+      const direction = tradeSide === 1 ? "BUY" : tradeSide === 2 ? "SELL" : null;
+      const currentMarket = direction === "BUY"
+        ? Number((getCTraderStatus(symbolName) || {}).bid)
+        : direction === "SELL" ? Number((getCTraderStatus(symbolName) || {}).ask) : NaN;
+      // Do not let a generic amendment silently loosen a valid existing stop.
+      // An already-invalid stop on the wrong side of market may be replaced
+      // by repair logic; that is not considered a protective stop to preserve.
+      if (Number.isFinite(normalizedSL) && Number.isFinite(currentSL) && currentSL > 0 && direction) {
+        const existingIsInvalid = Number.isFinite(currentMarket) && currentMarket > 0 &&
+          (direction === "BUY" ? currentSL >= currentMarket : currentSL <= currentMarket);
+        const improves = direction === "BUY" ? normalizedSL > currentSL : normalizedSL < currentSL;
+        const unchanged = Math.abs(normalizedSL - currentSL) < 0.00001;
+        if (!existingIsInvalid && !improves && !unchanged) {
+          throw new Error("Refusing to loosen an existing broker stop loss");
+        }
+      }
       if (!Number.isFinite(normalizedSL) && Number.isFinite(currentSL) && currentSL > 0) {
         normalizedSL = roundPrice(currentSL);
       }
