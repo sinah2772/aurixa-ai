@@ -601,8 +601,22 @@ async function syncOpenPositions(symbolName=null){
       const trade=tracked?.rows?.[0]||null;
       if(!Number.isFinite(entry)) entry=numericPrice(trade?.execution_entry_price,trade?.planned_entry_price);
 
-      // Record transitions into unrealized profit/loss once per broker position.
+      // Persist peak favorable movement so a restart cannot erase the profit-protection reference.
       const riskState=positionRisk.classifyPositionRisk(direction,entry,current);
+      const currentFavorableMove=Number.isFinite(entry)&&Number.isFinite(current)?(direction==="BUY"?current-entry:entry-current):NaN;
+      const rawPeakMove=trade?.peak_favorable_move;
+      const peakMoveBefore=rawPeakMove==null||rawPeakMove===""?0:Math.max(0,Number(rawPeakMove)||0);
+      const peakMoveNow=Number.isFinite(currentFavorableMove)?Math.max(peakMoveBefore,currentFavorableMove):peakMoveBefore;
+      const rawPeakPrice=trade?.peak_favorable_price;
+      const peakPriceBefore=rawPeakPrice==null||rawPeakPrice===""?NaN:Number(rawPeakPrice);
+      const peakPriceNow=Number.isFinite(currentFavorableMove)&&currentFavorableMove>peakMoveBefore?current:(Number.isFinite(peakPriceBefore)&&peakPriceBefore>0?peakPriceBefore:(currentFavorableMove>0?current:NaN));
+      if(trade&&peakMoveNow>peakMoveBefore){
+        try{
+          await dbQuery("UPDATE aurixa.auto_trades SET peak_favorable_move=$2,peak_favorable_price=$3,updated_at=NOW() WHERE id=$1 AND status IN ('OPEN','PARTIAL')",[trade.id,peakMoveNow,Number.isFinite(peakPriceNow)?peakPriceNow:null]);
+          trade.peak_favorable_move=peakMoveNow;trade.peak_favorable_price=Number.isFinite(peakPriceNow)?peakPriceNow:trade.peak_favorable_price;
+          console.log("AURIXA_PEAK_PROFIT_TRACKED:",JSON.stringify({tradeId:trade.id,positionId,symbol:targetSymbol,direction,currentFavorableMove,peakFavorableMove:peakMoveNow,peakFavorablePrice:trade.peak_favorable_price}));
+        }catch(e){console.warn("AURIXA_PEAK_PROFIT_PERSIST_FAILED:",JSON.stringify({tradeId:trade.id,positionId,symbol:targetSymbol,error:e.message}));}
+      }
       if(riskState==="ADVERSE"&&!lossWarningPositions.has(String(positionId))){
         lossWarningPositions.add(String(positionId));
         console.warn("AURIXA_POSITION_ADVERSE_MOVE:",JSON.stringify({positionId,direction,entry,current,adverseMove:direction==="BUY"?entry-current:current-entry,action:"MONITOR_PROTECTION_AND_REASSESS_COMPLETED_CANDLES",automaticReverse:false}));
@@ -653,18 +667,18 @@ async function syncOpenPositions(symbolName=null){
         }else{
           const prior=reversalConfirmations.get(pidKey);
           if(!prior || prior.signal!==exitDecision.signal){
-            reversalConfirmations.set(pidKey,{
-              signal:exitDecision.signal,
-              firstSeenAt:now,
-              candleTime:exitDecision.candleTime||null
-            });
+            reversalConfirmations.set(pidKey,{signal:exitDecision.signal,firstSeenAt:now,candleTime:exitDecision.candleTime||null,confirmedCandles:exitDecision.candleTime?[String(exitDecision.candleTime)]:[]});
             console.log("AURIXA_REVERSAL_EXIT_CANDIDATE:",JSON.stringify({
               positionId,positionDirection:direction,oppositeSignal:exitDecision.signal,
               confidence:exitDecision.confidence,trend:exitDecision.trend,
               candleTime:exitDecision.candleTime||null,
               confirmMs:cfg.exitReversalConfirmMs
             }));
-          }else if(now-prior.firstSeenAt>=cfg.exitReversalConfirmMs){
+          }else{
+            const observedCandle=exitDecision.candleTime==null?"":String(exitDecision.candleTime);
+            if(observedCandle&&!prior.confirmedCandles.includes(observedCandle))prior.confirmedCandles.push(observedCandle);
+            const twoCompletedCandles=prior.confirmedCandles.length>=2;
+            if(now-prior.firstSeenAt>=cfg.exitReversalConfirmMs&&twoCompletedCandles){
             const lastAttempt=reversalCloseAttempts.get(pidKey)||0;
             if(now-lastAttempt>=30000){
               const rawVolume=pos?.volume??td?.volume;
@@ -714,6 +728,9 @@ async function syncOpenPositions(symbolName=null){
                   }));
                 }
               }
+            }
+            }else if(now-prior.firstSeenAt>=cfg.exitReversalConfirmMs&&!twoCompletedCandles){
+              logPositionManagementAudit(`reversal-candles:${pidKey}`,"AURIXA_REVERSAL_EXIT_MONITOR",{positionId,symbol:targetSymbol,positionDirection:direction,oppositeSignal:exitDecision.signal,confirmedCandles:prior.confirmedCandles.length,requiredCandles:2,latestCandleTime:observedCandle||null,reason:"WAITING_FOR_SECOND_COMPLETED_CANDLE"});
             }
           }
         }
@@ -805,18 +822,26 @@ async function syncOpenPositions(symbolName=null){
         : Math.max(Number(activeProfile?.stopBuffer||0),0.00001)*10;
       const triggerDistance=baseRisk>0?baseRisk*cfg.trailingTriggerR:fallbackTrailBase*cfg.trailingTriggerR;
       const trailDistance=baseRisk>0?baseRisk*cfg.trailingDistanceR:fallbackTrailBase*cfg.trailingDistanceR;
-      if(!Number.isFinite(profitMove)||profitMove<triggerDistance||!Number.isFinite(trailDistance)||trailDistance<=0){
+      const peakMove=Math.max(peakMoveNow,Number.isFinite(profitMove)?profitMove:0);
+      const giveback=peakMove>0?(peakMove-profitMove)/peakMove:0;
+      const givebackTriggered=peakMove>=triggerDistance&&giveback>=0.30&&profitMove>0;
+      if(!Number.isFinite(profitMove)||(!givebackTriggered&&profitMove<triggerDistance)||!Number.isFinite(trailDistance)||trailDistance<=0){
         logPositionManagementAudit(`trailing:${String(positionId)}`, "AURIXA_TRAILING_STOP_EVALUATION", {
           positionId, symbol: targetSymbol, direction, entry, current, profitMove,
           triggerDistance, trailDistance, trailingEnabled: cfg.trailingEnabled,
           reason: !Number.isFinite(profitMove) ? "PROFIT_MOVE_UNAVAILABLE" :
             !Number.isFinite(trailDistance) || trailDistance <= 0 ? "TRAIL_DISTANCE_INVALID" :
-            profitMove < triggerDistance ? "PROFIT_BELOW_TRAILING_TRIGGER" : "TRAILING_NOT_ELIGIBLE"
+            profitMove < triggerDistance && !givebackTriggered ? "PROFIT_BELOW_TRAILING_TRIGGER" : "TRAILING_NOT_ELIGIBLE"
         });
         continue;
       }
 
-      const candidate=direction==="BUY"?current-trailDistance:current+trailDistance;
+      const peakPriceForTrail=Number.isFinite(peakPriceNow)?peakPriceNow:peakPriceBefore;
+      const candidate=givebackTriggered&&Number.isFinite(peakPriceForTrail)?(direction==="BUY"?peakPriceForTrail-trailDistance:peakPriceForTrail+trailDistance):(direction==="BUY"?current-trailDistance:current+trailDistance);
+      if(givebackTriggered&&(direction==="BUY"?candidate>=current:candidate<=current)){
+        logPositionManagementAudit(`giveback-invalid:${String(positionId)}`,"AURIXA_PROFIT_GIVEBACK_GUARD",{positionId,symbol:targetSymbol,direction,entry,current,profitMove,peakMove,givebackPercent:Number((giveback*100).toFixed(2)),peakPrice:peakPriceForTrail,candidateStopLoss:candidate,reason:"PEAK_ANCHORED_STOP_NOT_VALID_RELATIVE_TO_MARKET"});
+        continue;
+      }
       // Null/missing SL means no stop was reported. Number(null) is 0 in JS,
       // which incorrectly prevented SELL trailing candidates (positive price < 0).
       const rawExistingSL=pos?.stopLoss ?? td?.stopLoss;
@@ -826,7 +851,8 @@ async function syncOpenPositions(symbolName=null){
       const improves=positionRisk.shouldImproveStop(direction,candidate,existingSL);
       if(!improves){
         logPositionManagementAudit(`trailing:${String(positionId)}`, "AURIXA_TRAILING_STOP_EVALUATION", {
-          positionId, symbol: targetSymbol, direction, entry, current, profitMove,
+          positionId, symbol: targetSymbol, direction, entry, current, profitMove, peakMove,
+          givebackPercent:Number((giveback*100).toFixed(2)),givebackTriggered,
           existingStopLoss: Number.isFinite(existingSL) ? existingSL : null,
           candidateStopLoss: candidate, triggerDistance, trailDistance,
           reason: "CANDIDATE_WOULD_NOT_IMPROVE_EXISTING_STOP"
@@ -838,9 +864,8 @@ async function syncOpenPositions(symbolName=null){
         const result=await cTrader.modifyPositionProtection(positionId,candidate,null,targetSymbol);
         trailingUpdated++;
         console.log("AURIXA_TRAILING_STOP_VERIFIED:",JSON.stringify({symbol:targetSymbol,positionId,direction,requestedStopLoss:candidate,result}));
-        console.log("AURIXA_TRAILING_STOP_UPDATED:",JSON.stringify({
-          symbol:targetSymbol,positionId,direction,entry,current,profitMove,triggerDistance,trailDistance,stopLoss:candidate
-        }));
+        console.log("AURIXA_TRAILING_STOP_UPDATED:",JSON.stringify({symbol:targetSymbol,positionId,direction,entry,current,profitMove,peakMove,givebackPercent:Number((giveback*100).toFixed(2)),givebackTriggered,triggerDistance,trailDistance,stopLoss:candidate}));
+        if(givebackTriggered)console.log("AURIXA_PROFIT_GIVEBACK_PROTECTED:",JSON.stringify({symbol:targetSymbol,positionId,direction,entry,current,profitMove,peakMove,givebackPercent:Number((giveback*100).toFixed(2)),stopLoss:candidate,brokerVerified:true}));
       }catch(e){
         console.warn("AURIXA_TRAILING_STOP_FAILED:",JSON.stringify({positionId,error:e.message}));
       }
@@ -1038,6 +1063,7 @@ async function init(){
     status TEXT NOT NULL DEFAULT 'SUBMITTED',
     opened_at TIMESTAMPTZ,closed_at TIMESTAMPTZ,close_price NUMERIC(18,5),profit NUMERIC(18,5),
     broker_reconciled_at TIMESTAMPTZ,broker_reconcile_attempted_at TIMESTAMPTZ,
+    peak_favorable_price NUMERIC(18,5),peak_favorable_move NUMERIC(18,5),
     error TEXT,partial_taken BOOLEAN NOT NULL DEFAULT false,breakeven_applied BOOLEAN NOT NULL DEFAULT false,exit_reason TEXT
   )`);
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS decision_id BIGINT");
@@ -1045,6 +1071,8 @@ async function init(){
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT");
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS broker_reconciled_at TIMESTAMPTZ");
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS broker_reconcile_attempted_at TIMESTAMPTZ");
+  await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS peak_favorable_price NUMERIC(18,5)");
+  await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS peak_favorable_move NUMERIC(18,5)");
   // Older deployments may have the table without a unique constraint.
   // Deduplicate historical keys before creating the constraint required by
   // future writes; the application no longer depends on the constraint for
