@@ -2089,6 +2089,30 @@ async function inspectOpenXAUUSDPositions() {
 }
 
 let unrealizedPnlCache = { at: 0, accountId: null, rows: null, moneyDigits: null };
+let accountAssetsCache = { at: 0, accountId: null, assets: [] };
+
+async function getAccountAssets() {
+  if (!state.ws || state.ws.readyState !== 1 || !state.connected || !state.authorized || !state.accountId) {
+    throw new Error("cTrader account is not authorized");
+  }
+  const now = Date.now();
+  if (accountAssetsCache.accountId === String(state.accountId) &&
+      Array.isArray(accountAssetsCache.assets) && now - accountAssetsCache.at < 600000) {
+    return accountAssetsCache.assets;
+  }
+  const msg = await request(state.ws, 2112, {
+    ctidTraderAccountId: Number(state.accountId)
+  }, 10000);
+  if (Number(msg?.payloadType) !== 2113 || !Array.isArray(msg?.payload?.asset)) {
+    throw new Error("cTrader asset list response was not confirmed");
+  }
+  accountAssetsCache = {
+    at: now,
+    accountId: String(state.accountId),
+    assets: msg.payload.asset
+  };
+  return accountAssetsCache.assets;
+}
 
 async function getPositionUnrealizedPnL() {
   if (!state.ws || state.ws.readyState !== 1 || !state.connected || !state.authorized || !state.accountId) {
@@ -2198,7 +2222,17 @@ async function getAccountBalance() {
   }
 
   const depositAssetId = trader.depositAssetId ?? state.account?.depositAssetId ?? null;
-  const rawCurrency = trader.currency ?? trader.depositAsset?.name ?? trader.depositAsset?.assetName ?? state.account?.currency ?? null;
+  let assetCurrency = null;
+  if (depositAssetId !== null && depositAssetId !== undefined) {
+    try {
+      const assets = await getAccountAssets();
+      const asset = assets.find(item => String(item?.assetId) === String(depositAssetId));
+      assetCurrency = asset?.name || asset?.displayName || null;
+    } catch (err) {
+      console.warn("AURIXA_ACCOUNT_CURRENCY_LOOKUP_UNAVAILABLE:", err.message);
+    }
+  }
+  const rawCurrency = trader.currency ?? trader.depositAsset?.name ?? trader.depositAsset?.assetName ?? state.account?.currency ?? assetCurrency ?? null;
   const currency = typeof rawCurrency === "string" && rawCurrency.trim()
     ? rawCurrency.trim()
     : null;
