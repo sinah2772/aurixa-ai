@@ -967,7 +967,17 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     text("accountEquity", equity === null ? "—" : number(equity, 2));
     text("accountFreeMargin", freeMargin === null ? "—" : number(freeMargin, 2));
     text("accountUsedMargin", usedMargin === null ? "—" : number(usedMargin, 2));
-    text("accountCurrency", first(a.currency, "—"));
+    const currencyLabel = first(
+      a.currency,
+      a.depositAsset?.name,
+      a.depositAsset?.assetName,
+      a.depositAssetId != null ? "ASSET ID " + a.depositAssetId + " · CODE UNAVAILABLE" : null,
+      "UNAVAILABLE"
+    );
+    text("accountCurrency", currencyLabel);
+    const floatingPnl = accountNumber(a.unrealizedNetProfit);
+    text("accountUnrealizedPnl", floatingPnl === null ? "—" : (floatingPnl > 0 ? "+" : "") + number(floatingPnl, 2));
+    text("accountMarginStatus", first(a.marginStatus, "MARGIN DATA UNAVAILABLE"));
     text("accountBroker", first(a.brokerTitleShort, ctrader?.account?.brokerTitleShort, "—"));
     text("accountLogin", first(a.traderLogin, ctrader?.account?.traderLogin, "—"));
     text("accountEnvironment", a.isLive === false || ctrader?.account?.isLive === false ? "DEMO" : a.isLive === true || ctrader?.account?.isLive === true ? "LIVE BLOCKED" : "UNKNOWN");
