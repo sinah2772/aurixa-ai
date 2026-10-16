@@ -41,10 +41,14 @@ test("missing and directionally invalid protection is detected", () => {
   assert.equal(risk.hasValidProtection({ stopLoss: null, takeProfit: 2020 }), false);
   assert.equal(risk.hasValidProtection({ stopLoss: 1990, takeProfit: "" }), false);
   assert.equal(risk.hasValidProtection({ tradeData: { stopLoss: 1990, takeProfit: 2020 } }), true);
-  assert.equal(risk.hasValidProtection({ price: 2000, tradeData: { tradeSide: 1, stopLoss: 1990, takeProfit: 2020 } }), true);
-  assert.equal(risk.hasValidProtection({ price: 2000, tradeData: { tradeSide: 1, stopLoss: 2010, takeProfit: 2020 } }), false);
-  assert.equal(risk.hasValidProtection({ price: 2000, tradeData: { tradeSide: 2, stopLoss: 2010, takeProfit: 1980 } }), true);
-  assert.equal(risk.hasValidProtection({ price: 2000, tradeData: { tradeSide: 2, stopLoss: 1990, takeProfit: 1980 } }), false);
+  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2010, tradeData: { tradeSide: 1, stopLoss: 2005, takeProfit: 2020 } }), true);
+  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2010, tradeData: { tradeSide: 1, stopLoss: 2010, takeProfit: 2020 } }), false);
+  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2020, tradeData: { tradeSide: 1, stopLoss: 2010, takeProfit: 2020 } }), true, "profitable BUY trailing stop above entry remains valid while below market");
+  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 1990, tradeData: { tradeSide: 1, stopLoss: 1995, takeProfit: 2020 } }), false);
+  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 1990, tradeData: { tradeSide: 2, stopLoss: 2010, takeProfit: 1980 } }), true);
+  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 1990, tradeData: { tradeSide: 2, stopLoss: 1985, takeProfit: 1980 } }), false);
+  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 1980, tradeData: { tradeSide: 2, stopLoss: 1985, takeProfit: 1980 } }), true, "profitable SELL trailing stop below entry remains valid while above market");
+  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2010, tradeData: { tradeSide: 2, stopLoss: 2015, takeProfit: 1980 } }), false);
 });
 
 test("trailing stops can only move protectively and can initialize a missing stop", () => {
