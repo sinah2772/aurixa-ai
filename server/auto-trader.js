@@ -971,6 +971,32 @@ async function syncOpenPositions(symbolName=null){
       }
 
       if(!cfg.trailingEnabled) continue;
+
+      // Prefer cTrader's native trailing-stop flag. The broker then advances
+      // the already verified stop-loss server-side, even if AURIXA's web page
+      // is closed. Do not run a second app-managed trailing algorithm.
+      if(typeof cTrader.modifyPositionProtection!=="function"){
+        console.error("AURIXA_NATIVE_TRAILING_STOP_UNAVAILABLE:",JSON.stringify({positionId,symbol:targetSymbol,reason:"BROKER_AMENDMENT_UNAVAILABLE"}));
+        continue;
+      }
+      const brokerTrailingRaw=pos?.trailingStopLoss ?? td?.trailingStopLoss;
+      if(brokerTrailingRaw === true){
+        logPositionManagementAudit(`native-trailing:${String(positionId)}`,"AURIXA_NATIVE_TRAILING_STOP_VERIFIED",{positionId,symbol:targetSymbol,enabled:true,source:"CTRADER_OPEN_POSITION_LIST"});
+        continue;
+      }
+      try{
+        const nativeResult=await cTrader.modifyPositionProtection(positionId,null,null,targetSymbol,{trailingStopLoss:true});
+        if(nativeResult?.verified!==true || nativeResult?.trailingStopLoss!==true){
+          throw new Error("cTrader did not confirm native trailingStopLoss=true");
+        }
+        console.log("AURIXA_NATIVE_TRAILING_STOP_ENABLED:",JSON.stringify({positionId,symbol:targetSymbol,enabled:true,brokerVerified:true,stopLoss:nativeResult.stopLoss??brokerSLRaw??null,takeProfit:nativeResult.takeProfit??brokerTPRaw??null}));
+      }catch(nativeError){
+        console.error("AURIXA_NATIVE_TRAILING_STOP_FAILED:",JSON.stringify({positionId,symbol:targetSymbol,error:nativeError.message}));
+      }
+      // Native cTrader trailing is the sole trailing mechanism; never also
+      // calculate and send app-managed trailing SL amendments.
+      continue;
+
       if(!Number.isFinite(entry)||!Number.isFinite(current)){
         console.warn("AURIXA_TRAILING_STOP_SKIPPED:",JSON.stringify({
           positionId,direction,entry,current,reason:"MARKET_OR_ENTRY_PRICE_UNAVAILABLE"
