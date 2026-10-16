@@ -645,7 +645,7 @@
       const positionDigits = priceDigits(positionSymbol);
       const side = Number(p?.tradeData?.tradeSide) === 1 ? "BUY" : Number(p?.tradeData?.tradeSide) === 2 ? "SELL" : first(p.direction, "—");
       const entry = first(p?.tradeData?.openPrice, p?.tradeData?.price, p?.price, p?.entryPrice);
-      const current = first(p?.currentPrice, p?.tradeData?.currentPrice, p?.price);
+      const current = first(p?.currentPrice, p?.tradeData?.currentPrice);
       const volume = first(p?.tradeData?.volume, p?.volume);
       const sl = first(p?.tradeData?.stopLoss, p?.stopLoss);
       const pnl = first(p?.unrealizedNetProfit, p?.tradeData?.unrealizedNetProfit, p?.netProfit, p?.profit);
@@ -700,7 +700,7 @@
       const positionId = first(p.positionId, td.positionId, p.id);
       const orderId = first(p.orderId, td.orderId);
       const entry = first(p.openPrice, td.openPrice, td.price, p.entryPrice, p.price);
-      const current = first(p.currentPrice, td.currentPrice, p.price);
+      const current = first(p.currentPrice, td.currentPrice);
       const volume = first(p.volume, td.volume);
       const brokerProtection = p.brokerProtection || {};
       const sl = first(brokerProtection.stopLoss, p.stopLoss, td.stopLoss);
@@ -736,7 +736,7 @@
           '<div><span>TAKE PROFIT</span><strong>' + escapeHTML(Number.isFinite(tpN) ? number(tpN, digits) : "NOT SET") + '</strong></div>' +
           '<div><span>OPENED</span><strong>' + escapeHTML(opened ? formatTime(opened) : "—") + '</strong></div>' +
         '</div>' +
-        '<div class="open-trade-footer"><span>BROKER PROTECTION ' + escapeHTML(protectionStatus) + ' · ' + (Number.isFinite(slN) ? "SL " + number(slN, digits) : "SL MISSING") + ' · ' + (Number.isFinite(tpN) ? "TP " + number(tpN, digits) : "TP MISSING") + '</span><span>LIVE cTRADER SNAPSHOT</span></div>' +
+        '<div class="open-trade-footer"><span>BROKER PROTECTION ' + escapeHTML(protectionStatus) + ' · ' + (Number.isFinite(slN) ? "SL " + number(slN, digits) : "SL MISSING") + ' · ' + (Number.isFinite(tpN) ? "TP " + number(tpN, digits) : "TP MISSING") + (first(brokerProtection.checkedAt, p.snapshotCheckedAt) ? ' · CHECKED ' + escapeHTML(formatTime(first(brokerProtection.checkedAt, p.snapshotCheckedAt))) : '') + '</span><span>LIVE cTRADER SNAPSHOT</span></div>' +
       '</article>';
     }).join("");
 
