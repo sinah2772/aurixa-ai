@@ -83,18 +83,51 @@ function decide(candles,quote={}){
   const lastUpdate=quote.lastUpdate?Date.parse(quote.lastUpdate):NaN,quoteFresh=Number.isFinite(lastUpdate)&&Date.now()-lastUpdate<=30000;
   const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=maxSpread,volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
   const blockedBy=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k);
-  let signal=side!=="WAIT"&&blockedBy.length===0?side:"WAIT";
-  let orderFlowConfirmation=null;
-  gates.orderFlowOF1Confirmed=null;
-  if(signal!=="WAIT"){
-    orderFlowConfirmation=orderFlowOF1.analyze(clean,{symbol,timeframe:"M5"});
-    const confirmed=orderFlowConfirmation?.dataReady===true&&orderFlowConfirmation?.signal===signal;
-    gates.orderFlowOF1Confirmed=confirmed;
-    if(!confirmed){
-      blockedBy.push("orderFlowOF1Confirmed");
-      signal="WAIT";
-    }
+  // Keep the existing AURIXA V1 calculation as the primary strategy.
+  // OF1 is a confirmation layer: it never creates or reverses the V1 signal.
+  // Evaluate it for every scan so WAITs and disagreements are auditable too.
+  const mainSignal=side;
+  const mainGatesPassed=blockedBy.length===0;
+  const orderFlowConfirmation=orderFlowOF1.analyze(clean,{symbol,timeframe:"M5"});
+  const orderFlowConfirmed=mainSignal!=="WAIT" &&
+    orderFlowConfirmation?.dataReady===true &&
+    orderFlowConfirmation?.signal===mainSignal;
+  const confirmationStatus=mainSignal==="WAIT"
+    ? "MAIN_STRATEGY_WAIT"
+    : orderFlowConfirmation?.dataReady!==true
+      ? "OF1_DATA_UNAVAILABLE"
+      : orderFlowConfirmation.signal===mainSignal
+        ? "CONFIRMED"
+        : orderFlowConfirmation.signal==="WAIT"
+          ? "OF1_WAIT"
+          : "DIRECTION_MISMATCH";
+  gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:orderFlowConfirmed;
+  let signal=mainSignal!=="WAIT"&&mainGatesPassed?mainSignal:"WAIT";
+  if(signal!=="WAIT"&&!orderFlowConfirmed){
+    blockedBy.push("orderFlowOF1Confirmed");
+    signal="WAIT";
   }
+  const signalConfirmation={
+    mode:"main_strategy_with_of1_confirmation",
+    primaryEngine:"AURIXA_AI_TRADER_V1",
+    confirmationEngine:orderFlowConfirmation?.strategy||"AURIXA_OF1",
+    mainSignal,
+    confirmationSignal:orderFlowConfirmation?.signal||"WAIT",
+    status:confirmationStatus,
+    confirmed:orderFlowConfirmed,
+    applied:mainSignal!=="WAIT"&&mainGatesPassed,
+    reason:confirmationStatus==="CONFIRMED"
+      ? "OF1 agrees with the main strategy"
+      : confirmationStatus==="MAIN_STRATEGY_WAIT"
+        ? "Main strategy did not produce a directional signal"
+        : confirmationStatus==="OF1_DATA_UNAVAILABLE"
+          ? orderFlowConfirmation?.reason||"OF1 data is not ready"
+          : confirmationStatus==="OF1_WAIT"
+            ? (orderFlowConfirmation?.failures||[]).join("; ")||orderFlowConfirmation?.reason||"OF1 did not confirm"
+            : "OF1 direction differs from the main strategy",
+    trueFootprint:orderFlowConfirmation?.trueFootprint===true,
+    gex:orderFlowConfirmation?.gex===true
+  };
   return {engine:"AURIXA_AI_TRADER_V1",version:"1.4.0",symbol,timeframe:"M5",priceDigits:digits,atrProfile:{min:minAtr,max:maxAtr,maxSpread},signal,confidence,price:roundPrice(last),entry,stopLoss:stop,takeProfit:target,
     slArea:side==="BUY"
       ? {type:"SUPPORT",low:Number(swingLow.toFixed(2)),high:Number((swingLow+slBuffer).toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
