@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 const { normalizeSymbolName: normalizeCanonicalSymbol, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMBOLS } = require("./symbol-support");
+const brokerVolume = require("./broker-volume");
 const multiSymbolMarket = require("./multi-symbol-market");
 const buyerSellerPressure = require("./buyer-seller-pressure");
 
@@ -2391,9 +2392,7 @@ async function placeDemoMarketOrder({
   const minVolume = Number(volumeRules.minVolume);
   const stepVolume = Number(volumeRules.stepVolume);
   const maxVolume = Number(volumeRules.maxVolume);
-  if (Number(volume) < minVolume ||
-      (Number.isFinite(maxVolume) && maxVolume > 0 && Number(volume) > maxVolume) ||
-      ((Number(volume) - minVolume) % stepVolume !== 0)) {
+  if (!brokerVolume.isValidVolume(Number(volume), volumeRules)) {
     throw new Error("ORDER_VOLUME_OUTSIDE_BROKER_CONSTRAINTS for " + requestedSymbol);
   }
 
