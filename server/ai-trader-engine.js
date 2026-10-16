@@ -81,6 +81,10 @@ function confirmOrderFlowDirection(mainSignal, confirmation) {
   };
 }
 
+function shouldBlockOnOF1(status) {
+  return status === "DIRECTION_MISMATCH" || status === "OF1_INVALIDATED";
+}
+
 function decide(candles,quote={}){
   const symbol=normalizeSymbolName(quote.symbolName||quote.symbol||"XAUUSD");
   const profile=getSymbolProfile(symbol);
@@ -144,8 +148,7 @@ function decide(candles,quote={}){
   // OF1 is a conflict/invalidation guard, not a second full entry strategy.
   // Missing or incomplete OF1 evidence must not veto an otherwise-qualified V1 signal.
   // Explicit opposing OF1 direction or invalidated structure still blocks the entry.
-  const orderFlowBlocks = of1Decision.status === "DIRECTION_MISMATCH" ||
-    of1Decision.status === "OF1_INVALIDATED";
+  const orderFlowBlocks = shouldBlockOnOF1(of1Decision.status);
   gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:!orderFlowBlocks;
   let signal=mainSignal!=="WAIT"&&mainGatesPassed?mainSignal:"WAIT";
   if(signal!=="WAIT"&&orderFlowBlocks){
@@ -175,4 +178,4 @@ function decide(candles,quote={}){
         ? {type:"RESISTANCE",low:Number((swingHigh-slBuffer).toFixed(2)),high:Number(swingHigh.toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
         : null,rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
-module.exports={decide,confirmOrderFlowDirection,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
+module.exports={decide,confirmOrderFlowDirection,shouldBlockOnOF1,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
