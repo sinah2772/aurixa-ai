@@ -259,7 +259,7 @@
         const enableButton = document.createElement("button");
         enableButton.type = "button";
         enableButton.className = "multi-symbol-select multi-symbol-enable" + (isPairEnabled ? " enabled" : "");
-        enableButton.textContent = isPairEnabled ? "DISABLE " + symbol + " AUTO-TRADING" : "ENABLE " + symbol + " ONLY";
+        enableButton.textContent = isPairEnabled ? "DISABLE " + symbol + " AUTO-TRADING" : "ENABLE " + symbol + " AUTO-TRADING";
         enableButton.setAttribute("aria-pressed", String(isPairEnabled));
         enableButton.disabled = busy || enableBusy;
         enableButton.addEventListener("click", async () => {
