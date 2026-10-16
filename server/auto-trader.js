@@ -36,7 +36,7 @@ function summarizeRealizedClosingDeals(deals, positionId) {
   const closing = (Array.isArray(deals) ? deals : [])
     .filter(deal => isRealizedClosingDeal(deal, positionId))
     .sort((a,b) => Number(a?.executionTimestamp || 0) - Number(b?.executionTimestamp || 0));
-  if (!closing.length) return { profit: null, closePrice: null, closingDeals: 0 };
+  if (!closing.length) return { profit: null, closePrice: null, closedAt: null, closingDeals: 0 };
 
   let totalProfit = 0;
   let hasProfit = false;
@@ -80,9 +80,14 @@ function summarizeRealizedClosingDeals(deals, positionId) {
   const detail = last?.closePositionDetail || {};
   const rawExit = last?.executionPrice ?? last?.price ?? detail.entryPrice;
   const exitPrice = rawExit == null || rawExit === "" ? NaN : Number(rawExit);
+  const rawTimestamp = Number(last?.executionTimestamp);
+  const timestampMs = Number.isFinite(rawTimestamp) && rawTimestamp > 0
+    ? (rawTimestamp < 1e12 ? rawTimestamp * 1000 : rawTimestamp)
+    : NaN;
   return {
     profit: hasProfit ? Number(totalProfit.toFixed(Math.min(8, displayDigits))) : null,
     closePrice: Number.isFinite(exitPrice) && exitPrice > 0 ? exitPrice : null,
+    closedAt: Number.isFinite(timestampMs) ? new Date(timestampMs) : null,
     closingDeals: closing.length
   };
 }
@@ -817,20 +822,23 @@ async function syncOpenPositions(symbolName=null){
       // from the live cTrader position list, it was closed outside AURIXA
       // (manual close, SL, TP, broker action, etc.). Reconcile the closing
       // deal before marking the AURIXA trade CLOSED.
-      let profit=null,closePrice=null,reason="BROKER_CLOSED";
+      let profit=null,closePrice=null,closedAt=null,reason="BROKER_CLOSED";
       if(cTrader.getDealsByPositionId)try{
         const dealFrom = new Date(t.opened_at || t.created_at || Date.now()-30*86400000).getTime();
-          const deals=await cTrader.getDealsByPositionId(t.position_id, dealFrom, Date.now());
+        const deals=await cTrader.getDealsByPositionId(t.position_id, dealFrom, Date.now());
         const summary=summarizeRealizedClosingDeals(deals,t.position_id);
         closePrice=summary.closePrice;
         profit=summary.profit;
+        closedAt=summary.closedAt;
         if(summary.closingDeals>0) reason="BROKER_CLOSED";
       }catch(e){
         console.warn("AURIXA_CLOSE_RECONCILIATION_FAILED:",JSON.stringify({
           positionId:t.position_id,error:e.message
         }));
       }
-      await dbQuery("UPDATE aurixa.auto_trades SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),close_price=COALESCE($2,close_price),profit=COALESCE($3,profit),exit_reason=COALESCE($4,exit_reason),updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(closePrice)?closePrice:null,Number.isFinite(profit)?profit:null,reason]);
+      // Open rows store unrealized P/L during monitoring. Replace it with the
+      // broker's realized close result, or NULL until a verified deal is found.
+      await dbQuery("UPDATE aurixa.auto_trades SET status='CLOSED',closed_at=COALESCE($5,closed_at,NOW()),close_price=COALESCE($2,close_price),profit=$3,exit_reason=COALESCE($4,exit_reason),updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(closePrice)?closePrice:null,Number.isFinite(profit)?profit:null,reason,closedAt]);
       console.log("AURIXA_BROKER_POSITION_CLOSED:",JSON.stringify({
         tradeId:t.id,positionId:t.position_id,reason,
         closePrice:Number.isFinite(closePrice)?closePrice:null,
@@ -851,22 +859,34 @@ async function syncOpenPositions(symbolName=null){
       targetSymbol === SUPPORTED_SYMBOLS[closedBackfillSymbolIndex % SUPPORTED_SYMBOLS.length]){
     lastClosedBackfillAt = Date.now();
     try{
+      // Track attempts so records without a currently available deal do not
+      // pin the queue forever; older closures are worked through in order.
       const missing=await dbQuery(`SELECT id,position_id,opened_at,created_at FROM aurixa.auto_trades
         WHERE status='CLOSED' AND UPPER(BTRIM(symbol))=$1 AND position_id IS NOT NULL
-          AND (profit IS NULL OR close_price IS NULL)
-        ORDER BY closed_at DESC NULLS LAST,id DESC LIMIT 5`,[targetSymbol]);
+          AND (broker_reconciled_at IS NULL OR profit IS NULL OR close_price IS NULL)
+          AND (broker_reconcile_attempted_at IS NULL OR broker_reconcile_attempted_at < NOW() - INTERVAL '15 minutes')
+        ORDER BY broker_reconciled_at ASC NULLS FIRST,
+                 broker_reconcile_attempted_at ASC NULLS FIRST,
+                 closed_at ASC NULLS FIRST,id ASC LIMIT 5`,[targetSymbol]);
       for(const t of missing.rows){
         try{
           const dealFrom = new Date(t.opened_at || t.created_at || Date.now()-30*86400000).getTime();
           const deals=await cTrader.getDealsByPositionId(t.position_id, dealFrom, Date.now());
           const summary=summarizeRealizedClosingDeals(deals,t.position_id);
-          if(summary.closingDeals===0) continue;
+          if(summary.closingDeals===0){
+            await dbQuery("UPDATE aurixa.auto_trades SET broker_reconcile_attempted_at=NOW(),updated_at=NOW() WHERE id=$1",[t.id]);
+            console.log("AURIXA_CLOSED_TRADE_BACKFILL_PENDING:",JSON.stringify({tradeId:t.id,positionId:t.position_id,reason:"NO_VERIFIED_CLOSING_DEAL"}));
+            continue;
+          }
           await dbQuery(`UPDATE aurixa.auto_trades
-            SET close_price=COALESCE(close_price,$2),profit=COALESCE($3,profit),
-                exit_reason=COALESCE(exit_reason,'BROKER_CLOSED'),updated_at=NOW()
-            WHERE id=$1`,[t.id,summary.closePrice,summary.profit]);
-          console.log("AURIXA_CLOSED_TRADE_BACKFILLED:",JSON.stringify({tradeId:t.id,positionId:t.position_id,closePrice:summary.closePrice,profit:summary.profit,closingDeals:summary.closingDeals}));
+            SET close_price=COALESCE($2,close_price),profit=$3,
+                closed_at=COALESCE($4,closed_at),
+                exit_reason=COALESCE(exit_reason,'BROKER_CLOSED'),
+                broker_reconciled_at=NOW(),broker_reconcile_attempted_at=NOW(),updated_at=NOW()
+            WHERE id=$1`,[t.id,summary.closePrice,summary.profit,summary.closedAt]);
+          console.log("AURIXA_CLOSED_TRADE_BACKFILLED:",JSON.stringify({tradeId:t.id,positionId:t.position_id,closePrice:summary.closePrice,profit:summary.profit,closedAt:summary.closedAt,closingDeals:summary.closingDeals}));
         }catch(e){
+          try { await dbQuery("UPDATE aurixa.auto_trades SET broker_reconcile_attempted_at=NOW(),updated_at=NOW() WHERE id=$1",[t.id]); } catch {}
           console.warn("AURIXA_CLOSED_TRADE_BACKFILL_FAILED:",JSON.stringify({tradeId:t.id,positionId:t.position_id,error:e.message}));
         }
       }
@@ -945,11 +965,14 @@ async function init(){
     risk_percent NUMERIC(8,4),risk_amount NUMERIC(18,5),gate_reason TEXT,
     status TEXT NOT NULL DEFAULT 'SUBMITTED',
     opened_at TIMESTAMPTZ,closed_at TIMESTAMPTZ,close_price NUMERIC(18,5),profit NUMERIC(18,5),
+    broker_reconciled_at TIMESTAMPTZ,broker_reconcile_attempted_at TIMESTAMPTZ,
     error TEXT,partial_taken BOOLEAN NOT NULL DEFAULT false,breakeven_applied BOOLEAN NOT NULL DEFAULT false,exit_reason TEXT
   )`);
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS decision_id BIGINT");
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
   await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT");
+  await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS broker_reconciled_at TIMESTAMPTZ");
+  await dbQuery("ALTER TABLE aurixa.auto_trades ADD COLUMN IF NOT EXISTS broker_reconcile_attempted_at TIMESTAMPTZ");
   // Older deployments may have the table without a unique constraint.
   // Deduplicate historical keys before creating the constraint required by
   // future writes; the application no longer depends on the constraint for
@@ -963,4 +986,4 @@ async function init(){
     ON aurixa.auto_trades(strategy_signal_key)`);
   return true;
 }
-module.exports={configure,getStatus,executeAiDecision,dryRunAiTrader,syncOpenPositions,init};
+module.exports={configure,getStatus,executeAiDecision,dryRunAiTrader,syncOpenPositions,init,summarizeRealizedClosingDeals};
