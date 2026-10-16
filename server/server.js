@@ -804,6 +804,58 @@ app.get("/api/auto-trader/trades", async (req, res) => {
   }
 });
 
+// Read-only closed-trade reconciliation summary. This helps distinguish
+// missing broker P/L from missing UI rows without exposing raw decision evidence.
+app.get("/api/auto-trader/history-audit", async (req, res) => {
+  try {
+    const result = await queryDatabase(`
+      SELECT
+        COUNT(*) FILTER (
+          WHERE UPPER(BTRIM(COALESCE(status, ''))) LIKE 'CLOSED%'
+             OR closed_at IS NOT NULL
+        )::int AS "closedRows",
+        COUNT(*) FILTER (
+          WHERE (UPPER(BTRIM(COALESCE(status, ''))) LIKE 'CLOSED%'
+                 OR closed_at IS NOT NULL)
+            AND profit IS NULL
+        )::int AS "closedMissingProfit",
+        COUNT(*) FILTER (
+          WHERE (UPPER(BTRIM(COALESCE(status, ''))) LIKE 'CLOSED%'
+                 OR closed_at IS NOT NULL)
+            AND close_price IS NULL
+        )::int AS "closedMissingClosePrice",
+        COUNT(*) FILTER (
+          WHERE (UPPER(BTRIM(COALESCE(status, ''))) LIKE 'CLOSED%'
+                 OR closed_at IS NOT NULL)
+            AND profit IS NOT NULL
+        )::int AS "closedWithProfit",
+        SUM(profit) FILTER (
+          WHERE (UPPER(BTRIM(COALESCE(status, ''))) LIKE 'CLOSED%'
+                 OR closed_at IS NOT NULL)
+            AND profit IS NOT NULL
+        ) AS "realizedProfitTotal",
+        COUNT(*) FILTER (WHERE UPPER(BTRIM(COALESCE(status, ''))) IN ('OPEN', 'PARTIAL'))::int AS "trackedOpenRows",
+        MAX(closed_at) FILTER (
+          WHERE UPPER(BTRIM(COALESCE(status, ''))) LIKE 'CLOSED%'
+             OR closed_at IS NOT NULL
+        ) AS "latestClosedAt"
+      FROM aurixa.auto_trades
+    `);
+    const audit = result.rows?.[0] || {};
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.json({
+      ok: true,
+      readOnly: true,
+      source: "aurixa.auto_trades",
+      audit,
+      note: "Realized P/L is reported only when persisted; missing values are not replaced with estimates."
+    });
+  } catch (err) {
+    console.error("Auto-Trader history audit error:", err);
+    res.status(500).json({ ok: false, error: "TRADE_HISTORY_AUDIT_UNAVAILABLE" });
+  }
+});
+
 app.get("/api/market/history", async (req, res) => {
   try {
     const ct = getCTraderStatus() || {};
