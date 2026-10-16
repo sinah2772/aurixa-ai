@@ -658,7 +658,7 @@ async function syncOpenPositions(symbolName=null){
                   if(!positionRisk.isBrokerCloseConfirmed(closeResult)){
                     throw new Error("Broker did not confirm that the position was fully closed");
                   }
-                  await dbQuery(
+                  const closeWrite = await dbQuery(
                     `UPDATE aurixa.auto_trades
                      SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),
                          close_price=COALESCE($2,close_price),profit=NULL,
@@ -667,6 +667,9 @@ async function syncOpenPositions(symbolName=null){
                      WHERE id=$1 AND status IN ('OPEN','PARTIAL')`,
                     [trade.id,closeResult.executionPrice==null||closeResult.executionPrice===""?null:(Number.isFinite(Number(closeResult.executionPrice))?Number(closeResult.executionPrice):null)]
                   );
+                  if (Number(closeWrite?.rowCount || 0) !== 1) {
+                    throw new Error("Broker confirms the position is closed, but the tracked AURIXA trade row was not updated");
+                  }
                   console.log("AURIXA_REVERSAL_EXIT_CONFIRMED:",JSON.stringify({
                     tradeId:trade.id,positionId,closeOrderId:closeResult.orderId||null,
                     closePrice:closeResult.executionPrice??null,
