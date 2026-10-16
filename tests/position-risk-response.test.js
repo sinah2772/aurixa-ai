@@ -51,6 +51,30 @@ test("missing and directionally invalid protection is detected", () => {
   assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2010, tradeData: { tradeSide: 2, stopLoss: 2015, takeProfit: 1980 } }), false);
 });
 
+test("protection audit checks SL against live market and TP against actual entry", () => {
+  assert.deepEqual(
+    risk.protectionIssues({ price: 2000, currentPrice: 2010, tradeData: { tradeSide: 1, stopLoss: 2011, takeProfit: 2020 } }),
+    ["STOP_LOSS_NOT_BELOW_MARKET"]
+  );
+  assert.deepEqual(
+    risk.protectionIssues({ price: 2000, currentPrice: 2010, tradeData: { tradeSide: 1, stopLoss: 2005, takeProfit: 1995 } }),
+    ["TAKE_PROFIT_NOT_ABOVE_ENTRY"]
+  );
+  assert.deepEqual(
+    risk.protectionIssues({ price: 2000, currentPrice: 1990, tradeData: { tradeSide: 2, stopLoss: 1989, takeProfit: 1980 } }),
+    ["STOP_LOSS_NOT_ABOVE_MARKET"]
+  );
+  assert.deepEqual(
+    risk.protectionIssues({ price: 2000, currentPrice: 1990, tradeData: { tradeSide: 2, stopLoss: 1995, takeProfit: 2005 } }),
+    ["TAKE_PROFIT_NOT_BELOW_ENTRY"]
+  );
+  assert.deepEqual(
+    risk.protectionIssues({ price: 2000, currentPrice: 2020, tradeData: { tradeSide: 1, stopLoss: 2010, takeProfit: 2030 } }),
+    [],
+    "a trailing stop locked above entry is valid while it remains below the live market"
+  );
+});
+
 test("trailing stops can only move protectively and can initialize a missing stop", () => {
   assert.equal(risk.shouldImproveStop("BUY", 2010, 2005), true);
   assert.equal(risk.shouldImproveStop("BUY", 2000, 2005), false);
