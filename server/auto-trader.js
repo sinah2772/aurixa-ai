@@ -499,7 +499,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       WHERE id=$1`,
       [reservationId,decisionId,result.orderId||null,result.positionId||null,result.clientMsgId||null,
        result.status||"SUBMITTED",result.executionPrice||entry,
-       result.status==="CLOSED"?"PROTECTION_FAILURE_EMERGENCY_CLOSE":(result.protectionStatus==="FAILED"?"PROTECTION_FAILED":"PASSED"),
+       result.status==="CLOSED"?"PROTECTION_FAILURE_EMERGENCY_CLOSE":(String(result.protectionStatus||"").startsWith("FAILED")?"PROTECTION_FAILED":"PASSED"),
        result.protectionError||null,result.closePrice||null,result.exitReason||null]);
   }catch(e){console.error("AI trade record update failed:",e.message);}
   const brokerPositionVerified=result.brokerConfirmed===true;
