@@ -15,6 +15,14 @@ const reversalConfirmations = new Map();
 const reversalCloseAttempts = new Map();
 const profitDetectedPositions = new Set();
 const lossWarningPositions = new Set();
+const lastPositionManagementAuditAt = new Map();
+function logPositionManagementAudit(key, event, payload, intervalMs = 60000) {
+  const now = Date.now();
+  const last = lastPositionManagementAuditAt.get(key) || 0;
+  if (now - last < intervalMs) return;
+  lastPositionManagementAuditAt.set(key, now);
+  console.log(event + ":", JSON.stringify(payload));
+}
 // One symbol is backfilled per scanner cycle to avoid hammering cTrader deal history.
 let closedBackfillSymbolIndex = 0;
 let lastClosedBackfillAt = 0;
@@ -624,6 +632,23 @@ async function syncOpenPositions(symbolName=null){
         const pidKey=String(positionId);
         const opposite=positionRisk.shouldExitOnReversal({tracked:Boolean(trade),enabled:cfg.exitReversalEnabled,eligible:eligibleReversal,signal:exitDecision?.signal,direction});
         if(!opposite){
+          logPositionManagementAudit(`reversal:${pidKey}`, "AURIXA_REVERSAL_EXIT_MONITOR", {
+            positionId, tracked: true, enabled: cfg.exitReversalEnabled,
+            oppositeSignal: exitDecision?.signal || null,
+            confidence: Number.isFinite(Number(exitDecision?.confidence)) ? Number(exitDecision.confidence) : null,
+            minimumConfidence: cfg.exitReversalMinConfidence,
+            trend: exitDecision?.trend || null,
+            executionEligible: exitDecision?.executionEligible === true,
+            positionDirection: direction,
+            reason: !cfg.exitReversalEnabled ? "REVERSAL_EXIT_DISABLED" :
+              !["BUY", "SELL"].includes(exitDecision?.signal) ? "NO_DIRECTIONAL_SIGNAL" :
+              exitDecision.signal === direction ? "SIGNAL_NOT_OPPOSITE" :
+              exitDecision?.executionEligible !== true ? "SIGNAL_NOT_EXECUTION_ELIGIBLE" :
+              Number(exitDecision?.confidence) < cfg.exitReversalMinConfidence ? "CONFIDENCE_BELOW_THRESHOLD" :
+              !((exitDecision?.signal === "BUY" && exitDecision?.trend === "BULLISH") ||
+                (exitDecision?.signal === "SELL" && exitDecision?.trend === "BEARISH")) ? "TREND_NOT_CONFIRMED" :
+              "REVERSAL_NOT_QUALIFIED"
+          });
           reversalConfirmations.delete(pidKey);
         }else{
           const prior=reversalConfirmations.get(pidKey);
@@ -780,7 +805,16 @@ async function syncOpenPositions(symbolName=null){
         : Math.max(Number(activeProfile?.stopBuffer||0),0.00001)*10;
       const triggerDistance=baseRisk>0?baseRisk*cfg.trailingTriggerR:fallbackTrailBase*cfg.trailingTriggerR;
       const trailDistance=baseRisk>0?baseRisk*cfg.trailingDistanceR:fallbackTrailBase*cfg.trailingDistanceR;
-      if(!Number.isFinite(profitMove)||profitMove<triggerDistance||!Number.isFinite(trailDistance)||trailDistance<=0)continue;
+      if(!Number.isFinite(profitMove)||profitMove<triggerDistance||!Number.isFinite(trailDistance)||trailDistance<=0){
+        logPositionManagementAudit(`trailing:${String(positionId)}`, "AURIXA_TRAILING_STOP_EVALUATION", {
+          positionId, symbol: targetSymbol, direction, entry, current, profitMove,
+          triggerDistance, trailDistance, trailingEnabled: cfg.trailingEnabled,
+          reason: !Number.isFinite(profitMove) ? "PROFIT_MOVE_UNAVAILABLE" :
+            !Number.isFinite(trailDistance) || trailDistance <= 0 ? "TRAIL_DISTANCE_INVALID" :
+            profitMove < triggerDistance ? "PROFIT_BELOW_TRAILING_TRIGGER" : "TRAILING_NOT_ELIGIBLE"
+        });
+        continue;
+      }
 
       const candidate=direction==="BUY"?current-trailDistance:current+trailDistance;
       // Null/missing SL means no stop was reported. Number(null) is 0 in JS,
@@ -790,7 +824,15 @@ async function syncOpenPositions(symbolName=null){
         ? NaN : Number(rawExistingSL);
       // Never loosen an existing stop; an absent SL may be established by trailing.
       const improves=positionRisk.shouldImproveStop(direction,candidate,existingSL);
-      if(!improves)continue;
+      if(!improves){
+        logPositionManagementAudit(`trailing:${String(positionId)}`, "AURIXA_TRAILING_STOP_EVALUATION", {
+          positionId, symbol: targetSymbol, direction, entry, current, profitMove,
+          existingStopLoss: Number.isFinite(existingSL) ? existingSL : null,
+          candidateStopLoss: candidate, triggerDistance, trailDistance,
+          reason: "CANDIDATE_WOULD_NOT_IMPROVE_EXISTING_STOP"
+        });
+        continue;
+      }
 
       try{
         const result=await cTrader.modifyPositionProtection(positionId,candidate,null,targetSymbol);
