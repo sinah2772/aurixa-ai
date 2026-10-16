@@ -938,7 +938,7 @@ async function syncOpenPositions(symbolName=null){
       const missing=await dbQuery(`SELECT id,position_id,opened_at,created_at FROM aurixa.auto_trades
         WHERE status='CLOSED' AND UPPER(BTRIM(symbol))=$1 AND position_id IS NOT NULL
           AND (broker_reconciled_at IS NULL OR profit IS NULL OR close_price IS NULL)
-          AND (broker_reconcile_attempted_at IS NULL OR broker_reconcile_attempted_at < NOW() - INTERVAL '15 minutes')
+          AND (broker_reconcile_attempted_at IS NULL OR broker_reconcile_attempted_at < NOW() - INTERVAL '60 minutes')
         ORDER BY broker_reconciled_at ASC NULLS FIRST,
                  broker_reconcile_attempted_at ASC NULLS FIRST,
                  closed_at ASC NULLS FIRST,id ASC LIMIT 5`,[targetSymbol]);
