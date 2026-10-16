@@ -84,7 +84,7 @@ test("OF1 confirms matching main direction with multiple structural checks even 
   });
   assert.equal(result.status, "CONFIRMED");
   assert.equal(result.confirmed, true);
-  assert.equal(result.evidenceCount, 3);
+  assert.equal(result.evidenceCount, 4);
   assert.match(result.reason, /full OF1 entry signal: WAIT/);
 });
 
