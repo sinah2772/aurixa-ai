@@ -87,7 +87,7 @@ function decide(candles,quote={}){
   let orderFlowConfirmation=null;
   gates.orderFlowOF1Confirmed=null;
   if(signal!=="WAIT"){
-    orderFlowConfirmation=orderFlowOF1.analyze(clean);
+    orderFlowConfirmation=orderFlowOF1.analyze(clean,{symbol,timeframe:"M5"});
     const confirmed=orderFlowConfirmation?.dataReady===true&&orderFlowConfirmation?.signal===signal;
     gates.orderFlowOF1Confirmed=confirmed;
     if(!confirmed){
