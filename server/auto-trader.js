@@ -306,18 +306,36 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   if(!Number.isFinite(stop)||!Number.isFinite(target))return reject("AI_SL_TP_MISSING");
   if(decision.signal==="BUY"&&(stop>=entry||target<=entry))return reject("BUY_PROTECTION_INVALID",{entry,stop,target});
   if(decision.signal==="SELL"&&(stop<=entry||target>=entry))return reject("SELL_PROTECTION_INVALID",{entry,stop,target});
-  const riskDistance=Math.abs(entry-stop),targetDistance=Math.abs(target-entry),rr=targetDistance/Math.max(0.00001,riskDistance);
-  if(!Number.isFinite(rr)||rr<2){
+
+  // The strategy's 2R gate must evaluate the signal's own entry/SL/TP levels.
+  // Comparing a fixed signal TP against a later live quote can turn a valid
+  // 2R signal into 1.999R merely because the spread/price moved after the
+  // candle decision. Execution already re-anchors SL/TP to the actual fill,
+  // so validate the signal plan here and then normalize the executable TP to
+  // exactly 2R from the live entry. The risk distance and risk budget remain
+  // based on the live entry-to-stop distance; no risk limit is relaxed.
+  const signalEntry=Number(decision.entry);
+  if(!Number.isFinite(signalEntry)||signalEntry<=0)return reject("AI_SIGNAL_ENTRY_MISSING");
+  const signalRiskDistance=Math.abs(signalEntry-stop);
+  const signalTargetDistance=Math.abs(target-signalEntry);
+  const signalRR=signalTargetDistance/Math.max(0.00001,signalRiskDistance);
+  const riskDistance=Math.abs(entry-stop);
+  const targetDistance=riskDistance*2;
+  const rr=targetDistance/Math.max(0.00001,riskDistance);
+  if(!Number.isFinite(signalRR)||signalRR<2){
     const rrDiagnostics={
       symbol:decisionSymbol,signal:decision.signal,candleTime:decision.candleTime??null,
-      entry,stop,target,riskDistance,targetDistance,
-      rr:Number.isFinite(rr)?rr:null,minRewardRisk:2,
+      signalEntry,liveEntry:entry,stop,signalTarget:target,
+      signalRiskDistance,signalTargetDistance,signalRR,
+      executionRiskDistance:riskDistance,executionTargetDistance:targetDistance,
+      executionRR:Number.isFinite(rr)?rr:null,minRewardRisk:2,
       quoteBid:Number.isFinite(bid)?bid:null,quoteAsk:Number.isFinite(ask)?ask:null,
-      source:"EXECUTION_GATE_LIVE_QUOTE"
+      source:"SIGNAL_PLAN_WITH_LIVE_ENTRY_EXECUTION"
     };
     console.warn("AURIXA_REWARD_RISK_GATE_DIAGNOSTICS:",JSON.stringify({decisionId,...rrDiagnostics}));
     return reject("REWARD_RISK_TOO_LOW",rrDiagnostics);
   }
+  const normalizedTarget=decision.signal==="BUY"?entry+targetDistance:entry-targetDistance;
   // No fixed XAUUSD position-count, daily-trade, or global cooldown limit.
   // Confirmed BUY/SELL signals may open additional demo positions.
   // Balance/free-margin, risk sizing, spread, stale-signal, broker-volume,
@@ -375,8 +393,8 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     quoteToUsdRate = 1 / conversionMid;
   }
   let executionRiskDistance=riskDistance;
-  let executionStop=stop;
-  let executionTarget=target;
+  let executionStop=decision.signal==="BUY"?entry-riskDistance:entry+riskDistance;
+  let executionTarget=normalizedTarget;
   let riskAdjustedForBrokerMinimum=false;
   const rawVolume=(riskAmount*volumeUnitScale)/(executionRiskDistance*quoteToUsdRate);
   let volume=brokerVolume.normalizeVolume(rawVolume, volumeRules, configuredMax);
