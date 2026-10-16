@@ -40,16 +40,33 @@ test("unknown broker symbols are never registered for execution", () => {
 });
 
 
-test("partial spot updates refresh the composite quote but empty events do not", () => {
+test("partial spot updates refresh only the received side; stale opposite side blocks readiness", () => {
   markets.registerSymbols([{ symbolName: "GBPUSD", canonicalName: "GBPUSD", symbolId: 13 }]);
   const old = Date.now() - 60000;
   markets.updateQuote(13, 1.25, 1.2502, old);
   assert.equal(markets.getSnapshot("GBPUSD").quoteFresh, false);
+
   markets.updateQuote(13, undefined, undefined, Date.now());
   assert.equal(markets.getSnapshot("GBPUSD").quoteFresh, false);
-  markets.updateQuote(13, 1.251, undefined, Date.now());
-  const snapshot = markets.getSnapshot("GBPUSD");
+
+  const bidTime = Date.now();
+  markets.updateQuote(13, 1.251, undefined, bidTime);
+  let snapshot = markets.getSnapshot("GBPUSD");
   assert.equal(snapshot.bid, 1.251);
   assert.equal(snapshot.ask, 1.2502);
+  assert.equal(snapshot.quoteFresh, false, "fresh bid must not mask stale ask");
+
+  markets.updateQuote(13, undefined, 1.2512, Date.now());
+  snapshot = markets.getSnapshot("GBPUSD");
+  assert.equal(snapshot.quoteFresh, true, "both bid and ask are now fresh");
+});
+
+test("out-of-order side updates cannot make a market quote fresh", () => {
+  markets.registerSymbols([{ symbolName: "USDCHF", canonicalName: "USDCHF", symbolId: 14 }]);
+  const now = Date.now();
+  markets.updateQuote(14, 0.9, 0.9002, now);
+  markets.updateQuote(14, 0.899, undefined, now - 60000);
+  const snapshot = markets.getSnapshot("USDCHF");
+  assert.equal(snapshot.bid, 0.9);
   assert.equal(snapshot.quoteFresh, true);
 });
