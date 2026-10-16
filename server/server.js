@@ -705,6 +705,14 @@ app.get("/api/auto-trader/positions", async (req, res) => {
           : Number.isFinite(brokerPnl) ? "CTRADER_POSITION_FIELD" : "UNAVAILABLE",
         openedAt: td.openTimestamp != null ? new Date(Number(td.openTimestamp)).toISOString() : (position?.openTime || position?.openedAt || null),
         liveQuoteTimestamp: symbolStatus.lastUpdate || null,
+        positionIntelligence: autoTrader.getPositionIntelligence?.(position?.positionId) || {
+          positionId: position?.positionId ?? null,
+          symbol,
+          action: "HOLD",
+          reason: "Waiting for the first open-position monitor cycle",
+          brokerActionStatus: "NOT_EVALUATED",
+          checkedAt: null
+        },
         snapshotCheckedAt
       };
     });
