@@ -509,7 +509,7 @@ function waitResult(reason, extra = {}) {
   };
 }
 
-function analyze(inputCandles) {
+function analyze(inputCandles, options = {}) {
   const candles = Array.isArray(inputCandles)
     ? inputCandles.filter(validCandle).slice(-300)
     : [];
@@ -754,8 +754,8 @@ function analyze(inputCandles) {
     dataReady: true,
     bars: candles.length,
 
-    symbol: 'XAUUSD',
-    timeframe: 'M5',
+    symbol: String(options.symbol || 'XAUUSD').trim().toUpperCase(),
+    timeframe: String(options.timeframe || 'M5').trim().toUpperCase(),
 
     price: round(price, 3),
     entry: round(entry, 3),
