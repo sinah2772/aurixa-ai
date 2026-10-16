@@ -4,6 +4,7 @@ const path = require("path");
 const { Pool } = require("pg");
 const { normalizeSymbolName: normalizeCanonicalSymbol, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMBOLS } = require("./symbol-support");
 const multiSymbolMarket = require("./multi-symbol-market");
+const buyerSellerPressure = require("./buyer-seller-pressure");
 
 
 let marketEngine = null;
@@ -1494,15 +1495,22 @@ function connectOpenApi() {
           );
 
           const eventSymbolId = Number(payload.symbolId);
+          const pressureSymbol = getSupportedSymbols().find(item => Number(item.symbolId) === eventSymbolId)?.canonicalName;
           const marketPriceScale = 100000;
           const eventBid = payload.bid !== undefined ? Number(payload.bid) / marketPriceScale : undefined;
           const eventAsk = payload.ask !== undefined ? Number(payload.ask) / marketPriceScale : undefined;
           multiSymbolMarket.updateQuote(eventSymbolId, eventBid, eventAsk, payload.timestamp);
+          if (pressureSymbol && eventBid !== undefined && eventAsk !== undefined) {
+            buyerSellerPressure.observeQuote(pressureSymbol, eventBid, eventAsk, payload.timestamp || Date.now());
+          }
           if (Array.isArray(payload.trendbar)) {
             for (const bar of payload.trendbar) {
               if (Number(bar.period) === 5) {
                 const candle = trendbarToCandle(bar);
-                if (candle) multiSymbolMarket.updateCandle(eventSymbolId, candle);
+                if (candle) {
+                  multiSymbolMarket.updateCandle(eventSymbolId, candle);
+                  if (pressureSymbol) buyerSellerPressure.observeCandle(pressureSymbol, candle);
+                }
               }
             }
           }
@@ -2650,6 +2658,8 @@ module.exports = {
   getCTraderStatusForSymbol: (symbol) => getCTraderStatus(symbol),
   getMultiSymbolMarkets: () => multiSymbolMarket.list(),
   getMultiSymbolMarket: (symbol) => multiSymbolMarket.getSnapshot(symbol),
+  getBuyerSellerPressure: (symbol) => buyerSellerPressure.getSnapshot(symbol),
+  getAllBuyerSellerPressure: () => buyerSellerPressure.getAllSnapshots(),
   resubscribeOneStaleSpot,
   setMarketEngine,
   getDatabaseHealth,
