@@ -2786,6 +2786,7 @@ module.exports = {
   closeXAUUSDPosition,
   placeDemoMarketOrder,
   getAccountBalance,
+  getPositionUnrealizedPnL,
   getXAUUSDVolumeConstraints,
   getSymbolVolumeConstraints: getXAUUSDVolumeConstraints,
   getActiveSymbolVolumeConstraints: getXAUUSDVolumeConstraints,
