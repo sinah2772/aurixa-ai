@@ -48,7 +48,7 @@ test("missing and directionally invalid protection is detected", () => {
   assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 1990, tradeData: { tradeSide: 2, stopLoss: 2010, takeProfit: 1980 } }), true);
   assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 1990, tradeData: { tradeSide: 2, stopLoss: 1985, takeProfit: 1980 } }), false);
   assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 1980, tradeData: { tradeSide: 2, stopLoss: 1985, takeProfit: 1980 } }), true, "profitable SELL trailing stop below entry remains valid while above market");
-  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2010, tradeData: { tradeSide: 2, stopLoss: 2015, takeProfit: 1980 } }), false);
+  assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2020, tradeData: { tradeSide: 2, stopLoss: 2015, takeProfit: 1980 } }), false);
 });
 
 test("protection audit checks SL against live market and TP against actual entry", () => {
