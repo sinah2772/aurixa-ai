@@ -827,8 +827,15 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       return (signal === "BUY" || signal === "SELL") &&
         (row?.executionEligible === true || row?.confirmed === true ||
          row?.finalGate === true || row?.status === "CONFIRMED");
+    }).sort((a, b) => {
+      const stamp = row => {
+        const value = first(row?.createdAt, row?.created_at, row?.timestamp, row?.time, row?.candleTime, row?.decision?.timestamp);
+        const parsed = value == null ? NaN : Date.parse(value);
+        return Number.isFinite(parsed) ? parsed : (Number.isFinite(Number(value)) ? Number(value) : 0);
+      };
+      return stamp(b) - stamp(a);
     }).slice(0, 50);
-    if (summary) summary.textContent = confirmed.length + " CONFIRMED SIGNALS";
+    if (summary) summary.textContent = confirmed.length + " CONFIRMED SIGNALS · NEWEST FIRST";
     if (!confirmed.length) {
       body.innerHTML = '<div class="empty">No confirmed BUY or SELL signals yet.</div>';
       return;
@@ -1061,9 +1068,17 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const trades = Array.isArray(data?.trades) ? data.trades : [];
     const dedicatedClosed = Array.isArray(data?.closedTrades) ? data.closedTrades : [];
     // An empty dedicated feed must not mask closed records in the general feed.
-    const closed = dedicatedClosed.length
-      ? dedicatedClosed
-      : trades.filter(t => String(t?.status || "").trim().toUpperCase().startsWith("CLOSED") || Boolean(t?.closedAt));
+    const closed = (dedicatedClosed.length
+      ? [...dedicatedClosed]
+      : trades.filter(t => String(t?.status || "").trim().toUpperCase().startsWith("CLOSED") || Boolean(t?.closedAt)))
+      .sort((a, b) => {
+        const stamp = t => {
+          const value = first(t?.closedAt, t?.closed_at, t?.openedAt, t?.createdAt, t?.created_at);
+          const parsed = value == null ? NaN : Date.parse(value);
+          return Number.isFinite(parsed) ? parsed : (Number.isFinite(Number(value)) ? Number(value) : 0);
+        };
+        return stamp(b) - stamp(a);
+      });
     if (!closed.length) {
       if (summary) summary.textContent = Number(data?.closedTradeCount || 0) + " CLOSED TRADES · HISTORY LOADED";
       body.innerHTML = '<div class="empty">No closed trades yet.</div>';
