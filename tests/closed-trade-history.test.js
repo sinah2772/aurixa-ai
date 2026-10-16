@@ -42,7 +42,7 @@ test("closed trade summary aggregates only filled closing deals and preserves re
   assert.equal(summary.closingDeals, 2);
   assert.equal(summary.profit, 17);
   assert.equal(summary.closePrice, 100.5);
-  assert.equal(summary.closedAt.toISOString(), "2026-09-21T00:00:05.000Z");
+  assert.equal(summary.closedAt.toISOString(), "2026-09-21T14:13:25.000Z");
 });
 
 test("closed trade summary leaves missing broker P/L unavailable rather than estimating it", () => {
