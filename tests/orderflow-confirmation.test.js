@@ -115,3 +115,24 @@ test("OF1 cannot confirm a direction that conflicts with the main strategy", () 
   assert.equal(result.confirmed, false);
   assert.equal(result.status, "DIRECTION_MISMATCH");
 });
+
+test("OF1 WAIT is advisory when V1 has qualified and there is no explicit conflict or invalidation", () => {
+  const { orderFlowBlocksMainSignal } = require("../server/ai-trader-engine");
+  assert.equal(orderFlowBlocksMainSignal("BUY", {
+    dataReady: true, signal: "WAIT", direction: "BUY",
+    fib: { inZone: false, invalidated: false }
+  }, { status: "OF1_WAIT", confirmed: false }), false);
+  assert.equal(orderFlowBlocksMainSignal("SELL", {
+    dataReady: false, signal: "WAIT", direction: null
+  }, { status: "OF1_DATA_UNAVAILABLE", confirmed: false }), false);
+});
+
+test("OF1 still vetoes an explicit directional conflict or breached invalidation", () => {
+  const { orderFlowBlocksMainSignal } = require("../server/ai-trader-engine");
+  assert.equal(orderFlowBlocksMainSignal("BUY", {
+    dataReady: true, direction: "SELL", fib: { invalidated: false }
+  }, { status: "DIRECTION_MISMATCH", confirmed: false }), true);
+  assert.equal(orderFlowBlocksMainSignal("BUY", {
+    dataReady: true, direction: "BUY", fib: { invalidated: true }
+  }, { status: "OF1_WAIT", confirmed: false }), true);
+});
