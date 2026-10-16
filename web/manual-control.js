@@ -118,11 +118,20 @@
           ? positionData.positions : [];
       } catch (_) { latestPositions = []; }
       multiSymbolGrid.replaceChildren();
-      const marketsBySymbol = new Map(markets.map(item => [canonical(item.symbol || item.canonicalName || item.symbolName), item]));
+      const marketsBySymbol = new Map();
+      for (const item of markets) {
+        for (const alias of [item.symbol, item.canonicalName, item.symbolName]) {
+          const key = canonical(alias);
+          if (key) marketsBySymbol.set(key, item);
+        }
+      }
       // Keep all configured markets visible even if the API temporarily returns a scoped subset.
-      // Missing broker discovery is explicit and disables that market control rather than hiding the card.
+      // Broker discovery comes from cTrader's symbol list, not from whether a scanner row arrived.
       const displayMarkets = supportedSymbols.map(symbol => marketsBySymbol.get(symbol) || {
-        symbol, ready:false, notDiscovered:true, reason:"SYMBOL_NOT_FOUND", candleCount:0
+        symbol, ready:false,
+        notDiscovered:!Array.from(symbolSelect.options).some(option => option.value === symbol),
+        reason:Array.from(symbolSelect.options).some(option => option.value === symbol) ? "QUOTE_UNAVAILABLE" : "SYMBOL_NOT_FOUND",
+        candleCount:0
       });
       for (const market of displayMarkets) {
         const symbol = canonical(market.symbol || market.canonicalName || market.symbolName || "UNKNOWN");
