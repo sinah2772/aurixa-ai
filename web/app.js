@@ -1239,14 +1239,14 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }
     if (autoTrades && autoTrades.ok !== false) {
       renderClosedTradeHistory(autoTrades);
-      updatePerformance(autoTrades, performance);
     } else {
       text("closedTradeHistorySummary", "HISTORY UNAVAILABLE");
       const tradeBody = $("closedTradeHistory");
       if (tradeBody) tradeBody.innerHTML = '<div class="empty">Closed-trade history API unavailable. No result is being assumed.</div>';
-      for (const id of ["performanceWinRate", "performanceWins", "performanceLosses", "performanceFlat", "performancePnl"]) text(id, "—");
-      text("performanceSample", "Performance data unavailable; retrying the backend.");
     }
+    // Performance is a separate live endpoint. Do not erase a successful
+    // performance response merely because the detailed history endpoint failed.
+    updatePerformance(autoTrades || {}, performance);
 
     const aiSignal = String(first(liveAi.signal, liveAi.direction, "WAIT")).toUpperCase();
     const blocked = Array.isArray(liveAi.blockedBy) ? liveAi.blockedBy : [];
