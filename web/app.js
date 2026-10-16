@@ -19,7 +19,7 @@
     ctrader: "/api/ctrader/status",
     autoStatus: "/api/auto-trader/status",
     autoPositions: "/api/auto-trader/positions",
-    autoTrades: "/api/auto-trader/trades?limit=100",
+    autoTrades: "/api/auto-trader/trades?limit=500",
     account: "/api/auto-trader/account",
     aiDecision: "/api/ai/decision",
     aiHistory: "/api/ai/decision/history",
@@ -1065,7 +1065,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       ? dedicatedClosed
       : trades.filter(t => String(t?.status || "").trim().toUpperCase().startsWith("CLOSED") || Boolean(t?.closedAt));
     if (!closed.length) {
-      if (summary) summary.textContent = "0 CLOSED TRADES";
+      if (summary) summary.textContent = Number(data?.closedTradeCount || 0) + " CLOSED TRADES · HISTORY LOADED";
       body.innerHTML = '<div class="empty">No closed trades yet.</div>';
       return;
     }
@@ -1081,7 +1081,9 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     if (summary) {
       const netLabel = realizedValues.length ? " · NET " + (netPnl > 0 ? "+" : "") + number(netPnl, 2) : "";
       const pendingLabel = pendingPnl ? " · " + pendingPnl + " P/L PENDING" : "";
-      summary.textContent = closed.length + " CLOSED TRADES" + netLabel + pendingLabel;
+      const total = Math.max(closed.length, Number(data?.closedTradeCount || 0));
+      const countLabel = total > closed.length ? closed.length + " SHOWN / " + total + " TOTAL CLOSED TRADES" : total + " CLOSED TRADES";
+      summary.textContent = countLabel + netLabel + pendingLabel;
     }
 
     const cell = value => '<td>' + escapeHTML(value == null || value === "" ? "—" : String(value)) + '</td>';
