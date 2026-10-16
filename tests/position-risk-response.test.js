@@ -37,10 +37,11 @@ test("a rejected or unconfirmed close is never treated as broker-confirmed", () 
 });
 
 test("missing and directionally invalid protection is detected", () => {
-  assert.equal(risk.hasValidProtection({ stopLoss: 2000, takeProfit: 2020 }), true);
+  assert.equal(risk.hasValidProtection({ stopLoss: 2000, takeProfit: 2020 }), false, "presence alone is not proof without direction, entry, and live price");
   assert.equal(risk.hasValidProtection({ stopLoss: null, takeProfit: 2020 }), false);
   assert.equal(risk.hasValidProtection({ stopLoss: 1990, takeProfit: "" }), false);
-  assert.equal(risk.hasValidProtection({ tradeData: { stopLoss: 1990, takeProfit: 2020 } }), true);
+  assert.equal(risk.hasValidProtection({ tradeData: { stopLoss: 1990, takeProfit: 2020 } }), false, "unknown side and missing prices fail closed");
+  assert.equal(risk.hasValidProtection({ price: 2000, tradeData: { tradeSide: 1, stopLoss: 1990, takeProfit: 2020 } }), false, "missing live price cannot verify stop placement");
   assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2010, tradeData: { tradeSide: 1, stopLoss: 2005, takeProfit: 2020 } }), true);
   assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2010, tradeData: { tradeSide: 1, stopLoss: 2010, takeProfit: 2020 } }), false);
   assert.equal(risk.hasValidProtection({ price: 2000, currentPrice: 2020, tradeData: { tradeSide: 1, stopLoss: 2010, takeProfit: 2020 } }), true, "profitable BUY trailing stop above entry remains valid while below market");
