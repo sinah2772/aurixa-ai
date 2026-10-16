@@ -6,6 +6,7 @@
  */
 
 const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile } = require("./symbol-support");
+const orderFlowOF1 = require("./chris-creamer-orderflow");
 
 const MIN_BARS = 50;
 const MIN_CONFIDENCE = Math.max(55, Math.min(90, Number(process.env.AI_MIN_CONFIDENCE || 65)));
@@ -81,12 +82,24 @@ function decide(candles,quote={}){
   const qualityTrade=side!=="WAIT"&&passedLogic>=5&&(trendUp||trendDown);
   const lastUpdate=quote.lastUpdate?Date.parse(quote.lastUpdate):NaN,quoteFresh=Number.isFinite(lastUpdate)&&Date.now()-lastUpdate<=30000;
   const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=maxSpread,volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
-  const blockedBy=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k),signal=side!=="WAIT"&&blockedBy.length===0?side:"WAIT";
+  const blockedBy=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k);
+  let signal=side!=="WAIT"&&blockedBy.length===0?side:"WAIT";
+  let orderFlowConfirmation=null;
+  gates.orderFlowOF1Confirmed=null;
+  if(signal!=="WAIT"){
+    orderFlowConfirmation=orderFlowOF1.analyze(clean);
+    const confirmed=orderFlowConfirmation?.dataReady===true&&orderFlowConfirmation?.signal===signal;
+    gates.orderFlowOF1Confirmed=confirmed;
+    if(!confirmed){
+      blockedBy.push("orderFlowOF1Confirmed");
+      signal="WAIT";
+    }
+  }
   return {engine:"AURIXA_AI_TRADER_V1",version:"1.4.0",symbol,timeframe:"M5",priceDigits:digits,atrProfile:{min:minAtr,max:maxAtr,maxSpread},signal,confidence,price:roundPrice(last),entry,stopLoss:stop,takeProfit:target,
     slArea:side==="BUY"
       ? {type:"SUPPORT",low:Number(swingLow.toFixed(2)),high:Number((swingLow+slBuffer).toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
       : side==="SELL"
         ? {type:"RESISTANCE",low:Number((swingHigh-slBuffer).toFixed(2)),high:Number(swingHigh.toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
-        : null,rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
+        : null,rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
 module.exports={decide,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
