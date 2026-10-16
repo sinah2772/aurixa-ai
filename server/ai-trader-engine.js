@@ -62,7 +62,11 @@ function confirmOrderFlowDirection(mainSignal, confirmation) {
   const passed = evidence.filter(([, ok]) => ok).map(([name]) => name);
   const invalidated = confirmation.fib?.invalidated === true;
   const hasTrigger = checks.liquiditySweep === true || checks.displacement === true;
-  const confirmed = !invalidated && hasTrigger && passed.length >= 2;
+  if (invalidated) {
+    return { status: "OF1_INVALIDATED", confirmed: false, direction, evidenceCount: passed.length,
+      evidence: passed, reason: "OF1 retracement invalidation level was breached" };
+  }
+  const confirmed = hasTrigger && passed.length >= 2;
   return {
     status: confirmed ? "CONFIRMED" : "OF1_WAIT",
     confirmed,
@@ -71,9 +75,7 @@ function confirmOrderFlowDirection(mainSignal, confirmation) {
     evidence: passed,
     reason: confirmed
       ? `OF1 direction agrees; ${passed.length}/5 structural checks passed (${passed.join(", ")}); full OF1 entry signal: ${confirmation.signal || "WAIT"}`
-      : invalidated
-        ? "OF1 retracement invalidation level was breached"
-        : !hasTrigger
+      : !hasTrigger
           ? "OF1 needs a liquidity sweep or directional displacement"
           : `OF1 structural confirmation is incomplete: ${passed.length}/5 checks passed; need at least 2`
   };
@@ -139,14 +141,19 @@ function decide(candles,quote={}){
   const of1Decision=confirmOrderFlowDirection(mainSignal,orderFlowConfirmation);
   const orderFlowConfirmed=of1Decision.confirmed;
   const confirmationStatus=of1Decision.status;
-  gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:orderFlowConfirmed;
+  // OF1 is a conflict/invalidation guard, not a second full entry strategy.
+  // Missing or incomplete OF1 evidence must not veto an otherwise-qualified V1 signal.
+  // Explicit opposing OF1 direction or invalidated structure still blocks the entry.
+  const orderFlowBlocks = of1Decision.status === "DIRECTION_MISMATCH" ||
+    of1Decision.status === "OF1_INVALIDATED";
+  gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:!orderFlowBlocks;
   let signal=mainSignal!=="WAIT"&&mainGatesPassed?mainSignal:"WAIT";
-  if(signal!=="WAIT"&&!orderFlowConfirmed){
+  if(signal!=="WAIT"&&orderFlowBlocks){
     blockedBy.push("orderFlowOF1Confirmed");
     signal="WAIT";
   }
   const signalConfirmation={
-    mode:"main_strategy_with_of1_confirmation",
+    mode:"main_strategy_with_of1_conflict_guard",
     primaryEngine:"AURIXA_AI_TRADER_V1",
     confirmationEngine:orderFlowConfirmation?.strategy||"AURIXA_OF1",
     mainSignal,
