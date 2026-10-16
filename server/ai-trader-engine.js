@@ -62,7 +62,11 @@ function confirmOrderFlowDirection(mainSignal, confirmation) {
   const passed = evidence.filter(([, ok]) => ok).map(([name]) => name);
   const invalidated = confirmation.fib?.invalidated === true;
   const hasTrigger = checks.liquiditySweep === true || checks.displacement === true;
-  const confirmed = !invalidated && hasTrigger && passed.length >= 2;
+  if (invalidated) {
+    return { status: "OF1_INVALIDATED", confirmed: false, direction, evidenceCount: passed.length,
+      evidence: passed, reason: "OF1 retracement invalidation level was breached" };
+  }
+  const confirmed = hasTrigger && passed.length >= 2;
   return {
     status: confirmed ? "CONFIRMED" : "OF1_WAIT",
     confirmed,
@@ -71,12 +75,14 @@ function confirmOrderFlowDirection(mainSignal, confirmation) {
     evidence: passed,
     reason: confirmed
       ? `OF1 direction agrees; ${passed.length}/5 structural checks passed (${passed.join(", ")}); full OF1 entry signal: ${confirmation.signal || "WAIT"}`
-      : invalidated
-        ? "OF1 retracement invalidation level was breached"
-        : !hasTrigger
+      : !hasTrigger
           ? "OF1 needs a liquidity sweep or directional displacement"
           : `OF1 structural confirmation is incomplete: ${passed.length}/5 checks passed; need at least 2`
   };
+}
+
+function shouldBlockOnOF1(status) {
+  return status === "DIRECTION_MISMATCH" || status === "OF1_INVALIDATED";
 }
 
 function decide(candles,quote={}){
@@ -139,14 +145,18 @@ function decide(candles,quote={}){
   const of1Decision=confirmOrderFlowDirection(mainSignal,orderFlowConfirmation);
   const orderFlowConfirmed=of1Decision.confirmed;
   const confirmationStatus=of1Decision.status;
-  gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:orderFlowConfirmed;
+  // OF1 is a conflict/invalidation guard, not a second full entry strategy.
+  // Missing or incomplete OF1 evidence must not veto an otherwise-qualified V1 signal.
+  // Explicit opposing OF1 direction or invalidated structure still blocks the entry.
+  const orderFlowBlocks = shouldBlockOnOF1(of1Decision.status);
+  gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:!orderFlowBlocks;
   let signal=mainSignal!=="WAIT"&&mainGatesPassed?mainSignal:"WAIT";
-  if(signal!=="WAIT"&&!orderFlowConfirmed){
+  if(signal!=="WAIT"&&orderFlowBlocks){
     blockedBy.push("orderFlowOF1Confirmed");
     signal="WAIT";
   }
   const signalConfirmation={
-    mode:"main_strategy_with_of1_confirmation",
+    mode:"main_strategy_with_of1_conflict_guard",
     primaryEngine:"AURIXA_AI_TRADER_V1",
     confirmationEngine:orderFlowConfirmation?.strategy||"AURIXA_OF1",
     mainSignal,
@@ -168,4 +178,4 @@ function decide(candles,quote={}){
         ? {type:"RESISTANCE",low:Number((swingHigh-slBuffer).toFixed(2)),high:Number(swingHigh.toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
         : null,rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
-module.exports={decide,confirmOrderFlowDirection,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
+module.exports={decide,confirmOrderFlowDirection,shouldBlockOnOF1,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
