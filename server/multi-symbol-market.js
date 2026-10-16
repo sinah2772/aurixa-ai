@@ -14,11 +14,14 @@ function timestampMs(value) {
   return Number.isFinite(parsed) ? parsed : Date.now();
 }
 function quoteFresh(market, now = Date.now()) {
-  // cTrader sends partial spot updates: an omitted side means unchanged, not
-  // necessarily stale. Freshness follows the last event that changed a valid
-  // side, while events containing neither side must not refresh the quote.
-  const last = Date.parse(market?.lastUpdate || "");
-  return Number.isFinite(last) && now - last >= 0 && now - last <= QUOTE_MAX_AGE_MS;
+  // A partial spot event refreshes only the side actually received. Keep the
+  // market stale until BOTH sides have recent broker timestamps; otherwise a
+  // fresh bid could mask an old ask (or vice versa) and produce a bad spread.
+  const bidAt = Number(market?.bidUpdatedAt);
+  const askAt = Number(market?.askUpdatedAt);
+  const freshSide = at => Number.isFinite(at) && at > 0 &&
+    now - at >= 0 && now - at <= QUOTE_MAX_AGE_MS;
+  return freshSide(bidAt) && freshSide(askAt);
 }
 
 function registerSymbols(symbols) {
