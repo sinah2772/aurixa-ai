@@ -1018,10 +1018,21 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     const evaluated=wins+losses+flat;
     const pending=closed.length-evaluated;
     const winRate=evaluated?wins/evaluated*100:null;
+    const totalClosed = Number.isFinite(Number(trades?.closedTradeCount))
+      ? Math.max(0, Number(trades.closedTradeCount))
+      : closed.length;
+    const shownClosed = closed.length;
+    const notLoaded = Math.max(0, totalClosed - shownClosed);
+    const refreshedAt = new Date().toLocaleTimeString();
     text("performanceWins", wins); text("performanceLosses", losses); text("performanceFlat", flat);
     text("performanceWinRate", winRate===null?"—":number(winRate,1)+"%");
     text("performancePnl", evaluated ? ((pnl>0?"+":"")+number(pnl,2)) : "—");
-    text("performanceSample", "LAST " + rows.length + " TRADES · " + evaluated + " WITH RECORDED P/L · " + pending + " P/L PENDING");
+    const scope = notLoaded > 0
+      ? "LATEST " + shownClosed + " OF " + totalClosed + " CLOSED"
+      : shownClosed + " CLOSED TRADES";
+    const pendingLabel = pending + " P/L PENDING IN LOADED SAMPLE";
+    const coverageLabel = notLoaded > 0 ? " · " + notLoaded + " CLOSED NOT LOADED" : "";
+    text("performanceSample", scope + " · " + evaluated + " WITH RECORDED P/L · " + pendingLabel + coverageLabel + " · UPDATED " + refreshedAt);
   }
 
   async function openFinishedTradeInvestigation(tradeId) {
