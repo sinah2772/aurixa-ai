@@ -977,7 +977,21 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     text("accountCurrency", currencyLabel);
     const floatingPnl = accountNumber(a.unrealizedNetProfit);
     text("accountUnrealizedPnl", floatingPnl === null ? "—" : (floatingPnl > 0 ? "+" : "") + number(floatingPnl, 2));
-    text("accountMarginStatus", first(a.marginStatus, "MARGIN DATA UNAVAILABLE"));
+    const marginStatus = String(first(a.marginStatus, "UNAVAILABLE")).toUpperCase();
+    const equitySource = String(first(a.equitySource, "UNAVAILABLE")).toUpperCase();
+    const marginLabel = marginStatus === "BROKER_CONFIRMED"
+      ? "Margin values confirmed by cTrader"
+      : marginStatus === "CALCULATED_FROM_BROKER_SNAPSHOT"
+        ? "Used margin from cTrader positions · free margin calculated from equity minus used margin"
+        : marginStatus === "PARTIAL"
+          ? "Partial margin data · some broker fields unavailable"
+          : "Margin data unavailable from cTrader";
+    const equityLabel = equitySource === "BROKER_ACCOUNT_FIELD"
+      ? "Equity supplied by cTrader"
+      : equitySource === "BALANCE_PLUS_BROKER_NET_PNL"
+        ? "Equity calculated as balance plus cTrader net floating P&L"
+        : "Equity unavailable";
+    text("accountMarginStatus", equityLabel + " · " + marginLabel);
     text("accountBroker", first(a.brokerTitleShort, ctrader?.account?.brokerTitleShort, "—"));
     text("accountLogin", first(a.traderLogin, ctrader?.account?.traderLogin, "—"));
     text("accountEnvironment", a.isLive === false || ctrader?.account?.isLive === false ? "DEMO" : a.isLive === true || ctrader?.account?.isLive === true ? "LIVE BLOCKED" : "UNKNOWN");
