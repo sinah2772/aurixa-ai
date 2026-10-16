@@ -2294,7 +2294,7 @@ async function getXAUUSDVolumeConstraints(symbolName = state.symbolName) {
   };
 }
 
-async function modifyPositionProtection(positionId, stopLoss, takeProfit = null, symbolName = state.symbolName) {
+async function modifyPositionProtection(positionId, stopLoss, takeProfit = null, symbolName = state.symbolName, options = {}) {
   if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
   if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
   if (state.account?.isLive !== false) throw new Error("DEMO ACCOUNT REQUIRED");
@@ -2306,7 +2306,8 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null,
   const requestedTP = takeProfit == null ? null : Number(takeProfit);
 
   if (!Number.isFinite(pid) || pid <= 0) throw new Error("Invalid position ID");
-  if (!Number.isFinite(requestedSL) && !Number.isFinite(requestedTP)) {
+  const requestedTrailing = typeof options?.trailingStopLoss === "boolean" ? options.trailingStopLoss : null;
+  if (!Number.isFinite(requestedSL) && !Number.isFinite(requestedTP) && requestedTrailing === null) {
     throw new Error("At least one protection value is required");
   }
 
@@ -2363,6 +2364,7 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null,
   };
   if (Number.isFinite(normalizedSL)) payload.stopLoss = normalizedSL;
   if (Number.isFinite(normalizedTP)) payload.takeProfit = normalizedTP;
+  if (requestedTrailing !== null) payload.trailingStopLoss = requestedTrailing;
 
   const matchesBrokerProtection = (position) => {
     if (!position) return false;
@@ -2373,7 +2375,8 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null,
       (Number.isFinite(actualSL) && Math.abs(actualSL - normalizedSL) < 0.00001);
     const tpOk = !Number.isFinite(normalizedTP) ||
       (Number.isFinite(actualTP) && Math.abs(actualTP - normalizedTP) < 0.00001);
-    return slOk && tpOk;
+    const trailingOk = requestedTrailing === null || (position.trailingStopLoss ?? td.trailingStopLoss) === requestedTrailing;
+    return slOk && tpOk && trailingOk;
   };
 
   let lastError = null;
@@ -2435,6 +2438,7 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null,
           positionId: pid,
           stopLoss: Number.isFinite(Number(position.stopLoss ?? td.stopLoss)) ? Number(position.stopLoss ?? td.stopLoss) : null,
           takeProfit: Number.isFinite(Number(position.takeProfit ?? td.takeProfit)) ? Number(position.takeProfit ?? td.takeProfit) : null,
+          trailingStopLoss: (position.trailingStopLoss ?? td.trailingStopLoss) === true,
           attempt: "pre-check"
         };
       }
@@ -2448,6 +2452,7 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null,
         positionId: pid,
         stopLoss: normalizedSL,
         takeProfit: normalizedTP,
+        trailingStopLoss: requestedTrailing,
         attempt,
         clientMsgId,
         payloadType: 2110
@@ -2478,6 +2483,7 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null,
             positionId: pid,
             stopLoss: Number.isFinite(actualSL) ? actualSL : null,
             takeProfit: Number.isFinite(actualTP) ? actualTP : null,
+            trailingStopLoss: (position.trailingStopLoss ?? position.tradeData?.trailingStopLoss) === true,
             attempt,
             check
           }));
@@ -2488,6 +2494,7 @@ async function modifyPositionProtection(positionId, stopLoss, takeProfit = null,
             positionId: pid,
             stopLoss: Number.isFinite(actualSL) ? actualSL : null,
             takeProfit: Number.isFinite(actualTP) ? actualTP : null,
+            trailingStopLoss: (position.trailingStopLoss ?? position.tradeData?.trailingStopLoss) === true,
             attempt
           };
         }
