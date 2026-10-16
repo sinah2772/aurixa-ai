@@ -507,7 +507,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     ? "PROTECTION_FAILURE_EMERGENCY_CLOSE"
     : (brokerPositionVerified?null:
       (["OPEN","PARTIAL"].includes(result.status)?"BROKER_POSITION_NOT_VERIFIED":"CTRADER_ORDER_NOT_FILLED"));
-  if(!brokerPositionVerified){
+  if(!brokerPositionVerified && !(result.status==="CLOSED" && result.closeBrokerConfirmed===true)){
     console.error("AURIXA_EXECUTION_REQUIRES_RECONCILIATION:",JSON.stringify({
       reservationId,strategySignalKey:key,symbol:decisionSymbol,
       orderId:result.orderId||null,positionId:result.positionId||null,
