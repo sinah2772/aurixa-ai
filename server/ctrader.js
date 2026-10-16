@@ -2149,6 +2149,7 @@ async function getAccountBalance() {
 
   let unrealizedNetProfit = null;
   let equity = readMoney(trader.equity);
+  let equitySource = equity === null ? "UNAVAILABLE" : "BROKER_ACCOUNT_FIELD";
   let pnlStatus = "UNAVAILABLE";
   try {
     const pnl = await getPositionUnrealizedPnL();
@@ -2156,7 +2157,10 @@ async function getAccountBalance() {
       unrealizedNetProfit = pnl.rows.reduce((sum, row) => sum + row.netUnrealizedPnL, 0);
       // The P&L response is account-wide and includes all currently open positions.
       // Use broker-calculated net P&L; never estimate it from price × volume.
-      if (equity === null) equity = balance + unrealizedNetProfit;
+      if (equity === null) {
+        equity = balance + unrealizedNetProfit;
+        equitySource = "BALANCE_PLUS_BROKER_NET_PNL";
+      }
       pnlStatus = "BROKER_CONFIRMED";
     }
   } catch (err) {
@@ -2201,6 +2205,7 @@ async function getAccountBalance() {
   return {
     balance,
     equity: Number.isFinite(equity) ? equity : null,
+    equitySource,
     usedMargin: Number.isFinite(usedMargin) ? usedMargin : null,
     freeMargin: Number.isFinite(freeMargin) ? freeMargin : null,
     unrealizedNetProfit: Number.isFinite(unrealizedNetProfit) ? unrealizedNetProfit : null,
