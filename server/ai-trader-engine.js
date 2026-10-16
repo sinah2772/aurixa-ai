@@ -79,6 +79,15 @@ function confirmOrderFlowDirection(mainSignal, confirmation) {
   };
 }
 
+function orderFlowBlocksMainSignal(mainSignal, confirmation, decision) {
+  if (mainSignal !== "BUY" && mainSignal !== "SELL") return false;
+  // OF1 is an advisory confirmation layer, not a second standalone entry strategy.
+  // V1 already passed its own data, trend, quality, confidence, spread and R:R gates.
+  // Only an explicit opposing OF1 direction or breached OF1 invalidation level vetoes it.
+  return decision?.status === "DIRECTION_MISMATCH" ||
+    confirmation?.fib?.invalidated === true;
+}
+
 function decide(candles,quote={}){
   const symbol=normalizeSymbolName(quote.symbolName||quote.symbol||"XAUUSD");
   const profile=getSymbolProfile(symbol);
@@ -139,10 +148,15 @@ function decide(candles,quote={}){
   const of1Decision=confirmOrderFlowDirection(mainSignal,orderFlowConfirmation);
   const orderFlowConfirmed=of1Decision.confirmed;
   const confirmationStatus=of1Decision.status;
-  gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:orderFlowConfirmed;
+  const orderFlowVeto=orderFlowBlocksMainSignal(mainSignal,orderFlowConfirmation,of1Decision);
+  // Keep the existing dashboard gate aligned with execution eligibility: OF1
+  // may report WAIT as a soft confirmation, but only a conflict/invalidation vetoes V1.
+  gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:!orderFlowVeto;
   let signal=mainSignal!=="WAIT"&&mainGatesPassed?mainSignal:"WAIT";
-  if(signal!=="WAIT"&&!orderFlowConfirmed){
-    blockedBy.push("orderFlowOF1Confirmed");
+  if(signal!=="WAIT"&&orderFlowVeto){
+    blockedBy.push(orderFlowConfirmation?.fib?.invalidated===true
+      ? "orderFlowInvalidationBreached"
+      : "orderFlowDirectionConflict");
     signal="WAIT";
   }
   const signalConfirmation={
@@ -168,4 +182,4 @@ function decide(candles,quote={}){
         ? {type:"RESISTANCE",low:Number((swingHigh-slBuffer).toFixed(2)),high:Number(swingHigh.toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
         : null,rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
-module.exports={decide,confirmOrderFlowDirection,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
+module.exports={decide,confirmOrderFlowDirection,orderFlowBlocksMainSignal,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
