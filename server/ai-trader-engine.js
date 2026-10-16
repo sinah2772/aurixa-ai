@@ -32,6 +32,53 @@ function rsi(v,p=14){
 }
 function wait(reason,extra={},symbol="XAUUSD"){return {engine:"AURIXA_AI_TRADER_V1",version:"1.4.0",symbol,timeframe:"M5",signal:"WAIT",confidence:0,executionEligible:false,blockedBy:[reason],reasons:[reason],...extra,generatedAt:new Date().toISOString()};}
 
+// OF1's standalone entry signal requires every rare setup condition to pass.
+// For confirmation of an already-qualified V1 signal, use OF1's directional
+// context plus multiple independent structural checks. Never override V1.
+function confirmOrderFlowDirection(mainSignal, confirmation) {
+  if (mainSignal !== "BUY" && mainSignal !== "SELL") {
+    return { status: "MAIN_STRATEGY_WAIT", confirmed: false, direction: null, evidenceCount: 0,
+      reason: "Main strategy did not produce a directional signal" };
+  }
+  if (!confirmation || confirmation.dataReady !== true) {
+    return { status: "OF1_DATA_UNAVAILABLE", confirmed: false, direction: null, evidenceCount: 0,
+      reason: confirmation?.reason || "OF1 data is not ready" };
+  }
+  const direction = confirmation.direction ||
+    confirmation.environment?.direction ||
+    (confirmation.signal === "BUY" || confirmation.signal === "SELL" ? confirmation.signal : null);
+  if (direction !== mainSignal) {
+    return { status: direction ? "DIRECTION_MISMATCH" : "OF1_WAIT", confirmed: false, direction,
+      evidenceCount: 0, reason: direction ? "OF1 directional bias differs from the main strategy" : "OF1 has no directional bias" };
+  }
+  const checks = confirmation.confirmation || {};
+  const evidence = [
+    ["retracementZone", confirmation.fib?.inZone === true],
+    ["outsideValueArea", checks.outsideValue === true],
+    ["liquiditySweep", checks.liquiditySweep === true],
+    ["displacement", checks.displacement === true],
+    ["participation", checks.participation === true]
+  ];
+  const passed = evidence.filter(([, ok]) => ok).map(([name]) => name);
+  const invalidated = confirmation.fib?.invalidated === true;
+  const hasTrigger = checks.liquiditySweep === true || checks.displacement === true;
+  const confirmed = !invalidated && hasTrigger && passed.length >= 2;
+  return {
+    status: confirmed ? "CONFIRMED" : "OF1_WAIT",
+    confirmed,
+    direction,
+    evidenceCount: passed.length,
+    evidence: passed,
+    reason: confirmed
+      ? `OF1 direction agrees; ${passed.length}/5 structural checks passed (${passed.join(", ")}); full OF1 entry signal: ${confirmation.signal || "WAIT"}`
+      : invalidated
+        ? "OF1 retracement invalidation level was breached"
+        : !hasTrigger
+          ? "OF1 needs a liquidity sweep or directional displacement"
+          : `OF1 structural confirmation is incomplete: ${passed.length}/5 checks passed; need at least 2`
+  };
+}
+
 function decide(candles,quote={}){
   const symbol=normalizeSymbolName(quote.symbolName||quote.symbol||"XAUUSD");
   const profile=getSymbolProfile(symbol);
@@ -89,18 +136,9 @@ function decide(candles,quote={}){
   const mainSignal=side;
   const mainGatesPassed=blockedBy.length===0;
   const orderFlowConfirmation=orderFlowOF1.analyze(clean,{symbol,timeframe:"M5"});
-  const orderFlowConfirmed=mainSignal!=="WAIT" &&
-    orderFlowConfirmation?.dataReady===true &&
-    orderFlowConfirmation?.signal===mainSignal;
-  const confirmationStatus=mainSignal==="WAIT"
-    ? "MAIN_STRATEGY_WAIT"
-    : orderFlowConfirmation?.dataReady!==true
-      ? "OF1_DATA_UNAVAILABLE"
-      : orderFlowConfirmation.signal===mainSignal
-        ? "CONFIRMED"
-        : orderFlowConfirmation.signal==="WAIT"
-          ? "OF1_WAIT"
-          : "DIRECTION_MISMATCH";
+  const of1Decision=confirmOrderFlowDirection(mainSignal,orderFlowConfirmation);
+  const orderFlowConfirmed=of1Decision.confirmed;
+  const confirmationStatus=of1Decision.status;
   gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:orderFlowConfirmed;
   let signal=mainSignal!=="WAIT"&&mainGatesPassed?mainSignal:"WAIT";
   if(signal!=="WAIT"&&!orderFlowConfirmed){
@@ -112,19 +150,14 @@ function decide(candles,quote={}){
     primaryEngine:"AURIXA_AI_TRADER_V1",
     confirmationEngine:orderFlowConfirmation?.strategy||"AURIXA_OF1",
     mainSignal,
-    confirmationSignal:orderFlowConfirmation?.signal||"WAIT",
+    confirmationSignal:of1Decision.direction||orderFlowConfirmation?.signal||"WAIT",
     status:confirmationStatus,
     confirmed:orderFlowConfirmed,
+    evidenceCount:of1Decision.evidenceCount,
+    evidence:of1Decision.evidence||[],
     applied:mainSignal!=="WAIT"&&mainGatesPassed,
-    reason:confirmationStatus==="CONFIRMED"
-      ? "OF1 agrees with the main strategy"
-      : confirmationStatus==="MAIN_STRATEGY_WAIT"
-        ? "Main strategy did not produce a directional signal"
-        : confirmationStatus==="OF1_DATA_UNAVAILABLE"
-          ? orderFlowConfirmation?.reason||"OF1 data is not ready"
-          : confirmationStatus==="OF1_WAIT"
-            ? (orderFlowConfirmation?.failures||[]).join("; ")||orderFlowConfirmation?.reason||"OF1 did not confirm"
-            : "OF1 direction differs from the main strategy",
+    reason:of1Decision.reason,
+    fullOF1Signal:orderFlowConfirmation?.signal||"WAIT",
     trueFootprint:orderFlowConfirmation?.trueFootprint===true,
     gex:orderFlowConfirmation?.gex===true
   };
@@ -135,4 +168,4 @@ function decide(candles,quote={}){
         ? {type:"RESISTANCE",low:Number((swingHigh-slBuffer).toFixed(2)),high:Number(swingHigh.toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
         : null,rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
-module.exports={decide,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
+module.exports={decide,confirmOrderFlowDirection,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
