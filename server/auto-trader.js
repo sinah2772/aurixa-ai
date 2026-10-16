@@ -661,7 +661,7 @@ async function syncOpenPositions(symbolName=null){
                   await dbQuery(
                     `UPDATE aurixa.auto_trades
                      SET status='CLOSED',closed_at=COALESCE(closed_at,NOW()),
-                         close_price=COALESCE($2,close_price),
+                         close_price=COALESCE($2,close_price),profit=NULL,
                          exit_reason='AI_DIRECTION_REVERSAL',gate_reason='BROKER_CLOSE_CONFIRMED',
                          error=NULL,updated_at=NOW()
                      WHERE id=$1 AND status IN ('OPEN','PARTIAL')`,
