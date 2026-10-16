@@ -22,11 +22,15 @@ test("comparison requires explicit non-negative costs", () => {
 });
 
 test("comparison replays both strategies on same chronological candles without live execution", () => {
-  const result = compareStrategies({ symbol: "XAUUSD", candles: sampleCandles(), costs });
+  const result = compareStrategies({ symbol: "XAUUSD", candles: sampleCandles(240), costs });
   assert.equal(result.ok, true);
   assert.equal(result.mode, "offline_comparison_only");
   assert.equal(result.liveTradingChanged, false);
-  assert.equal(result.candles, 180);
+  assert.equal(result.candles, 240);
+  assert.equal(result.evaluationSplit.method, "chronological_70_30");
+  assert.ok(result.inSampleResults);
+  assert.ok(result.outOfSampleResults);
+  assert.equal(result.evaluationSplit.deploymentRecommendation, "DO_NOT_SWITCH_FROM_THIS_REPORT_ALONE");
   assert.ok(result.results.v1);
   assert.ok(result.results.trendPullback);
   assert.ok(Number.isFinite(result.comparison.netRDelta));
@@ -42,10 +46,10 @@ test("comparison replays both strategies on same chronological candles without l
 
 test("comparison rejects invalid, unordered, and short datasets", () => {
   assert.throws(() => compareStrategies({ candles: sampleCandles(99), costs }), /At least 100/);
-  const invalid = sampleCandles();
+  const invalid = sampleCandles(240);
   invalid[20].high = invalid[20].low - 1;
   assert.throws(() => compareStrategies({ candles: invalid, costs }), /valid and chronological/);
-  const unordered = sampleCandles();
+  const unordered = sampleCandles(240);
   unordered[50].time = unordered[49].time;
   assert.throws(() => compareStrategies({ candles: unordered, costs }), /valid and chronological/);
 });

@@ -30,6 +30,8 @@ npm run compare:strategies -- ./your-m5-data.json
 
 The JSON report contains both strategies' trade lists and comparable metrics: trade count, win rate, net R, expectancy, profit factor and maximum drawdown in R. Both strategies use the same supplied cost assumptions. The simulator enters no earlier than the next candle open, calculates R using the actual simulated fill-to-stop distance, and counts setups invalidated by a gap through the planned stop/target separately. If stop and target both occur inside one candle, it assumes the stop was hit first.
 
+For at least 200 candles, the report also produces a chronological 70/30 split: in-sample results use the first 70% for entries/exits, and out-of-sample results start at the 70% boundary while using only earlier candles for indicator warm-up. The report flags holdouts with fewer than five trades per strategy as insufficient. This is a single holdout screening pass, not a substitute for multiple walk-forward windows or longer history across regimes.
+
 ## Interpretation limits
 
 - This is a screening backtest, not a profitability guarantee.
