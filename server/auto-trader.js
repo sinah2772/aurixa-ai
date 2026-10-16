@@ -8,6 +8,7 @@
 const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMBOLS } = require("./symbol-support");
 const brokerVolume = require("./broker-volume");
 const positionRisk = require("./position-risk-response");
+const openPositionIntelligence = require("./open-position-intelligence");
 
 let cTrader=null, dbQuery=null, aiEngine=null;
 const inFlightSignalKeys = new Set();
@@ -16,6 +17,8 @@ const reversalCloseAttempts = new Map();
 const profitDetectedPositions = new Set();
 const lossWarningPositions = new Set();
 const lastPositionManagementAuditAt = new Map();
+const positionIntelligenceSnapshots = new Map();
+const positionActionInFlight = new Set();
 function logPositionManagementAudit(key, event, payload, intervalMs = 60000) {
   const now = Date.now();
   const last = lastPositionManagementAuditAt.get(key) || 0;
@@ -28,6 +31,11 @@ let closedBackfillSymbolIndex = 0;
 let lastClosedBackfillAt = 0;
 
 function configure({ctrader,query,ai}){cTrader=ctrader;dbQuery=query;aiEngine=ai;}
+
+function getPositionIntelligence(positionId) {
+  const value = positionIntelligenceSnapshots.get(String(positionId));
+  return value ? { ...value } : null;
+}
 
 function isRealizedClosingDeal(deal, positionId) {
   const dealPosition = Number(deal?.positionId);
@@ -639,6 +647,79 @@ async function syncOpenPositions(symbolName=null){
         }
       }
 
+      const quoteTime = liveStatus?.lastUpdate ? Date.parse(liveStatus.lastUpdate) : NaN;
+      const quoteFresh = Number.isFinite(quoteTime) && now - quoteTime >= 0 && now - quoteTime <= 30000;
+      const brokerSLRaw = pos?.stopLoss ?? td?.stopLoss;
+      const brokerTPRaw = pos?.takeProfit ?? td?.takeProfit;
+      const initialRisk = Number(trade?.stop_loss_distance) > 0
+        ? Number(trade.stop_loss_distance)
+        : (Number.isFinite(Number(trade?.planned_entry_price)) && Number.isFinite(Number(trade?.planned_stop_price))
+          ? Math.abs(Number(trade.planned_entry_price) - Number(trade.planned_stop_price)) : NaN);
+      const pnlRaw = pos?.unrealizedNetProfit ?? td?.unrealizedNetProfit ?? pos?.netProfit ?? pos?.profit ?? td?.profit;
+      const intelligence = openPositionIntelligence.evaluatePosition({
+        positionId, symbol: targetSymbol, direction, entry, current, pnl: pnlRaw,
+        stopLoss: brokerSLRaw, takeProfit: brokerTPRaw, initialRisk, quoteFresh,
+        tracked: Boolean(trade), partialTaken: trade?.partial_taken === true,
+        demoAccount: liveStatus?.account?.isLive === false,
+        mainDecision: marketDecision, now
+      });
+      positionIntelligenceSnapshots.set(String(positionId), intelligence);
+      logPositionManagementAudit("position-intelligence:" + String(positionId), "AURIXA_OPEN_POSITION_INTELLIGENCE", intelligence, 60000);
+
+      // Conservative partial reduction is only allowed for a tracked demo
+      // position after at least 0.5R adverse movement and explicit OF1
+      // confirmation of an eligible opposing V1 signal. Verify the broker's
+      // remaining volume before recording the action.
+      if (intelligence.action === "REDUCE" && trade && !positionActionInFlight.has(String(positionId))) {
+        positionActionInFlight.add(String(positionId));
+        try {
+          const rawVolume = pos?.volume ?? td?.volume;
+          const currentVolume = rawVolume == null || rawVolume === "" ? NaN : Number(rawVolume);
+          const rules = await (cTrader.getSymbolVolumeConstraints || cTrader.getActiveSymbolVolumeConstraints || cTrader.getXAUUSDVolumeConstraints)?.(targetSymbol);
+          const minVolume = Number(rules?.minVolume);
+          const reduceVolume = Number.isFinite(currentVolume) && currentVolume > 0 && Number.isFinite(minVolume) && minVolume > 0
+            ? brokerVolume.normalizeVolume(currentVolume * 0.5, rules, currentVolume - minVolume) : 0;
+          if (!Number.isSafeInteger(currentVolume) || !Number.isSafeInteger(reduceVolume) ||
+              reduceVolume < minVolume || reduceVolume >= currentVolume || currentVolume - reduceVolume < minVolume) {
+            throw new Error("BROKER_VOLUME_RULES_DO_NOT_ALLOW_SAFE_PARTIAL_REDUCTION");
+          }
+          const reduceResult = await cTrader.closeXAUUSDPosition(positionId, reduceVolume, targetSymbol, { allowPartial: true });
+          if (reduceResult?.brokerConfirmed !== true || reduceResult?.status !== "PARTIALLY_CLOSED" ||
+              !Number.isFinite(Number(reduceResult.remainingVolume)) || Number(reduceResult.remainingVolume) <= 0) {
+            throw new Error("BROKER_PARTIAL_REDUCTION_NOT_CONFIRMED");
+          }
+          const write = await dbQuery(
+            "UPDATE aurixa.auto_trades SET partial_taken=true,updated_at=NOW() WHERE id=$1 AND status IN ('OPEN','PARTIAL')",
+            [trade.id]
+          );
+          if (Number(write?.rowCount || 0) !== 1) throw new Error("BROKER_REDUCTION_CONFIRMED_BUT_TRADE_AUDIT_NOT_UPDATED");
+          positionIntelligenceSnapshots.set(String(positionId), {
+            ...intelligence, action: "REDUCE", brokerActionStatus: "CONFIRMED",
+            reason: "Reduced exposure after 0.5R adverse move and confirmed OF1 opposing signal",
+            reducedVolume: reduceVolume, remainingVolume: Number(reduceResult.remainingVolume),
+            brokerOrderId: reduceResult.orderId || null, checkedAt: new Date().toISOString()
+          });
+          console.log("AURIXA_POSITION_REDUCTION_CONFIRMED:", JSON.stringify({
+            tradeId: trade.id, positionId, symbol: targetSymbol, reduceVolume,
+            remainingVolume: Number(reduceResult.remainingVolume), brokerConfirmed: true,
+            reason: "ADVERSE_MOVE_AND_OF1_CONFIRMED_OPPOSING_SIGNAL"
+          }));
+          continue;
+        } catch (reduceError) {
+          positionIntelligenceSnapshots.set(String(positionId), {
+            ...intelligence, action: "HOLD", brokerActionStatus: "FAILED",
+            reason: "Partial reduction was not verified; keep existing broker SL active",
+            actionError: reduceError.message, checkedAt: new Date().toISOString()
+          });
+          console.error("AURIXA_POSITION_REDUCTION_UNCONFIRMED:", JSON.stringify({
+            positionId, symbol: targetSymbol, error: reduceError.message,
+            brokerActionStatus: "FAILED"
+          }));
+        } finally {
+          positionActionInFlight.delete(String(positionId));
+        }
+      }
+
       // Exit only AURIXA-tracked positions after a high-confidence, fully
       // eligible opposite signal is stable across consecutive monitor cycles.
       // Manual/untracked positions are never direction-closed automatically.
@@ -689,6 +770,7 @@ async function syncOpenPositions(symbolName=null){
                 }));
               }else{
                 reversalCloseAttempts.set(pidKey,now);
+                positionIntelligenceSnapshots.set(pidKey, { ...intelligence, action: "CLOSE", reason: "Opposing main-strategy signal confirmed across two completed candles", brokerActionStatus: "SUBMITTED", checkedAt: new Date().toISOString() });
                 console.log("AURIXA_REVERSAL_EXIT_SUBMITTED:",JSON.stringify({
                   positionId,positionDirection:direction,oppositeSignal:exitDecision.signal,
                   confidence:exitDecision.confidence,trend:exitDecision.trend,
@@ -716,12 +798,14 @@ async function syncOpenPositions(symbolName=null){
                     closePrice:closeResult.executionPrice??null,
                     brokerConfirmed:true,reason:"AI_DIRECTION_REVERSAL"
                   }));
+                  positionIntelligenceSnapshots.set(pidKey, { ...intelligence, action: "CLOSE", reason: "Position close confirmed by cTrader broker snapshot", brokerActionStatus: "CONFIRMED", brokerOrderId: closeResult.orderId || null, closePrice: closeResult.executionPrice ?? null, checkedAt: new Date().toISOString() });
                   reversalConfirmations.delete(pidKey);
                   reversalCloseAttempts.delete(pidKey);
                   profitDetectedPositions.delete(pidKey);
                   closed++;
                   continue;
                 }catch(closeError){
+                  positionIntelligenceSnapshots.set(pidKey, { ...intelligence, action: "CLOSE", reason: "Close request failed or broker closure could not be verified; existing position remains under monitoring", brokerActionStatus: "UNCONFIRMED", actionError: closeError.message, checkedAt: new Date().toISOString() });
                   console.error("AURIXA_REVERSAL_EXIT_UNCONFIRMED:",JSON.stringify({
                     tradeId:trade.id,positionId,error:closeError.message,
                     retryAfterMs:30000
@@ -786,6 +870,7 @@ async function syncOpenPositions(symbolName=null){
             if (protection?.verified !== true) {
               throw new Error("Broker did not confirm repaired SL/TP");
             }
+            positionIntelligenceSnapshots.set(String(positionId), { ...intelligence, action: "PROTECT", reason: "Stop-loss/take-profit protection repaired and broker-verified", brokerActionStatus: "CONFIRMED", stopLoss: protection.stopLoss ?? repairSL, takeProfit: protection.takeProfit ?? repairTP, checkedAt: new Date().toISOString() });
             console.log("AURIXA_PROTECTION_REPAIRED:",JSON.stringify({
               positionId,direction,entry,
               stopLoss:protection.stopLoss ?? repairSL,
@@ -794,6 +879,7 @@ async function syncOpenPositions(symbolName=null){
             }));
             protectedCount++;
           } catch (e) {
+            positionIntelligenceSnapshots.set(String(positionId), { ...intelligence, action: "PROTECT", reason: "Broker protection repair failed; manual review required", brokerActionStatus: "FAILED", actionError: e.message, checkedAt: new Date().toISOString() });
             console.error("AURIXA_PROTECTION_REPAIR_FAILED:",JSON.stringify({
               positionId,direction,entry,stopLoss:repairSL,takeProfit:repairTP,
               verified:false,error:e.message
@@ -1035,6 +1121,7 @@ async function syncOpenPositions(symbolName=null){
   for(const key of reversalCloseAttempts.keys()) if(!livePositionIds.has(key)) reversalCloseAttempts.delete(key);
   for(const key of profitDetectedPositions) if(!livePositionIds.has(key)) profitDetectedPositions.delete(key);
   for(const key of lossWarningPositions) if(!livePositionIds.has(key)) lossWarningPositions.delete(key);
+  for(const key of positionIntelligenceSnapshots.keys()) if(!livePositionIds.has(key)) positionIntelligenceSnapshots.delete(key);
   return {symbol:targetSymbol,updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length,protectionAudit};
 }
 
@@ -1086,4 +1173,4 @@ async function init(){
     ON aurixa.auto_trades(strategy_signal_key)`);
   return true;
 }
-module.exports={configure,getStatus,executeAiDecision,dryRunAiTrader,syncOpenPositions,init,summarizeRealizedClosingDeals};
+module.exports={configure,getStatus,executeAiDecision,dryRunAiTrader,syncOpenPositions,init,summarizeRealizedClosingDeals,getPositionIntelligence};
