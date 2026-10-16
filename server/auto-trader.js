@@ -135,6 +135,67 @@ function getStatus(){
  return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"unlimited",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:"unlimited",cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||"")};
 }
 
+async function emergencyCloseAfterProtectionFailure(result, symbol, fallbackVolume, cause) {
+  if (!positionRisk.shouldEmergencyCloseAfterProtectionFailure(result)) return;
+
+  const protectionError = cause instanceof Error ? cause.message : String(cause || "SL/TP protection failed");
+  result.protectionStatus = "FAILED";
+  result.protectionError = protectionError;
+
+  try {
+    if (typeof cTrader?.getOpenXAUUSDPositions !== "function" ||
+        typeof cTrader?.closeXAUUSDPosition !== "function") {
+      throw new Error("Broker position lookup/close is unavailable");
+    }
+
+    const positions = await cTrader.getOpenXAUUSDPositions(true, symbol);
+    const position = (Array.isArray(positions) ? positions : [])
+      .find(item => String(item?.positionId || "") === String(result.positionId));
+    if (!position) {
+      throw new Error("Position is not present in a fresh broker snapshot; closure cannot be confirmed");
+    }
+
+    const tradeData = position.tradeData || {};
+    const rawVolume = position.volume ?? tradeData.volume ?? fallbackVolume;
+    const closeVolume = rawVolume == null || rawVolume === "" ? NaN : Number(rawVolume);
+    if (!Number.isInteger(closeVolume) || closeVolume <= 0) {
+      throw new Error("Broker position volume is unavailable for emergency close");
+    }
+
+    const closeResult = await cTrader.closeXAUUSDPosition(result.positionId, closeVolume, symbol);
+    if (closeResult?.brokerConfirmed !== true) {
+      throw new Error("Broker did not confirm the emergency close");
+    }
+
+    const rawClosePrice = closeResult.executionPrice;
+    const closePrice = rawClosePrice == null || rawClosePrice === "" ? NaN : Number(rawClosePrice);
+    result.status = "CLOSED";
+    result.brokerConfirmed = false;
+    result.closeBrokerConfirmed = true;
+    result.closePrice = Number.isFinite(closePrice) && closePrice > 0 ? closePrice : null;
+    result.exitReason = "PROTECTION_FAILURE_EMERGENCY_CLOSE";
+    result.protectionStatus = "FAILED_CLOSED";
+
+    console.error("AURIXA_PROTECTION_FAILURE_EMERGENCY_CLOSE_CONFIRMED:", JSON.stringify({
+      positionId: result.positionId,
+      symbol,
+      closePrice: result.closePrice,
+      brokerConfirmed: true,
+      protectionError
+    }));
+  } catch (closeError) {
+    result.protectionStatus = "FAILED_CLOSE_UNCONFIRMED";
+    result.protectionError = protectionError + "; emergency close unconfirmed: " + closeError.message;
+    console.error("AURIXA_PROTECTION_FAILURE_EMERGENCY_CLOSE_UNCONFIRMED:", JSON.stringify({
+      positionId: result.positionId,
+      symbol,
+      protectionError,
+      closeError: closeError.message,
+      action: "KEEP_TRACKED_AND_REPAIR_PROTECTION"
+    }));
+  }
+}
+
 async function executeAiDecisionInternal(decision, decisionId=null){
   const cfg=config();
   const decisionSymbol=normalizeSymbolName(decision?.symbol||"");
@@ -384,46 +445,47 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"CTRADER_ORDER_OUTCOME_UNKNOWN",error:e.message,strategySignalKey:key};
   }
 
-  // Only after cTrader confirms the position do we attach protection.
-  // Protection is based on the actual fill price, not the pre-order quote.
-  if(["OPEN","PARTIAL"].includes(result.status) && result.positionId && typeof cTrader.modifyPositionProtection==="function"){
-    const actualEntry=Number(result.executionPrice);
-    const protectionEntry=Number.isFinite(actualEntry)&&actualEntry>0?actualEntry:entry;
-    const adjustedStop=decision.signal==="BUY"
-      ? protectionEntry-executionRiskDistance
-      : protectionEntry+executionRiskDistance;
-    const adjustedTarget=decision.signal==="BUY"
-      ? protectionEntry+executionRiskDistance*2
-      : protectionEntry-executionRiskDistance*2;
-    try{
-      const protection=await cTrader.modifyPositionProtection(
-        result.positionId,
-        adjustedStop,
-        adjustedTarget,
-        decisionSymbol
+  // A filled position must have broker-verified SL and TP. If either cannot
+  // be established, try a broker-confirmed emergency close; if that fails,
+  // keep the position tracked and let the position manager continue repairs.
+  if(["OPEN","PARTIAL"].includes(result.status) && result.positionId){
+    if(typeof cTrader.modifyPositionProtection!=="function"){
+      await emergencyCloseAfterProtectionFailure(
+        result, decisionSymbol, volume,
+        new Error("Broker protection amendment is unavailable")
       );
-      if(protection?.verified!==true){
-        throw new Error("Broker did not confirm both SL and TP after order execution");
+    }else{
+      const actualEntry=Number(result.executionPrice);
+      const protectionEntry=Number.isFinite(actualEntry)&&actualEntry>0?actualEntry:entry;
+      const adjustedStop=decision.signal==="BUY"
+        ? protectionEntry-executionRiskDistance
+        : protectionEntry+executionRiskDistance;
+      const adjustedTarget=decision.signal==="BUY"
+        ? protectionEntry+executionRiskDistance*2
+        : protectionEntry-executionRiskDistance*2;
+      try{
+        const protection=await cTrader.modifyPositionProtection(
+          result.positionId,
+          adjustedStop,
+          adjustedTarget,
+          decisionSymbol
+        );
+        if(protection?.verified!==true){
+          throw new Error("Broker did not confirm both SL and TP after order execution");
+        }
+        result.stopLoss=Number.isFinite(Number(protection.stopLoss))?Number(protection.stopLoss):adjustedStop;
+        result.takeProfit=Number.isFinite(Number(protection.takeProfit))?Number(protection.takeProfit):adjustedTarget;
+        result.protectionStatus="SET";
+        console.log("AURIXA_POST_FILL_PROTECTION:",JSON.stringify({
+          positionId:result.positionId,
+          entry:protectionEntry,
+          stopLoss:adjustedStop,
+          takeProfit:adjustedTarget,
+          protection
+        }));
+      }catch(e){
+        await emergencyCloseAfterProtectionFailure(result, decisionSymbol, volume, e);
       }
-      result.stopLoss=Number.isFinite(Number(protection.stopLoss))?Number(protection.stopLoss):adjustedStop;
-      result.takeProfit=Number.isFinite(Number(protection.takeProfit))?Number(protection.takeProfit):adjustedTarget;
-      result.protectionStatus="SET";
-      console.log("AURIXA_POST_FILL_PROTECTION:",JSON.stringify({
-        positionId:result.positionId,
-        entry:protectionEntry,
-        stopLoss:adjustedStop,
-        takeProfit:adjustedTarget,
-        protection
-      }));
-    }catch(e){
-      // The position is real, so never pretend it failed. Keep it OPEN and
-      // surface the protection failure for reconciliation/monitoring.
-      result.protectionStatus="FAILED";
-      result.protectionError=e.message;
-      console.error("AURIXA_POST_FILL_PROTECTION_FAILED:",JSON.stringify({
-        positionId:result.positionId,
-        error:e.message
-      }));
     }
   }
 
@@ -437,13 +499,15 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       WHERE id=$1`,
       [reservationId,decisionId,result.orderId||null,result.positionId||null,result.clientMsgId||null,
        result.status||"SUBMITTED",result.executionPrice||entry,
-       result.status==="CLOSED"?"PROTECTION_FAILURE_EMERGENCY_CLOSE":(result.protectionStatus==="FAILED"?"PROTECTION_FAILED":"PASSED"),
+       result.status==="CLOSED"?"PROTECTION_FAILURE_EMERGENCY_CLOSE":(String(result.protectionStatus||"").startsWith("FAILED")?"PROTECTION_FAILED":"PASSED"),
        result.protectionError||null,result.closePrice||null,result.exitReason||null]);
   }catch(e){console.error("AI trade record update failed:",e.message);}
   const brokerPositionVerified=result.brokerConfirmed===true;
-  const executionReason=brokerPositionVerified?null:
-    (["OPEN","PARTIAL"].includes(result.status)?"BROKER_POSITION_NOT_VERIFIED":"CTRADER_ORDER_NOT_FILLED");
-  if(!brokerPositionVerified){
+  const executionReason=result.status==="CLOSED"&&result.closeBrokerConfirmed===true
+    ? "PROTECTION_FAILURE_EMERGENCY_CLOSE"
+    : (brokerPositionVerified?null:
+      (["OPEN","PARTIAL"].includes(result.status)?"BROKER_POSITION_NOT_VERIFIED":"CTRADER_ORDER_NOT_FILLED"));
+  if(!brokerPositionVerified && !(result.status==="CLOSED" && result.closeBrokerConfirmed===true)){
     console.error("AURIXA_EXECUTION_REQUIRES_RECONCILIATION:",JSON.stringify({
       reservationId,strategySignalKey:key,symbol:decisionSymbol,
       orderId:result.orderId||null,positionId:result.positionId||null,

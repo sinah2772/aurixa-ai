@@ -43,6 +43,11 @@ function isBrokerCloseConfirmed(result) {
   return result?.brokerConfirmed === true;
 }
 
+function shouldEmergencyCloseAfterProtectionFailure({ status, positionId } = {}) {
+  return ["OPEN", "PARTIAL"].includes(status) &&
+    positionId != null && String(positionId).trim() !== "";
+}
+
 function shouldImproveStop(direction, candidate, existingStop) {
   const next = Number(candidate);
   if (!["BUY", "SELL"].includes(direction) || !Number.isFinite(next) || next <= 0) return false;
@@ -55,6 +60,7 @@ module.exports = {
   hasValidProtection,
   classifyPositionRisk,
   shouldExitOnReversal,
+  shouldEmergencyCloseAfterProtectionFailure,
   isBrokerCloseConfirmed,
   shouldImproveStop
 };

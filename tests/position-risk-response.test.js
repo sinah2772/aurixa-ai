@@ -55,3 +55,11 @@ test("trailing stops can only move protectively and can initialize a missing sto
   assert.equal(risk.shouldImproveStop("SELL", 1990, null), true);
   assert.equal(risk.shouldImproveStop("BUY", NaN, 2000), false);
 });
+
+test("protection failure can request emergency close only for a real open tracked position", () => {
+  assert.equal(risk.shouldEmergencyCloseAfterProtectionFailure({ status: "OPEN", positionId: "123" }), true);
+  assert.equal(risk.shouldEmergencyCloseAfterProtectionFailure({ status: "PARTIAL", positionId: 123 }), true);
+  assert.equal(risk.shouldEmergencyCloseAfterProtectionFailure({ status: "REJECTED", positionId: "123" }), false);
+  assert.equal(risk.shouldEmergencyCloseAfterProtectionFailure({ status: "OPEN", positionId: null }), false);
+  assert.equal(risk.shouldEmergencyCloseAfterProtectionFailure({ status: "CLOSED", positionId: "123" }), false);
+});
