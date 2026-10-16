@@ -837,9 +837,9 @@ async function syncOpenPositions(symbolName=null){
       try{
         const result=await cTrader.modifyPositionProtection(positionId,candidate,null,targetSymbol);
         trailingUpdated++;
-        console.log("AURIXA_TRAILING_STOP_VERIFIED:",JSON.stringify({positionId,direction,requestedStopLoss:candidate,result}));
+        console.log("AURIXA_TRAILING_STOP_VERIFIED:",JSON.stringify({symbol:targetSymbol,positionId,direction,requestedStopLoss:candidate,result}));
         console.log("AURIXA_TRAILING_STOP_UPDATED:",JSON.stringify({
-          positionId,direction,entry,current,profitMove,triggerDistance,trailDistance,stopLoss:candidate
+          symbol:targetSymbol,positionId,direction,entry,current,profitMove,triggerDistance,trailDistance,stopLoss:candidate
         }));
       }catch(e){
         console.warn("AURIXA_TRAILING_STOP_FAILED:",JSON.stringify({positionId,error:e.message}));
