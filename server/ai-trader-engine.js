@@ -47,10 +47,6 @@ function confirmOrderFlowDirection(mainSignal, confirmation) {
   const direction = confirmation.direction ||
     confirmation.environment?.direction ||
     (confirmation.signal === "BUY" || confirmation.signal === "SELL" ? confirmation.signal : null);
-  if (direction !== mainSignal) {
-    return { status: direction ? "DIRECTION_MISMATCH" : "OF1_WAIT", confirmed: false, direction,
-      evidenceCount: 0, reason: direction ? "OF1 directional bias differs from the main strategy" : "OF1 has no directional bias" };
-  }
   const checks = confirmation.confirmation || {};
   const evidence = [
     ["retracementZone", confirmation.fib?.inZone === true],
@@ -65,6 +61,25 @@ function confirmOrderFlowDirection(mainSignal, confirmation) {
   if (invalidated) {
     return { status: "OF1_INVALIDATED", confirmed: false, direction, evidenceCount: passed.length,
       evidence: passed, reason: "OF1 retracement invalidation level was breached" };
+  }
+  // A raw OF1 directional label is not enough to veto the primary V1 strategy.
+  // Require a real trigger plus at least two independent structural checks before
+  // treating opposing OF1 context as a confirmed conflict. Weak/incomplete OF1
+  // evidence remains visible to the operator but is diagnostic only.
+  if (direction !== mainSignal) {
+    const conflictConfirmed = Boolean(direction) && hasTrigger && passed.length >= 2;
+    return {
+      status: conflictConfirmed ? "DIRECTION_MISMATCH" : direction ? "OF1_CONFLICT_UNCONFIRMED" : "OF1_WAIT",
+      confirmed: false,
+      direction,
+      evidenceCount: passed.length,
+      evidence: passed,
+      reason: conflictConfirmed
+        ? `OF1 direction opposes ${mainSignal}; ${passed.length}/5 structural checks passed (${passed.join(", ")}), including a trigger`
+        : direction
+          ? `OF1 direction opposes ${mainSignal}, but evidence is incomplete (${passed.length}/5 checks; trigger ${hasTrigger ? "present" : "missing"}); conflict is diagnostic only`
+          : "OF1 has no directional bias"
+    };
   }
   const confirmed = hasTrigger && passed.length >= 2;
   return {

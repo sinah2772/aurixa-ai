@@ -220,6 +220,8 @@
         detailLine("STOP LOSS", fmtStudy(study.stopLoss, digits));
         detailLine("TAKE PROFIT", fmtStudy(study.takeProfit, digits));
         detailLine("SIGNAL CONFIDENCE", study.fresh && study.confidence != null ? Math.round(Number(study.confidence)) + "%" : "—");
+        detailLine("OF1 CONFIRMATION", study.orderFlowStatus || "NOT AVAILABLE");
+        detailLine("OF1 EXPLANATION", study.orderFlowReason || "No OF1 conflict detail recorded");
         detailLine("SIGNAL CHECKED", study.checkedAt ? new Date(study.checkedAt).toLocaleTimeString() : "—");
         if (symbolPositions.length) {
           for (const position of symbolPositions) {

@@ -106,14 +106,29 @@ test("OF1 does not confirm on direction alone or after retracement invalidation"
   assert.match(invalidated.reason, /invalidation/);
 });
 
-test("OF1 cannot confirm a direction that conflicts with the main strategy", () => {
-  const { confirmOrderFlowDirection } = require("../server/ai-trader-engine");
+test("OF1 does not veto V1 on an opposing direction without enough structural evidence", () => {
+  const { confirmOrderFlowDirection, shouldBlockOnOF1 } = require("../server/ai-trader-engine");
   const result = confirmOrderFlowDirection("BUY", {
     dataReady: true, direction: "SELL", signal: "WAIT",
-    confirmation: { liquiditySweep: true, displacement: true }
+    fib: { inZone: false, invalidated: false },
+    confirmation: { liquiditySweep: false, displacement: false, outsideValue: false, participation: false }
+  });
+  assert.equal(result.confirmed, false);
+  assert.equal(result.status, "OF1_CONFLICT_UNCONFIRMED");
+  assert.equal(shouldBlockOnOF1(result.status), false);
+});
+
+test("OF1 blocks an opposing V1 direction only with a trigger and at least two structural checks", () => {
+  const { confirmOrderFlowDirection, shouldBlockOnOF1 } = require("../server/ai-trader-engine");
+  const result = confirmOrderFlowDirection("BUY", {
+    dataReady: true, direction: "SELL", signal: "WAIT",
+    fib: { inZone: true, invalidated: false },
+    confirmation: { liquiditySweep: true, displacement: false, outsideValue: true, participation: true }
   });
   assert.equal(result.confirmed, false);
   assert.equal(result.status, "DIRECTION_MISMATCH");
+  assert.equal(result.evidenceCount, 4);
+  assert.equal(shouldBlockOnOF1(result.status), true);
 });
 
 
@@ -123,5 +138,6 @@ test("OF1 blocks only explicit directional conflict or invalidated structure", (
   assert.equal(shouldBlockOnOF1("OF1_INVALIDATED"), true);
   assert.equal(shouldBlockOnOF1("OF1_DATA_UNAVAILABLE"), false);
   assert.equal(shouldBlockOnOF1("OF1_WAIT"), false);
+  assert.equal(shouldBlockOnOF1("OF1_CONFLICT_UNCONFIRMED"), false);
   assert.equal(shouldBlockOnOF1("CONFIRMED"), false);
 });
