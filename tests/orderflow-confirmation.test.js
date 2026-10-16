@@ -68,7 +68,7 @@ test("main strategy retains V1 and exposes OF1 confirmation for the same symbol"
   assert.equal(decision.engine, "AURIXA_AI_TRADER_V1");
   assert.equal(decision.signalConfirmation.primaryEngine, "AURIXA_AI_TRADER_V1");
   assert.equal(decision.signalConfirmation.confirmationEngine, "AURIXA_OF1");
-  assert.equal(decision.signalConfirmation.mode, "main_strategy_with_of1_confirmation");
+  assert.equal(decision.signalConfirmation.mode, "main_strategy_with_of1_conflict_guard");
   assert.equal(decision.orderFlowConfirmation.symbol, "XAUUSD");
   assert.equal(typeof decision.signalConfirmation.status, "string");
   assert.equal(typeof decision.signalConfirmation.confirmed, "boolean");
@@ -102,7 +102,7 @@ test("OF1 does not confirm on direction alone or after retracement invalidation"
     confirmation: { outsideValue: true, liquiditySweep: true, displacement: true, participation: false }
   });
   assert.equal(invalidated.confirmed, false);
-  assert.equal(invalidated.status, "OF1_WAIT");
+  assert.equal(invalidated.status, "OF1_INVALIDATED");
   assert.match(invalidated.reason, /invalidation/);
 });
 
@@ -114,4 +114,14 @@ test("OF1 cannot confirm a direction that conflicts with the main strategy", () 
   });
   assert.equal(result.confirmed, false);
   assert.equal(result.status, "DIRECTION_MISMATCH");
+});
+
+
+test("OF1 blocks only explicit directional conflict or invalidated structure", () => {
+  const { shouldBlockOnOF1 } = require("../server/ai-trader-engine");
+  assert.equal(shouldBlockOnOF1("DIRECTION_MISMATCH"), true);
+  assert.equal(shouldBlockOnOF1("OF1_INVALIDATED"), true);
+  assert.equal(shouldBlockOnOF1("OF1_DATA_UNAVAILABLE"), false);
+  assert.equal(shouldBlockOnOF1("OF1_WAIT"), false);
+  assert.equal(shouldBlockOnOF1("CONFIRMED"), false);
 });
