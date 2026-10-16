@@ -36,11 +36,15 @@ test("a rejected or unconfirmed close is never treated as broker-confirmed", () 
   assert.equal(risk.isBrokerCloseConfirmed({ brokerConfirmed: true }), true);
 });
 
-test("missing stop-loss or take-profit is detected, including null and empty values", () => {
+test("missing and directionally invalid protection is detected", () => {
   assert.equal(risk.hasValidProtection({ stopLoss: 2000, takeProfit: 2020 }), true);
   assert.equal(risk.hasValidProtection({ stopLoss: null, takeProfit: 2020 }), false);
   assert.equal(risk.hasValidProtection({ stopLoss: 1990, takeProfit: "" }), false);
   assert.equal(risk.hasValidProtection({ tradeData: { stopLoss: 1990, takeProfit: 2020 } }), true);
+  assert.equal(risk.hasValidProtection({ price: 2000, tradeData: { tradeSide: 1, stopLoss: 1990, takeProfit: 2020 } }), true);
+  assert.equal(risk.hasValidProtection({ price: 2000, tradeData: { tradeSide: 1, stopLoss: 2010, takeProfit: 2020 } }), false);
+  assert.equal(risk.hasValidProtection({ price: 2000, tradeData: { tradeSide: 2, stopLoss: 2010, takeProfit: 1980 } }), true);
+  assert.equal(risk.hasValidProtection({ price: 2000, tradeData: { tradeSide: 2, stopLoss: 1990, takeProfit: 1980 } }), false);
 });
 
 test("trailing stops can only move protectively and can initialize a missing stop", () => {
