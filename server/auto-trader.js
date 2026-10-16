@@ -230,9 +230,16 @@ async function executeAiDecisionInternal(decision, decisionId=null){
         VALUES ($1,'AURIXA_AI_TRADER_V1',$2,$7,'5m',$3,$4,0,'REJECTED',$5,$6)
         ON CONFLICT DO NOTHING`,
         [decisionId,key,decision?.signal||"BUY",decision?.entry||null,reason,extra.error||null,decisionSymbol]);
+    // A later scan can reject the same candle after an order was already
+    // submitted or filled. Never let that later rejection overwrite the
+    // lifecycle of an existing trade with broker order/position identifiers.
+    // Only refresh a rejected audit row that has never reached execution.
     await dbQuery(`UPDATE aurixa.auto_trades
       SET decision_id=$2,status='REJECTED',gate_reason=$3,error=$4,updated_at=NOW()
-      WHERE strategy_signal_key=$1`,
+      WHERE strategy_signal_key=$1
+        AND status='REJECTED'
+        AND order_id IS NULL
+        AND position_id IS NULL`,
       [key,decisionId,reason,extra.error||null]);
     }catch(e){console.error("AI trade audit failed:",e.message);}
     return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision?.signal||null,reason,...extra};
