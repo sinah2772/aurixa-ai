@@ -717,8 +717,10 @@ async function syncOpenPositions(symbolName=null){
 
         const missingSL=!Number.isFinite(existingSL) || existingSL<=0;
         const missingTP=!Number.isFinite(existingTP) || existingTP<=0;
-        const wrongSideSL=Number.isFinite(entry)&&Number.isFinite(existingSL)&&
-          (direction==="BUY" ? existingSL>=entry : direction==="SELL" ? existingSL<=entry : false);
+        // A profitable trailing stop can legitimately cross the entry price.
+        // Judge SL placement against the live executable-side quote instead.
+        const wrongSideSL=Number.isFinite(current)&&Number.isFinite(existingSL)&&
+          (direction==="BUY" ? existingSL>=current : direction==="SELL" ? existingSL<=current : false);
         const wrongSideTP=Number.isFinite(entry)&&Number.isFinite(existingTP)&&
           (direction==="BUY" ? existingTP<=entry : direction==="SELL" ? existingTP>=entry : false);
         const invalidSL=missingSL||wrongSideSL;
@@ -905,6 +907,9 @@ async function syncOpenPositions(symbolName=null){
     fullyProtected: 0,
     missingStopLoss: [],
     missingTakeProfit: [],
+    invalidStopLoss: [],
+    invalidTakeProfit: [],
+    unverifiable: [],
     error: null
   };
   try {
@@ -912,21 +917,41 @@ async function syncOpenPositions(symbolName=null){
     protectionAudit.checked = auditedPositions.length;
     for (const position of auditedPositions) {
       const td = position?.tradeData || {};
+      const side = Number(td.tradeSide ?? position?.tradeSide);
+      const direction = side === 1 ? "BUY" : side === 2 ? "SELL" : null;
+      const entry = Number(position?.price ?? td.openPrice ?? td.price ?? position?.openPrice ?? td.entryPrice);
+      const status = cTrader.getCTraderStatusForSymbol?.(targetSymbol) || cTrader.getCTraderStatus?.() || {};
+      const current = direction === "BUY" ? Number(status.bid) : direction === "SELL" ? Number(status.ask) : NaN;
       const rawSL = position?.stopLoss ?? td.stopLoss;
       const rawTP = position?.takeProfit ?? td.takeProfit;
       const sl = rawSL == null || rawSL === "" ? NaN : Number(rawSL);
       const tp = rawTP == null || rawTP === "" ? NaN : Number(rawTP);
-      if (Number.isFinite(sl) && sl > 0 && Number.isFinite(tp) && tp > 0) {
-        protectionAudit.fullyProtected++;
-      } else {
-        if (!Number.isFinite(sl) || sl <= 0) protectionAudit.missingStopLoss.push(position.positionId);
-        if (!Number.isFinite(tp) || tp <= 0) protectionAudit.missingTakeProfit.push(position.positionId);
+      const pid = position?.positionId;
+      if (!Number.isFinite(sl) || sl <= 0) protectionAudit.missingStopLoss.push(pid);
+      else if (direction && Number.isFinite(current) &&
+        (direction === "BUY" ? sl >= current : sl <= current)) protectionAudit.invalidStopLoss.push(pid);
+      if (!Number.isFinite(tp) || tp <= 0) protectionAudit.missingTakeProfit.push(pid);
+      else if (direction && Number.isFinite(entry) &&
+        (direction === "BUY" ? tp <= entry : tp >= entry)) protectionAudit.invalidTakeProfit.push(pid);
+      if (!direction || !Number.isFinite(entry) || entry <= 0 || !Number.isFinite(current) || current <= 0) {
+        protectionAudit.unverifiable.push(pid);
       }
+      const valid = Number.isFinite(sl) && sl > 0 && Number.isFinite(tp) && tp > 0 &&
+        Boolean(direction) && Number.isFinite(entry) && entry > 0 &&
+        Number.isFinite(current) && current > 0 &&
+        !(direction === "BUY" ? sl >= current || tp <= entry : sl <= current || tp >= entry);
+      if (valid) protectionAudit.fullyProtected++;
     }
     console.log("AURIXA_BROKER_PROTECTION_AUDIT:", JSON.stringify({
       accountId: cTrader.getCTraderStatus?.()?.accountId || null,
       ...protectionAudit,
-      unprotectedCount: new Set([...protectionAudit.missingStopLoss,...protectionAudit.missingTakeProfit]).size
+      unprotectedCount: new Set([
+        ...protectionAudit.missingStopLoss,
+        ...protectionAudit.missingTakeProfit,
+        ...protectionAudit.invalidStopLoss,
+        ...protectionAudit.invalidTakeProfit,
+        ...protectionAudit.unverifiable
+      ]).size
     }));
   } catch (e) {
     protectionAudit.error = e.message;
