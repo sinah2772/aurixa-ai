@@ -855,6 +855,30 @@ app.get("/api/auto-trader/trades", async (req, res) => {
   }
 });
 
+// Live performance summary from the latest verified closed-trade rows in PostgreSQL.
+app.get("/api/auto-trader/performance", async (req, res) => {
+  try {
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 500));
+    const sql = [
+      "WITH all_closed AS (SELECT id, profit, closed_at, created_at FROM aurixa.auto_trades WHERE UPPER(BTRIM(COALESCE(status, ''))) LIKE 'CLOSED%' OR closed_at IS NOT NULL)",
+      ", latest_sample AS (SELECT id, profit, closed_at, created_at FROM all_closed ORDER BY closed_at DESC NULLS LAST, created_at DESC, id DESC LIMIT $1)",
+      ", sample_stats AS (SELECT COUNT(*)::int AS sampled_closed, COUNT(profit)::int AS with_recorded_pnl, COUNT(*) FILTER (WHERE profit IS NULL)::int AS pnl_pending, COUNT(*) FILTER (WHERE profit > 0)::int AS wins, COUNT(*) FILTER (WHERE profit < 0)::int AS losses, COUNT(*) FILTER (WHERE profit = 0)::int AS breakeven, COALESCE(SUM(profit), 0)::numeric AS realized_pnl, MAX(COALESCE(closed_at, created_at)) AS latest_closed_at FROM latest_sample)",
+      ", all_stats AS (SELECT COUNT(*)::int AS total_closed FROM all_closed) SELECT sample_stats.*, all_stats.total_closed FROM sample_stats CROSS JOIN all_stats"
+    ].join("");
+    const result = await queryDatabase(sql, [limit]);
+    const row = result.rows && result.rows[0] ? result.rows[0] : {};
+    const wins = Number(row.wins || 0), losses = Number(row.losses || 0), breakeven = Number(row.breakeven || 0);
+    const evaluated = wins + losses + breakeven;
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+    res.json({ ok: true, source: "aurixa.auto_trades", scope: "latest_closed_trades", limit, totalClosed: Number(row.total_closed || 0), sampledClosed: Number(row.sampled_closed || 0), withRecordedPnl: Number(row.with_recorded_pnl || 0), pnlPending: Number(row.pnl_pending || 0), wins, losses, breakeven, winRate: evaluated ? wins / evaluated * 100 : null, realizedPnl: Number(row.realized_pnl || 0), latestClosedAt: row.latest_closed_at || null, updatedAt: new Date().toISOString() });
+  } catch (err) {
+    console.error("Auto-Trader performance summary error:", err);
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.status(500).json({ ok: false, error: "TRADE_PERFORMANCE_UNAVAILABLE" });
+  }
+});
 // Read-only closed-trade reconciliation summary. This helps distinguish
 // missing broker P/L from missing UI rows without exposing raw decision evidence.
 app.get("/api/auto-trader/history-audit", async (req, res) => {
