@@ -27,6 +27,7 @@
   let enableBusy = false;
   let multiSymbolRefreshBusy = false;
   const expandedSymbols = new Set();
+  const supportedSymbols = ["XAUUSD","EURUSD","NZDUSD","USDCHF","USDCAD","AUDUSD","USDJPY","GBPUSD","XAGUSD","BTCUSD"];
 
   function canonical(value) {
     return String(value || "").trim().toUpperCase().replace(/[\/\s_-]/g, "");
@@ -117,7 +118,13 @@
           ? positionData.positions : [];
       } catch (_) { latestPositions = []; }
       multiSymbolGrid.replaceChildren();
-      for (const market of markets) {
+      const marketsBySymbol = new Map(markets.map(item => [canonical(item.symbol || item.canonicalName || item.symbolName), item]));
+      // Keep all configured markets visible even if the API temporarily returns a scoped subset.
+      // Missing broker discovery is explicit and disables that market control rather than hiding the card.
+      const displayMarkets = supportedSymbols.map(symbol => marketsBySymbol.get(symbol) || {
+        symbol, ready:false, notDiscovered:true, reason:"SYMBOL_NOT_FOUND", candleCount:0
+      });
+      for (const market of displayMarkets) {
         const symbol = canonical(market.symbol || market.canonicalName || market.symbolName || "UNKNOWN");
         const selected = symbol === selectedSymbol;
         const card = document.createElement("article");
@@ -129,8 +136,8 @@
         const name = document.createElement("strong");
         name.textContent = symbol;
         const status = document.createElement("span");
-        status.className = market.ready ? "market-ready" : "market-wait";
-        status.textContent = market.ready ? "DATA READY" : "DATA WAIT";
+        status.className = !market.notDiscovered && market.ready ? "market-ready" : "market-wait";
+        status.textContent = market.notDiscovered ? "NOT DISCOVERED" : market.ready ? "DATA READY" : "DATA WAIT";
         head.append(name, status);
 
         const quote = document.createElement("div");
@@ -144,7 +151,7 @@
         const detail = document.createElement("div");
         detail.className = "multi-symbol-detail";
         detail.textContent = "M5 HISTORY  " + String(market.candleCount || 0) + " candles · " +
-          marketReasonLabel(market.reason) +
+          marketReasonLabel(market.notDiscovered ? "SYMBOL_NOT_FOUND" : market.reason) +
           (market.symbolName && market.symbolName !== symbol ? " · Broker: " + market.symbolName : "") +
           (market.symbolId != null ? " · ID " + market.symbolId : "");
 
@@ -261,7 +268,7 @@
         enableButton.className = "multi-symbol-select multi-symbol-enable" + (isPairEnabled ? " enabled" : "");
         enableButton.textContent = isPairEnabled ? "DISABLE " + symbol + " AUTO-TRADING" : "ENABLE " + symbol + " AUTO-TRADING";
         enableButton.setAttribute("aria-pressed", String(isPairEnabled));
-        enableButton.disabled = busy || enableBusy;
+        enableButton.disabled = busy || enableBusy || market.notDiscovered;
         enableButton.addEventListener("click", async () => {
           if (enableBusy) return;
           enableBusy = true;
@@ -296,12 +303,6 @@
         controls.appendChild(enableButton);
         card.append(head, quote, detail, studies, details, controls);
         multiSymbolGrid.appendChild(card);
-      }
-      if (!markets.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty-state";
-        empty.textContent = "No supported symbols discovered on this cTrader account.";
-        multiSymbolGrid.appendChild(empty);
       }
     } catch (error) {
       multiSymbolSummary.textContent = "SCANNER STATUS UNAVAILABLE · RETRYING";
