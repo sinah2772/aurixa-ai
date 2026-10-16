@@ -145,7 +145,7 @@ function config(){
 
 function getStatus(){
  const cfg=config(),ct=cTrader?.getCTraderStatus?.()||{};
- return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"unlimited",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:"unlimited",cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||"")};
+ return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"NOT_ENFORCED",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:"NOT_ENFORCED",configuredDailyTradeLimit:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||"")};
 }
 
 async function emergencyCloseAfterProtectionFailure(result, symbol, fallbackVolume, cause) {
