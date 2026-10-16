@@ -707,6 +707,10 @@
       const sl = first(brokerProtection.stopLoss, p.stopLoss, td.stopLoss);
       const tp = first(brokerProtection.takeProfit, p.takeProfit, td.takeProfit);
       const protectionStatus = String(first(brokerProtection.status, "UNKNOWN")).toUpperCase();
+      const intelligence = p.positionIntelligence || {};
+      const intelligenceAction = String(first(intelligence.action, "HOLD")).toUpperCase();
+      const intelligenceStatus = String(first(intelligence.brokerActionStatus, "NOT_EVALUATED")).toUpperCase();
+      const intelligenceReason = String(first(intelligence.reason, "Waiting for position analysis."));
       const pnl = first(
         p.unrealizedNetProfit,
         td.unrealizedNetProfit,
@@ -737,6 +741,7 @@
           '<div><span>TAKE PROFIT</span><strong>' + escapeHTML(Number.isFinite(tpN) ? number(tpN, digits) : "NOT SET") + '</strong></div>' +
           '<div><span>OPENED</span><strong>' + escapeHTML(opened ? formatTime(opened) : "—") + '</strong></div>' +
         '</div>' +
+        '<div class="open-trade-footer"><span>AI POSITION DECISION ' + escapeHTML(intelligenceAction) + ' · ' + escapeHTML(intelligenceStatus) + '</span><span>' + escapeHTML(intelligenceReason) + '</span></div>' +
         '<div class="open-trade-footer"><span>BROKER PROTECTION ' + escapeHTML(protectionStatus) + ' · ' + (Number.isFinite(slN) ? "SL " + number(slN, digits) : "SL MISSING") + ' · ' + (Number.isFinite(tpN) ? "TP " + number(tpN, digits) : "TP MISSING") + (first(brokerProtection.checkedAt, p.snapshotCheckedAt) ? ' · CHECKED ' + escapeHTML(formatTime(first(brokerProtection.checkedAt, p.snapshotCheckedAt))) : '') + '</span><span>LIVE cTRADER SNAPSHOT</span></div>' +
       '</article>';
     }).join("");
