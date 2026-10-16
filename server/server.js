@@ -611,6 +611,20 @@ app.get("/api/auto-trader/positions", async (req, res) => {
     // protection orders, so the dashboard never relies on stale DB state.
     const getPositions = ctrader.getOpenSymbolPositions || ctrader.getOpenXAUUSDPositions;
     const positions = await getPositions(true);
+    const snapshotCheckedAt = new Date().toISOString();
+    const pnlByPosition = new Map();
+    try {
+      if (typeof ctrader.getPositionUnrealizedPnL === "function") {
+        const pnlSnapshot = await ctrader.getPositionUnrealizedPnL();
+        for (const item of pnlSnapshot.rows || []) {
+          if (item.positionId && Number.isFinite(Number(item.netUnrealizedPnL))) {
+            pnlByPosition.set(String(item.positionId), Number(item.netUnrealizedPnL));
+          }
+        }
+      }
+    } catch (pnlError) {
+      console.warn("AURIXA_POSITION_PNL_SNAPSHOT_UNAVAILABLE:", pnlError.message);
+    }
 
     // Route-level quote fields are also returned in the API response below.
     // Keep these in route scope; per-position symbol quotes are resolved inside the map.
@@ -640,7 +654,8 @@ app.get("/api/auto-trader/positions", async (req, res) => {
         td.unrealizedNetProfit ??
         position?.netProfit ??
         position?.profit ??
-        td.profit
+        td.profit ??
+        pnlByPosition.get(String(position?.positionId ?? ""))
       );
 
       // Actual protection must come only from the current cTrader position
@@ -670,12 +685,17 @@ app.get("/api/auto-trader/positions", async (req, res) => {
           takeProfit: hasTP ? actualTP : null,
           stopLossSet: hasSL,
           takeProfitSet: hasTP,
-          checkedAt: symbolStatus.lastUpdate || new Date().toISOString()
+          checkedAt: snapshotCheckedAt
         },
-        // Never invent floating P/L from price difference × broker volume;
-        // volume units and account-currency conversion vary by symbol.
+        // cTrader calculates unrealized P&L in account deposit currency.
+        // Never estimate P&L from price difference × volume.
         unrealizedNetProfit: Number.isFinite(brokerPnl) ? brokerPnl : null,
-        liveQuoteTimestamp: symbolStatus.lastUpdate || new Date().toISOString()
+        unrealizedPnlSource: Number.isFinite(brokerPnl) && pnlByPosition.has(String(position?.positionId ?? ""))
+          ? "CTRADER_BROKER_CALCULATED"
+          : Number.isFinite(brokerPnl) ? "CTRADER_POSITION_FIELD" : "UNAVAILABLE",
+        openedAt: td.openTimestamp != null ? new Date(Number(td.openTimestamp)).toISOString() : (position?.openTime || position?.openedAt || null),
+        liveQuoteTimestamp: symbolStatus.lastUpdate || null,
+        snapshotCheckedAt
       };
     });
 
@@ -724,6 +744,7 @@ app.get("/api/auto-trader/account", async (req, res) => {
       traderLogin:ct.account?.traderLogin || null,
       isLive:ct.account?.isLive === true,
       currency:account.currency || null,
+      depositAssetId:account.depositAssetId ?? null,
       ...account,
       updatedAt:new Date().toISOString()
     });
