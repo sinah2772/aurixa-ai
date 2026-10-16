@@ -648,10 +648,16 @@ async function syncOpenPositions(symbolName=null){
 
         const missingSL=!Number.isFinite(existingSL) || existingSL<=0;
         const missingTP=!Number.isFinite(existingTP) || existingTP<=0;
+        const wrongSideSL=Number.isFinite(entry)&&Number.isFinite(existingSL)&&
+          (direction==="BUY" ? existingSL>=entry : direction==="SELL" ? existingSL<=entry : false);
+        const wrongSideTP=Number.isFinite(entry)&&Number.isFinite(existingTP)&&
+          (direction==="BUY" ? existingTP<=entry : direction==="SELL" ? existingTP>=entry : false);
+        const invalidSL=missingSL||wrongSideSL;
+        const invalidTP=missingTP||wrongSideTP;
 
-        if ((missingSL && Number.isFinite(desiredSL)) || (missingTP && Number.isFinite(desiredTP))) {
-          const repairSL=missingSL && Number.isFinite(desiredSL) ? desiredSL : (Number.isFinite(existingSL) && existingSL>0 ? existingSL : null);
-          const repairTP=missingTP && Number.isFinite(desiredTP) ? desiredTP : (Number.isFinite(existingTP) && existingTP>0 ? existingTP : null);
+        if ((invalidSL && Number.isFinite(desiredSL)) || (invalidTP && Number.isFinite(desiredTP))) {
+          const repairSL=invalidSL && Number.isFinite(desiredSL) ? desiredSL : (Number.isFinite(existingSL) && existingSL>0 ? existingSL : null);
+          const repairTP=invalidTP && Number.isFinite(desiredTP) ? desiredTP : (Number.isFinite(existingTP) && existingTP>0 ? existingTP : null);
           try {
             const protection=await cTrader.modifyPositionProtection(
               positionId,
@@ -659,15 +665,20 @@ async function syncOpenPositions(symbolName=null){
               repairTP,
               targetSymbol
             );
+            if (protection?.verified !== true) {
+              throw new Error("Broker did not confirm repaired SL/TP");
+            }
             console.log("AURIXA_PROTECTION_REPAIRED:",JSON.stringify({
               positionId,direction,entry,
-              stopLoss:repairSL,takeProfit:repairTP,protection
+              stopLoss:protection.stopLoss ?? repairSL,
+              takeProfit:protection.takeProfit ?? repairTP,
+              verified:true
             }));
             protectedCount++;
           } catch (e) {
             console.error("AURIXA_PROTECTION_REPAIR_FAILED:",JSON.stringify({
               positionId,direction,entry,stopLoss:repairSL,takeProfit:repairTP,
-              error:e.message
+              verified:false,error:e.message
             }));
           }
         }
