@@ -736,8 +736,8 @@ app.get("/api/auto-trader/account", async (req, res) => {
 app.get("/api/auto-trader/trades", async (req, res) => {
   try {
     const limit = Math.min(
-      100,
-      Math.max(1, Number(req.query.limit) || 20)
+      500,
+      Math.max(1, Number(req.query.limit) || 100)
     );
 
     const tradeColumns = `
@@ -777,7 +777,7 @@ app.get("/api/auto-trader/trades", async (req, res) => {
     // Keep execution/audit events separate from closed-trade history.
     // Frequent rejected-signal audit rows can otherwise push recent closes
     // beyond the created_at-based page limit and hide them from the dashboard.
-    const [result, closedResult] = await Promise.all([
+    const [result, closedResult, closedCountResult] = await Promise.all([
       queryDatabase(`
         SELECT ${tradeColumns}
         FROM aurixa.auto_trades
@@ -791,7 +791,13 @@ app.get("/api/auto-trader/trades", async (req, res) => {
            OR closed_at IS NOT NULL
         ORDER BY closed_at DESC NULLS LAST, created_at DESC
         LIMIT $1
-      `, [limit])
+      `, [limit]),
+      queryDatabase(`
+        SELECT COUNT(*)::int AS total
+        FROM aurixa.auto_trades
+        WHERE UPPER(BTRIM(COALESCE(status, ''))) LIKE 'CLOSED%'
+           OR closed_at IS NOT NULL
+      `)
     ]);
 
     // Closed-trade history is refreshed frequently and must never be served from a browser/proxy cache.
@@ -804,7 +810,8 @@ app.get("/api/auto-trader/trades", async (req, res) => {
         String(process.env.AUTO_TRADING || "false").toLowerCase() === "true",
       count: result.rows.length,
       trades: result.rows,
-      closedTradeCount: closedResult.rows.length,
+      closedTradeCount: Number(closedCountResult.rows?.[0]?.total || 0),
+      closedReturned: closedResult.rows.length,
       closedTrades: closedResult.rows
     });
   } catch (err) {
