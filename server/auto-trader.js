@@ -250,11 +250,13 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       const brokerPositions=await cTrader.getOpenXAUUSDPositions(true, decisionSymbol);
       const unprotected=(Array.isArray(brokerPositions)?brokerPositions:[]).filter(position=>{
         const td=position?.tradeData||{};
-        const rawSL=position?.stopLoss ?? td.stopLoss;
-        const rawTP=position?.takeProfit ?? td.takeProfit;
-        const sl=rawSL==null||rawSL===""?NaN:Number(rawSL);
-        const tp=rawTP==null||rawTP===""?NaN:Number(rawTP);
-        return !positionRisk.hasValidProtection(position);
+        const side=Number(td.tradeSide ?? position?.tradeSide);
+        const direction=side===1?"BUY":side===2?"SELL":null;
+        const entryValue=position?.price ?? td.openPrice ?? td.price ?? position?.openPrice ?? td.entryPrice;
+        const entry=entryValue==null||entryValue===""?NaN:Number(entryValue);
+        const marketValue=direction==="BUY"?st.bid:direction==="SELL"?st.ask:NaN;
+        const current=marketValue==null||marketValue===""?NaN:Number(marketValue);
+        return !positionRisk.hasValidProtection(position,direction,entry,current);
       });
       if(unprotected.length){
         console.error("AURIXA_ORDER_BLOCKED_UNPROTECTED_BROKER_POSITION:",JSON.stringify({
