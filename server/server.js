@@ -414,6 +414,8 @@ app.get("/api/auto-trader/multi-symbol-status", (req, res) => {
           stopLoss: candidateFresh ? (candidate.stopLoss ?? null) : null,
           takeProfit: candidateFresh ? (candidate.takeProfit ?? null) : null,
           rewardRisk: candidateFresh ? (candidate.rewardRisk ?? null) : null,
+          orderFlowStatus: candidateFresh ? (candidate.orderFlowStatus || candidate.signalConfirmation?.status || null) : null,
+          orderFlowReason: candidateFresh ? (candidate.signalConfirmation?.reason || null) : null,
           executionEligible: candidateFresh && candidate.executionEligible === true,
           executionStatus: candidateFresh ? (candidate.executionStatus || "ANALYZED · NO ENTRY") : "WAITING FOR ANALYSIS",
           reason: candidateFresh ? (candidate.executionReason || candidate.reason || "WAITING FOR ENTRY CONFIRMATION") : "WAITING FOR FRESH STRATEGY EVALUATION",
@@ -1089,6 +1091,8 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
             ema9: decision.ema9 ?? null, ema21: decision.ema21 ?? null, ema50: decision.ema50 ?? null,
             rsi: decision.rsi ?? null, atr: decision.atr ?? null, momentum: decision.momentum ?? null,
             score: decision.score ?? null, logic: decision.logic ?? null,
+            signalConfirmation: decision.signalConfirmation || null,
+            orderFlowStatus: decision.signalConfirmation?.status || null,
             qualityCheckV2: decision.qualityCheckV2,
             candleCount: market.candles.length, quoteFresh: true,
             decisionId, checkedAt: new Date().toISOString()
