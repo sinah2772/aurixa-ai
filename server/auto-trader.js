@@ -621,10 +621,46 @@ async function syncOpenPositions(symbolName=null){
       }
 
       const tracked=await dbQuery?.(
-        "SELECT * FROM aurixa.auto_trades WHERE position_id=$1 AND status IN ('OPEN','PARTIAL') ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM aurixa.auto_trades WHERE position_id=$1 AND (status IN ('OPEN','PARTIAL') OR (status='REJECTED' AND order_id IS NOT NULL)) ORDER BY created_at DESC LIMIT 1",
         [String(positionId)]
       );
-      const trade=tracked?.rows?.[0]||null;
+      let trade=tracked?.rows?.[0]||null;
+
+      // The broker's live open-position list is authoritative. Repair a false
+      // REJECTED status only when this exact position ID is currently present
+      // at cTrader and the stored row has its broker order ID.
+      if(trade && String(trade.status).toUpperCase()==="REJECTED" && trade.order_id && trade.position_id){
+        let brokerOpenedAt=null;
+        const rawOpenedAt=td.openTimestamp ?? pos.openTime ?? pos.openedAt;
+        if(rawOpenedAt!==null && rawOpenedAt!==undefined && rawOpenedAt!==""){
+          const numericTimestamp=Number(rawOpenedAt);
+          const openedDate=Number.isFinite(numericTimestamp) && /^\\d+$/.test(String(rawOpenedAt))
+            ? new Date(numericTimestamp) : new Date(rawOpenedAt);
+          if(Number.isFinite(openedDate.getTime())) brokerOpenedAt=openedDate.toISOString();
+        }
+        try{
+          const repaired=await dbQuery(
+            `UPDATE aurixa.auto_trades
+             SET status='OPEN',gate_reason='PASSED',error=NULL,
+                 opened_at=COALESCE(opened_at,$2,created_at),updated_at=NOW()
+             WHERE id=$1 AND status='REJECTED'
+               AND order_id IS NOT NULL AND position_id IS NOT NULL`,
+            [trade.id,brokerOpenedAt]
+          );
+          if(Number(repaired?.rowCount||0)===1){
+            console.warn("AURIXA_EXECUTED_TRADE_RECORD_REPAIRED_FROM_BROKER_OPEN_POSITION:",JSON.stringify({
+              tradeId:trade.id,orderId:trade.order_id,positionId:trade.position_id,
+              symbol:targetSymbol,openedAt:brokerOpenedAt,source:"CTRADER_OPEN_POSITION_LIST"
+            }));
+            trade={...trade,status:"OPEN",gate_reason:"PASSED",error:null,opened_at:trade.opened_at||brokerOpenedAt||trade.created_at};
+          }
+        }catch(repairError){
+          console.error("AURIXA_EXECUTED_TRADE_RECORD_REPAIR_FAILED:",JSON.stringify({
+            tradeId:trade.id,orderId:trade.order_id,positionId:trade.position_id,
+            symbol:targetSymbol,error:repairError.message
+          }));
+        }
+      }
       if(!Number.isFinite(entry)) entry=numericPrice(trade?.execution_entry_price,trade?.planned_entry_price);
 
       // Persist peak favorable movement so a restart cannot erase the profit-protection reference.
