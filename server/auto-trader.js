@@ -7,12 +7,14 @@
 
 const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMBOLS } = require("./symbol-support");
 const brokerVolume = require("./broker-volume");
+const positionRisk = require("./position-risk-response");
 
 let cTrader=null, dbQuery=null, aiEngine=null;
 const inFlightSignalKeys = new Set();
 const reversalConfirmations = new Map();
 const reversalCloseAttempts = new Map();
 const profitDetectedPositions = new Set();
+const lossWarningPositions = new Set();
 // One symbol is backfilled per scanner cycle to avoid hammering cTrader deal history.
 let closedBackfillSymbolIndex = 0;
 let lastClosedBackfillAt = 0;
@@ -186,7 +188,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
         const rawTP=position?.takeProfit ?? td.takeProfit;
         const sl=rawSL==null||rawSL===""?NaN:Number(rawSL);
         const tp=rawTP==null||rawTP===""?NaN:Number(rawTP);
-        return !Number.isFinite(sl)||sl<=0||!Number.isFinite(tp)||tp<=0;
+        return !positionRisk.hasValidProtection(position);
       });
       if(unprotected.length){
         console.error("AURIXA_ORDER_BLOCKED_UNPROTECTED_BROKER_POSITION:",JSON.stringify({
@@ -520,6 +522,14 @@ async function syncOpenPositions(symbolName=null){
       const trade=tracked?.rows?.[0]||null;
       if(!Number.isFinite(entry)) entry=numericPrice(trade?.execution_entry_price,trade?.planned_entry_price);
 
+      // Record transitions into unrealized profit/loss once per broker position.
+      const riskState=positionRisk.classifyPositionRisk(direction,entry,current);
+      if(riskState==="ADVERSE"&&!lossWarningPositions.has(String(positionId))){
+        lossWarningPositions.add(String(positionId));
+        console.warn("AURIXA_POSITION_ADVERSE_MOVE:",JSON.stringify({positionId,direction,entry,current,adverseMove:direction==="BUY"?entry-current:current-entry,action:"MONITOR_PROTECTION_AND_REASSESS_COMPLETED_CANDLES",automaticReverse:false}));
+      }else if(riskState!=="ADVERSE"){
+        lossWarningPositions.delete(String(positionId));
+      }
       // Record the transition into unrealized profit once per broker position.
       // Trailing only moves a stop in the protective direction and its broker
       // confirmation is required before the update is logged as successful.
@@ -541,7 +551,7 @@ async function syncOpenPositions(symbolName=null){
       // Manual/untracked positions are never direction-closed automatically.
       if(trade && cfg.exitReversalEnabled){
         const pidKey=String(positionId);
-        const opposite=eligibleReversal && exitDecision.signal!==direction;
+        const opposite=positionRisk.shouldExitOnReversal({tracked:Boolean(trade),enabled:cfg.exitReversalEnabled,eligible:eligibleReversal,signal:exitDecision?.signal,direction});
         if(!opposite){
           reversalConfirmations.delete(pidKey);
         }else{
@@ -576,7 +586,7 @@ async function syncOpenPositions(symbolName=null){
                 }));
                 try{
                   const closeResult=await cTrader.closeXAUUSDPosition(positionId,closeVolume,targetSymbol);
-                  if(closeResult?.brokerConfirmed!==true){
+                  if(!positionRisk.isBrokerCloseConfirmed(closeResult)){
                     throw new Error("Broker did not confirm that the position was fully closed");
                   }
                   await dbQuery(
@@ -692,9 +702,7 @@ async function syncOpenPositions(symbolName=null){
       const existingSL=rawExistingSL===null||rawExistingSL===undefined||rawExistingSL===""
         ? NaN : Number(rawExistingSL);
       // Never loosen an existing stop; an absent SL may be established by trailing.
-      const improves=!Number.isFinite(existingSL)
-        ? true
-        : direction==="BUY"?candidate>existingSL: candidate<existingSL;
+      const improves=positionRisk.shouldImproveStop(direction,candidate,existingSL);
       if(!improves)continue;
 
       try{
@@ -834,6 +842,7 @@ async function syncOpenPositions(symbolName=null){
   for(const key of reversalConfirmations.keys()) if(!livePositionIds.has(key)) reversalConfirmations.delete(key);
   for(const key of reversalCloseAttempts.keys()) if(!livePositionIds.has(key)) reversalCloseAttempts.delete(key);
   for(const key of profitDetectedPositions) if(!livePositionIds.has(key)) profitDetectedPositions.delete(key);
+  for(const key of lossWarningPositions) if(!livePositionIds.has(key)) lossWarningPositions.delete(key);
   return {symbol:targetSymbol,updated,closed,protectedCount,trailingUpdated,brokerPositions:positions.length,protectionAudit};
 }
 
