@@ -19,6 +19,9 @@ function protectionIssues(position, direction = null, entry = null, current = nu
   const issues = [];
   if (!(Number.isFinite(sl) && sl > 0)) issues.push("MISSING_STOP_LOSS");
   if (!(Number.isFinite(tp) && tp > 0)) issues.push("MISSING_TAKE_PROFIT");
+  if (!side) issues.push("TRADE_DIRECTION_UNAVAILABLE");
+  if (side && (!Number.isFinite(market) || market <= 0)) issues.push("STOP_LOSS_MARKET_UNAVAILABLE");
+  if (side && (!Number.isFinite(e) || e <= 0)) issues.push("ENTRY_PRICE_UNAVAILABLE");
   // A trailing SL may legitimately cross the entry price into profit. Check
   // it against current market, not entry, so valid profit-locking stops survive.
   if (Number.isFinite(sl) && sl > 0 && side === "BUY" && Number.isFinite(market) && sl >= market) issues.push("STOP_LOSS_NOT_BELOW_MARKET");
