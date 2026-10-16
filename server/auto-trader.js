@@ -6,6 +6,7 @@
  */
 
 const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMBOLS } = require("./symbol-support");
+const brokerVolume = require("./broker-volume");
 
 let cTrader=null, dbQuery=null, aiEngine=null;
 const inFlightSignalKeys = new Set();
@@ -275,7 +276,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   let executionTarget=target;
   let riskAdjustedForBrokerMinimum=false;
   const rawVolume=(riskAmount*volumeUnitScale)/(executionRiskDistance*quoteToUsdRate);
-  let volume=Math.min(configuredMax,Math.floor(rawVolume/brokerStep)*brokerStep);
+  let volume=brokerVolume.normalizeVolume(rawVolume, volumeRules, configuredMax);
 
   // If the structure-based stop is slightly wider than the risk budget,
   // do not throw away a confirmed signal. Use the broker minimum volume
@@ -297,7 +298,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
         ? entry+executionRiskDistance*2
         : entry-executionRiskDistance*2;
       const adjustedRaw=(riskAmount*volumeUnitScale)/(executionRiskDistance*quoteToUsdRate);
-      volume=Math.min(configuredMax,Math.floor(adjustedRaw/brokerStep)*brokerStep);
+      volume=brokerVolume.normalizeVolume(adjustedRaw, volumeRules, configuredMax);
       if(volume>=brokerMin) riskAdjustedForBrokerMinimum=true;
     }
   }
