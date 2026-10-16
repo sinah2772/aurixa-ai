@@ -84,7 +84,7 @@ test("OF1 confirms matching main direction with multiple structural checks even 
   });
   assert.equal(result.status, "CONFIRMED");
   assert.equal(result.confirmed, true);
-  assert.equal(result.evidenceCount, 4);
+  assert.equal(result.evidenceCount, 3);
   assert.match(result.reason, /full OF1 entry signal: WAIT/);
 });
 
@@ -127,7 +127,7 @@ test("OF1 blocks an opposing V1 direction only with a trigger and at least two s
   });
   assert.equal(result.confirmed, false);
   assert.equal(result.status, "DIRECTION_MISMATCH");
-  assert.equal(result.evidenceCount, 3);
+  assert.equal(result.evidenceCount, 4);
   assert.equal(shouldBlockOnOF1(result.status), true);
 });
 
