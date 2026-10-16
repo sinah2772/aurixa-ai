@@ -533,6 +533,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     await dbQuery(`UPDATE aurixa.auto_trades
       SET decision_id=$2,order_id=$3,position_id=$4,client_msg_id=$5,status=$6,
           execution_entry_price=$7,gate_reason=$8,error=$9,
+          opened_at=CASE WHEN $4 IS NOT NULL AND $6 IN ('OPEN','PARTIAL','CLOSED') THEN COALESCE(opened_at,NOW()) ELSE opened_at END,
           closed_at=CASE WHEN $6='CLOSED' THEN COALESCE(closed_at,NOW()) ELSE closed_at END,
           close_price=COALESCE($10,close_price),
           exit_reason=COALESCE($11,exit_reason),updated_at=NOW()
