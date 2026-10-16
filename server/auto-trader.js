@@ -307,7 +307,17 @@ async function executeAiDecisionInternal(decision, decisionId=null){
   if(decision.signal==="BUY"&&(stop>=entry||target<=entry))return reject("BUY_PROTECTION_INVALID",{entry,stop,target});
   if(decision.signal==="SELL"&&(stop<=entry||target>=entry))return reject("SELL_PROTECTION_INVALID",{entry,stop,target});
   const riskDistance=Math.abs(entry-stop),targetDistance=Math.abs(target-entry),rr=targetDistance/Math.max(0.00001,riskDistance);
-  if(!Number.isFinite(rr)||rr<2)return reject("REWARD_RISK_TOO_LOW",{rr,minRewardRisk:2});
+  if(!Number.isFinite(rr)||rr<2){
+    const rrDiagnostics={
+      symbol:decisionSymbol,signal:decision.signal,candleTime:decision.candleTime??null,
+      entry,stop,target,riskDistance,targetDistance,
+      rr:Number.isFinite(rr)?rr:null,minRewardRisk:2,
+      quoteBid:Number.isFinite(bid)?bid:null,quoteAsk:Number.isFinite(ask)?ask:null,
+      source:"EXECUTION_GATE_LIVE_QUOTE"
+    };
+    console.warn("AURIXA_REWARD_RISK_GATE_DIAGNOSTICS:",JSON.stringify({decisionId,...rrDiagnostics}));
+    return reject("REWARD_RISK_TOO_LOW",rrDiagnostics);
+  }
   // No fixed XAUUSD position-count, daily-trade, or global cooldown limit.
   // Confirmed BUY/SELL signals may open additional demo positions.
   // Balance/free-margin, risk sizing, spread, stale-signal, broker-volume,
