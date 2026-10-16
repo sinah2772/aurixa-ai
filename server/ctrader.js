@@ -2661,7 +2661,7 @@ async function placeDemoMarketOrder({
 }
 
 
-async function closeXAUUSDPosition(positionId, volume, symbolName = state.symbolName) {
+async function closeXAUUSDPosition(positionId, volume, symbolName = state.symbolName, options = {}) {
   if (!state.ws || state.ws.readyState !== 1) {
     throw new Error("cTrader WebSocket is not connected");
   }
@@ -2687,6 +2687,22 @@ async function closeXAUUSDPosition(positionId, volume, symbolName = state.symbol
 
   if (!Number.isInteger(vol) || vol <= 0) {
     throw new Error("Invalid cTrader close volume");
+  }
+
+  const allowPartial = options?.allowPartial === true;
+  let originalVolume = null;
+  if (allowPartial) {
+    const before = await getOpenXAUUSDPositions(true, symbolName);
+    const existing = before.find(position => String(position?.positionId) === String(pid));
+    const td = existing?.tradeData || {};
+    const rawOriginalVolume = existing?.volume ?? td.volume;
+    originalVolume = rawOriginalVolume == null || rawOriginalVolume === "" ? NaN : Number(rawOriginalVolume);
+    if (!Number.isSafeInteger(originalVolume) || originalVolume <= 0) {
+      throw new Error("Cannot safely reduce position: broker volume is unavailable");
+    }
+    if (vol >= originalVolume) {
+      throw new Error("Partial reduction volume must be smaller than the broker-confirmed open volume");
+    }
   }
 
   // Closing is asynchronous too. Wait for the real execution
@@ -2731,12 +2747,17 @@ async function closeXAUUSDPosition(positionId, volume, symbolName = state.symbol
       const positions = await getOpenXAUUSDPositions(true, symbolName);
       const stillOpen = positions.find(position => String(position?.positionId) === String(pid));
       if (!stillOpen) {
-        brokerConfirmed = true;
+        if (!allowPartial) brokerConfirmed = true;
         break;
       }
       const td = stillOpen.tradeData || {};
       const rawRemaining = stillOpen.volume ?? td.volume;
       remainingVolume = rawRemaining == null || rawRemaining === "" ? null : Number(rawRemaining);
+      if (allowPartial && Number.isSafeInteger(remainingVolume) &&
+          remainingVolume === originalVolume - vol) {
+        brokerConfirmed = true;
+        break;
+      }
     } catch (verifyError) {
       console.warn("AURIXA_CLOSE_VERIFY_RETRY:", JSON.stringify({
         positionId: pid, orderId, check, error: safeError(verifyError)
@@ -2745,22 +2766,26 @@ async function closeXAUUSDPosition(positionId, volume, symbolName = state.symbol
   }
 
   if (!brokerConfirmed) {
-    console.error("AURIXA_CLOSE_NOT_CONFIRMED_BY_BROKER:", JSON.stringify({
-      positionId: pid, orderId, executionType, remainingVolume
+    console.error(allowPartial ? "AURIXA_PARTIAL_CLOSE_NOT_CONFIRMED_BY_BROKER:" : "AURIXA_CLOSE_NOT_CONFIRMED_BY_BROKER:", JSON.stringify({
+      positionId: pid, orderId, executionType, requestedVolume: vol, originalVolume, remainingVolume
     }));
-    throw new Error(`cTrader close execution was received but broker still reports position ${pid} open`);
+    throw new Error(allowPartial
+      ? "cTrader partial close was not verified for position " + pid + "; remaining volume did not match the requested reduction"
+      : "cTrader close execution was received but broker still reports position " + pid + " open");
   }
 
-  console.log("AURIXA_CLOSE_CONFIRMED_BY_BROKER:", JSON.stringify({
+  console.log(allowPartial ? "AURIXA_PARTIAL_CLOSE_CONFIRMED_BY_BROKER:" : "AURIXA_CLOSE_CONFIRMED_BY_BROKER:", JSON.stringify({
     positionId: pid, orderId, executionType, executionPrice,
-    brokerConfirmed: true, remainingVolume: null
+    brokerConfirmed: true, requestedVolume: vol,
+    remainingVolume: allowPartial ? remainingVolume : null
   }));
 
   return {
-    status: "CLOSED",
+    status: allowPartial ? "PARTIALLY_CLOSED" : "CLOSED",
     clientMsgId: response?.clientMsgId || null,
     positionId: pid,
     volume: vol,
+    remainingVolume: allowPartial ? remainingVolume : null,
     orderId,
     executionPrice,
     executionType,
