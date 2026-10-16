@@ -2088,6 +2088,44 @@ async function inspectOpenXAUUSDPositions() {
   });
 }
 
+let unrealizedPnlCache = { at: 0, accountId: null, rows: null, moneyDigits: null };
+
+async function getPositionUnrealizedPnL() {
+  if (!state.ws || state.ws.readyState !== 1 || !state.connected || !state.authorized || !state.accountId) {
+    throw new Error("cTrader account is not authorized");
+  }
+  const now = Date.now();
+  if (unrealizedPnlCache.accountId === String(state.accountId) &&
+      Array.isArray(unrealizedPnlCache.rows) && now - unrealizedPnlCache.at < 2000) {
+    return { rows: unrealizedPnlCache.rows, moneyDigits: unrealizedPnlCache.moneyDigits, cached: true };
+  }
+  const msg = await request(
+    state.ws,
+    2187,
+    { ctidTraderAccountId: Number(state.accountId) },
+    10000
+  );
+  if (Number(msg?.payloadType) !== 2188) throw new Error("cTrader unrealized P&L response was not confirmed");
+  const payload = msg?.payload || {};
+  const digitsRaw = Number(payload.moneyDigits);
+  const moneyDigits = Number.isInteger(digitsRaw) && digitsRaw >= 0 && digitsRaw <= 12 ? digitsRaw : null;
+  if (moneyDigits === null || !Array.isArray(payload.positionUnrealizedPnL)) {
+    throw new Error("cTrader unrealized P&L response is incomplete");
+  }
+  const scale = Math.pow(10, moneyDigits);
+  const rows = payload.positionUnrealizedPnL.map(item => {
+    const grossRaw = Number(item?.grossUnrealizedPnL);
+    const netRaw = Number(item?.netUnrealizedPnL);
+    return {
+      positionId: String(item?.positionId ?? ""),
+      grossUnrealizedPnL: Number.isFinite(grossRaw) ? grossRaw / scale : null,
+      netUnrealizedPnL: Number.isFinite(netRaw) ? netRaw / scale : null
+    };
+  }).filter(item => item.positionId);
+  unrealizedPnlCache = { at: now, accountId: String(state.accountId), rows, moneyDigits };
+  return { rows, moneyDigits, cached: false };
+}
+
 async function getAccountBalance() {
   if (!state.ws || state.ws.readyState !== 1) throw new Error("cTrader WebSocket is not connected");
   if (!state.connected || !state.authorized || !state.accountId) throw new Error("cTrader account is not authorized");
@@ -2098,21 +2136,81 @@ async function getAccountBalance() {
     10000
   );
   const trader = msg?.payload?.trader || msg?.payload || {};
-  const moneyDigits = Number(trader.moneyDigits ?? 2);
-  const scale = Math.pow(10, Number.isFinite(moneyDigits) ? moneyDigits : 2);
-  const readMoney = (value) => {
+  const moneyDigitsRaw = Number(trader.moneyDigits ?? 2);
+  const moneyDigits = Number.isInteger(moneyDigitsRaw) && moneyDigitsRaw >= 0 && moneyDigitsRaw <= 12 ? moneyDigitsRaw : 2;
+  const scale = Math.pow(10, moneyDigits);
+  const readMoney = (value, digits = moneyDigits) => {
+    if (value === null || value === undefined || value === "") return null;
     const n = Number(value);
-    return Number.isFinite(n) ? n / scale : null;
+    return Number.isFinite(n) ? n / Math.pow(10, digits) : null;
   };
   const balance = readMoney(trader.balance);
   if (!Number.isFinite(balance) || balance <= 0) throw new Error("cTrader account balance is unavailable");
+
+  let unrealizedNetProfit = null;
+  let equity = readMoney(trader.equity);
+  let pnlStatus = "UNAVAILABLE";
+  try {
+    const pnl = await getPositionUnrealizedPnL();
+    if (pnl.rows.every(row => Number.isFinite(row.netUnrealizedPnL))) {
+      unrealizedNetProfit = pnl.rows.reduce((sum, row) => sum + row.netUnrealizedPnL, 0);
+      // The P&L response is account-wide and includes all currently open positions.
+      // Use broker-calculated net P&L; never estimate it from price × volume.
+      if (equity === null) equity = balance + unrealizedNetProfit;
+      pnlStatus = "BROKER_CONFIRMED";
+    }
+  } catch (err) {
+    console.warn("AURIXA_ACCOUNT_UNREALIZED_PNL_UNAVAILABLE:", err.message);
+  }
+
+  let usedMargin = readMoney(trader.usedMargin);
+  let freeMargin = readMoney(trader.freeMargin);
+  let marginStatus = Number.isFinite(usedMargin) && Number.isFinite(freeMargin) ? "BROKER_CONFIRMED" : "UNAVAILABLE";
+  if (usedMargin === null || freeMargin === null) {
+    try {
+      const reconcile = await request(state.ws, 2124, {
+        ctidTraderAccountId: Number(state.accountId),
+        returnProtectionOrders: false
+      }, 10000);
+      if (Number(reconcile?.payloadType) !== 2125 || !Array.isArray(reconcile?.payload?.position)) {
+        throw new Error("cTrader position/margin snapshot was not confirmed");
+      }
+      const positions = reconcile.payload.position.filter(p => Number(p?.positionStatus) === 1);
+      const perPosition = positions.map(p => {
+        const raw = p?.usedMargin;
+        const digitsRaw = Number(p?.moneyDigits ?? moneyDigits);
+        const digits = Number.isInteger(digitsRaw) && digitsRaw >= 0 && digitsRaw <= 12 ? digitsRaw : null;
+        const n = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
+        return Number.isFinite(n) && digits !== null ? n / Math.pow(10, digits) : null;
+      });
+      if (perPosition.every(value => Number.isFinite(value))) {
+        usedMargin = perPosition.reduce((sum, value) => sum + value, 0);
+        if (equity !== null) freeMargin = equity - usedMargin;
+        marginStatus = equity !== null ? "CALCULATED_FROM_BROKER_SNAPSHOT" : "PARTIAL";
+      }
+    } catch (err) {
+      console.warn("AURIXA_ACCOUNT_MARGIN_UNAVAILABLE:", err.message);
+    }
+  }
+
+  const depositAssetId = trader.depositAssetId ?? state.account?.depositAssetId ?? null;
+  const rawCurrency = trader.currency ?? trader.depositAsset?.name ?? trader.depositAsset?.assetName ?? state.account?.currency ?? null;
+  const currency = typeof rawCurrency === "string" && rawCurrency.trim()
+    ? rawCurrency.trim()
+    : null;
   return {
     balance,
-    equity: readMoney(trader.equity),
-    usedMargin: readMoney(trader.usedMargin),
-    freeMargin: readMoney(trader.freeMargin),
+    equity: Number.isFinite(equity) ? equity : null,
+    usedMargin: Number.isFinite(usedMargin) ? usedMargin : null,
+    freeMargin: Number.isFinite(freeMargin) ? freeMargin : null,
+    unrealizedNetProfit: Number.isFinite(unrealizedNetProfit) ? unrealizedNetProfit : null,
+    unrealizedPnlStatus: pnlStatus,
+    marginStatus,
+    currency,
+    depositAssetId,
     rawBalance: Number(trader.balance),
-    moneyDigits
+    moneyDigits,
+    accountUpdatedAt: new Date().toISOString()
   };
 }
 
