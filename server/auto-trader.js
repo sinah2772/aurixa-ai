@@ -391,7 +391,8 @@ async function executeAiDecisionInternal(decision, decisionId=null){
 
   const requiredRiskAtMinVolume=(brokerMin/volumeUnitScale)*executionRiskDistance*quoteToUsdRate;
   if(volume<brokerMin){
-    return reject("RISK_BUDGET_TOO_SMALL_FOR_BROKER_MIN_VOLUME",{
+    const diagnostics={
+      symbol:decisionSymbol,
       accountBalance:balance,
       accountEquity:Number.isFinite(equity)?equity:null,
       freeMargin:Number.isFinite(freeMargin)?freeMargin:null,
@@ -402,12 +403,21 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       riskAdjustedForBrokerMinimum,
       volumeUnitScale,
       rawVolume,
+      configuredMaxVolume:configuredMax,
       selectedVolume:0,
       brokerMinVolume:brokerMin,
       brokerVolumeStep:brokerStep,
       brokerMaxVolume:brokerMax,
-      requiredRiskAtMinVolume
-    });
+      requiredRiskAtMinVolume,
+      riskBudgetCoversBrokerMinimum:requiredRiskAtMinVolume <= riskAmount * 0.995
+    };
+    if(configuredMax < brokerMin){
+      return reject("CONFIGURED_MAX_VOLUME_BELOW_BROKER_MINIMUM",diagnostics);
+    }
+    if(requiredRiskAtMinVolume > riskAmount * 0.995){
+      return reject("RISK_BUDGET_TOO_SMALL_FOR_BROKER_MIN_VOLUME",diagnostics);
+    }
+    return reject("BROKER_VOLUME_SIZE_OR_STEP_UNSUPPORTED",diagnostics);
   }
   console.log("AURIXA ACCOUNT VOLUME CHECK:",JSON.stringify({
     balance,equity:Number.isFinite(equity)?equity:null,
