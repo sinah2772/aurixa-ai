@@ -17,6 +17,7 @@ const {
 } = require("./ctrader");
 
 const autoTrader = require("./auto-trader");
+const buyerSellerPressure = require("./buyer-seller-pressure");
 const marketEngine = require("./market-engine");
 const aiTraderEngine = require("./ai-trader-engine");
 const strategyComparison = require("./strategy-comparison");
@@ -95,6 +96,16 @@ app.get("/health", (req, res) => {
 });
 
 registerCTrader(app);
+
+// Buyer/seller intelligence is observation-only. It never changes trade approval.
+app.get("/api/market-pressure", (req, res) => {
+  const symbol = String(req.query.symbol || "").trim().toUpperCase();
+  if (symbol) {
+    return res.json({ ok: true, mode: "observe_only", pressure: buyerSellerPressure.getSnapshot(symbol) });
+  }
+  res.json({ ok: true, mode: "observe_only", markets: buyerSellerPressure.getAllSnapshots() });
+});
+
 app.get("/api/ai/decision", async (req,res)=>{
  try{
   const state=marketEngine.getState()||{},ct=getCTraderStatus()||{};
