@@ -139,13 +139,23 @@ app.get("/api/ai/signals/:id", async (req,res)=>{
         t.error AS "executionError",t.order_id AS "orderId",t.position_id AS "positionId",
         t.volume,t.signal_entry_price AS "signalEntryPrice",
         t.execution_entry_price AS "executionEntryPrice",
-        t.planned_stop_price AS "plannedStopLoss",t.planned_take_profit_price AS "plannedTakeProfit",
+        COALESCE(t.planned_stop_price,s.stop_loss) AS "plannedStopLoss",
+        COALESCE(t.planned_take_profit_price,s.take_profit) AS "plannedTakeProfit",
         t.opened_at AS "openedAt",t.closed_at AS "closedAt",
         t.close_price AS "closePrice",t.profit,t.exit_reason AS "exitReason"
       FROM aurixa.ai_signals s
       LEFT JOIN aurixa.ai_trade_decisions d ON d.id=s.decision_id
-      LEFT JOIN aurixa.auto_trades t ON t.decision_id=s.decision_id
-      WHERE s.id=$1 ORDER BY t.created_at DESC NULLS LAST LIMIT 1
+      LEFT JOIN LATERAL (
+        SELECT at.*
+        FROM aurixa.auto_trades at
+        WHERE (s.decision_id IS NOT NULL AND at.decision_id=s.decision_id)
+           OR at.strategy_signal_key =
+              'AURIXA_AI:' || s.symbol || ':' || COALESCE(s.decision->>'candleTime','') || ':' || s.signal
+        ORDER BY CASE WHEN s.decision_id IS NOT NULL AND at.decision_id=s.decision_id THEN 0 ELSE 1 END,
+                 at.created_at DESC NULLS LAST
+        LIMIT 1
+      ) t ON TRUE
+      WHERE s.id=$1 LIMIT 1
     `,[id]);
     if(!q.rows.length) return res.status(404).json({ok:false,error:"Signal not found"});
     const r=q.rows[0];
