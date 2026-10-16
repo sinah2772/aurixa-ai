@@ -70,11 +70,14 @@ function summarize(trades, costs) {
     costs: { spreadPrice: costs.spreadPrice, slippagePricePerSide: costs.slippagePricePerSide, commissionRPerTrade: costs.commissionRPerTrade }
   };
 }
-function runOne(candles, symbol, costs, strategy) {
+function runOne(candles, symbol, costs, strategy, options = {}) {
   const trades = [];
   let skippedInvalidatedSetups = 0;
-  let i = 54;
-  while (i < candles.length - 1) {
+  const startIndex = Math.max(54, Math.floor(Number(options.startIndex) || 54));
+  const endIndex = Math.min(candles.length - 1,
+    Number.isInteger(options.endIndex) ? options.endIndex : candles.length - 1);
+  let i = startIndex;
+  while (i < endIndex) {
     const history = candles.slice(0, i + 1), bar = candles[i], next = candles[i + 1];
     let setup;
     if (strategy === "V1") {
@@ -109,7 +112,7 @@ function runOne(candles, symbol, costs, strategy) {
     }
     // If a later candle gaps through protection, use its open as the adverse exit.
     let exit = null, exitIndex = i + 1, reason = null;
-    for (let j = i + 1; j < candles.length; j++) {
+    for (let j = i + 1; j <= endIndex; j++) {
       const c = candles[j];
       if (side === "BUY") {
         if (c.open <= stop) { exit = c.open; reason = "GAP_STOP"; }
@@ -124,7 +127,7 @@ function runOne(candles, symbol, costs, strategy) {
       }
       if (exit !== null) { exitIndex = j; break; }
     }
-    if (exit === null) { exitIndex = candles.length - 1; exit = candles[exitIndex].close; reason = "DATA_END"; }
+    if (exit === null) { exitIndex = endIndex; exit = candles[exitIndex].close; reason = "DATA_END"; }
     // Exit cost is applied adversely to both systems. Commission is supplied in R
     // units because contract value varies by broker symbol and account currency.
     exit += side === "BUY" ? -halfSpread - slip : halfSpread + slip;
@@ -159,9 +162,48 @@ function compareStrategies(input = {}) {
   }
   const v1 = runOne(candles, symbol, costs, "V1");
   const candidate = runOne(candles, symbol, costs, "TREND_PULLBACK");
+  // Use a strictly chronological 70/30 split when enough candles are available.
+  // The holdout uses earlier candles only as indicator warm-up; no holdout bar
+  // contributes to in-sample fills or exits.
+  const holdoutAvailable = candles.length >= 200;
+  const splitIndex = Math.floor(candles.length * 0.7);
+  const inSample = holdoutAvailable ? {
+    v1: runOne(candles, symbol, costs, "V1", { startIndex: 54, endIndex: splitIndex - 1 }),
+    trendPullback: runOne(candles, symbol, costs, "TREND_PULLBACK", { startIndex: 54, endIndex: splitIndex - 1 })
+  } : null;
+  const outOfSample = holdoutAvailable ? {
+    v1: runOne(candles, symbol, costs, "V1", { startIndex: splitIndex, endIndex: candles.length - 1 }),
+    trendPullback: runOne(candles, symbol, costs, "TREND_PULLBACK", { startIndex: splitIndex, endIndex: candles.length - 1 })
+  } : null;
+  const oosRecommendation = !outOfSample ? "NEED_AT_LEAST_200_CANDLES" :
+    outOfSample.v1.summary.trades < 5 || outOfSample.trendPullback.summary.trades < 5
+      ? "INSUFFICIENT_OUT_OF_SAMPLE_TRADES"
+      : outOfSample.trendPullback.summary.expectancyR > outOfSample.v1.summary.expectancyR
+        ? "TREND_PULLBACK_BETTER_ON_HOLDOUT_ONLY"
+        : outOfSample.trendPullback.summary.expectancyR < outOfSample.v1.summary.expectancyR
+          ? "V1_BETTER_ON_HOLDOUT_ONLY" : "TIE_ON_HOLDOUT_ONLY";
   return {
     ok: true, mode: "offline_comparison_only", liveTradingChanged: false,
     symbol, timeframe: "M5", candles: candles.length,
+    evaluationSplit: holdoutAvailable ? {
+      method: "chronological_70_30",
+      inSampleRange: { startIndex: 54, endIndex: splitIndex - 1, candles: splitIndex - 54 },
+      outOfSampleRange: { startIndex: splitIndex, endIndex: candles.length - 1, candles: candles.length - splitIndex },
+      outOfSampleRecommendation: oosRecommendation,
+      deploymentRecommendation: "DO_NOT_SWITCH_FROM_THIS_REPORT_ALONE"
+    } : {
+      method: "not_available",
+      requiredCandles: 200,
+      reason: "At least 200 candles are required to reserve a meaningful chronological holdout."
+    },
+    inSampleResults: inSample ? {
+      v1: inSample.v1.summary,
+      trendPullback: inSample.trendPullback.summary
+    } : null,
+    outOfSampleResults: outOfSample ? {
+      v1: outOfSample.v1.summary,
+      trendPullback: outOfSample.trendPullback.summary
+    } : null,
     costModel: "Explicit spread and per-side slippage in symbol price units; commission in R per completed trade. Broker-specific cost assumptions must be supplied.",
     assumptions: [
       "Both strategies see the same chronological candles and costs.",
