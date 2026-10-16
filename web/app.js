@@ -20,6 +20,7 @@
     autoStatus: "/api/auto-trader/status",
     autoPositions: "/api/auto-trader/positions",
     autoTrades: "/api/auto-trader/trades?limit=500",
+    performance: "/api/auto-trader/performance?limit=500",
     account: "/api/auto-trader/account",
     aiDecision: "/api/ai/decision",
     aiHistory: "/api/ai/decision/history",
@@ -1000,39 +1001,34 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     text("accountReadStatus", account?.ok === true ? (ready ? "ACCOUNT DATA LIVE" : "ACCOUNT DATA READ") : "ACCOUNT DATA UNAVAILABLE");
   }
 
-  function updatePerformance(trades) {
+  function updatePerformance(trades, liveSummary) {
     const rows = Array.isArray(trades?.trades) ? trades.trades : [];
     const dedicatedClosed = Array.isArray(trades?.closedTrades) ? trades.closedTrades : [];
-    // Some backend versions may return an empty dedicated close feed while
-    // the general trade feed already contains closed rows. Never hide those.
-    const closed = dedicatedClosed.length
-      ? dedicatedClosed
-      : rows.filter(t => String(t?.status || "").trim().toUpperCase().startsWith("CLOSED") || Boolean(t?.closedAt));
-    // Match Trade History: only numeric realized P/L is included in statistics.
-    const verified = closed
-      .map(t => t.profit === null || t.profit === undefined || t.profit === "" ? null : Number(t.profit))
-      .filter(v => Number.isFinite(v));
-    let wins=0, losses=0, flat=0;
-    const pnl=verified.reduce((sum,p) => sum+p, 0);
-    for (const p of verified) { if(p>0)wins++; else if(p<0)losses++; else flat++; }
-    const evaluated=wins+losses+flat;
-    const pending=closed.length-evaluated;
-    const winRate=evaluated?wins/evaluated*100:null;
-    const totalClosed = Number.isFinite(Number(trades?.closedTradeCount))
-      ? Math.max(0, Number(trades.closedTradeCount))
-      : closed.length;
-    const shownClosed = closed.length;
-    const notLoaded = Math.max(0, totalClosed - shownClosed);
-    const refreshedAt = new Date().toLocaleTimeString();
+    const closed = dedicatedClosed.length ? dedicatedClosed : rows.filter(t => String(t?.status || "").trim().toUpperCase().startsWith("CLOSED") || Boolean(t?.closedAt));
+    if (liveSummary?.ok === true && liveSummary?.source === "aurixa.auto_trades") {
+      const wins = Number(liveSummary.wins || 0), losses = Number(liveSummary.losses || 0), flat = Number(liveSummary.breakeven || 0);
+      const evaluated = wins + losses + flat;
+      const totalClosed = Number(liveSummary.totalClosed || 0), sampled = Number(liveSummary.sampledClosed || 0);
+      const pending = Number(liveSummary.pnlPending || 0), withPnl = Number(liveSummary.withRecordedPnl || 0), pnl = Number(liveSummary.realizedPnl || 0);
+      const winRate = liveSummary.winRate == null ? null : Number(liveSummary.winRate);
+      text("performanceWins", wins); text("performanceLosses", losses); text("performanceFlat", flat);
+      text("performanceWinRate", winRate === null || !Number.isFinite(winRate) ? "—" : number(winRate, 1) + "%");
+      text("performancePnl", withPnl ? ((pnl > 0 ? "+" : "") + number(pnl, 2)) : "—");
+      const scope = totalClosed > sampled ? "LATEST " + sampled + " OF " + totalClosed + " CLOSED TRADES" : "LATEST " + sampled + " CLOSED TRADES";
+      const updated = liveSummary.updatedAt ? new Date(liveSummary.updatedAt).toLocaleTimeString() : new Date().toLocaleTimeString();
+      text("performanceSample", scope + " · " + withPnl + " WITH RECORDED P/L · " + pending + " P/L PENDING · UPDATED " + updated);
+      return;
+    }
+    const verified = closed.map(t => t.profit === null || t.profit === undefined || t.profit === "" ? null : Number(t.profit)).filter(v => Number.isFinite(v));
+    let wins = 0, losses = 0, flat = 0;
+    const pnl = verified.reduce((sum, p) => sum + p, 0);
+    for (const p of verified) { if (p > 0) wins++; else if (p < 0) losses++; else flat++; }
+    const evaluated = wins + losses + flat, pending = closed.length - evaluated;
+    const winRate = evaluated ? wins / evaluated * 100 : null;
     text("performanceWins", wins); text("performanceLosses", losses); text("performanceFlat", flat);
-    text("performanceWinRate", winRate===null?"—":number(winRate,1)+"%");
-    text("performancePnl", evaluated ? ((pnl>0?"+":"")+number(pnl,2)) : "—");
-    const scope = notLoaded > 0
-      ? "LATEST " + shownClosed + " OF " + totalClosed + " CLOSED"
-      : shownClosed + " CLOSED TRADES";
-    const pendingLabel = pending + " P/L PENDING IN LOADED SAMPLE";
-    const coverageLabel = notLoaded > 0 ? " · " + notLoaded + " CLOSED NOT LOADED" : "";
-    text("performanceSample", scope + " · " + evaluated + " WITH RECORDED P/L · " + pendingLabel + coverageLabel + " · UPDATED " + refreshedAt);
+    text("performanceWinRate", winRate === null ? "—" : number(winRate, 1) + "%");
+    text("performancePnl", evaluated ? ((pnl > 0 ? "+" : "") + number(pnl, 2)) : "—");
+    text("performanceSample", "FALLBACK SAMPLE ONLY · " + closed.length + " CLOSED LOADED · " + evaluated + " WITH RECORDED P/L · " + pending + " P/L PENDING · LIVE SUMMARY UNAVAILABLE");
   }
 
   async function openFinishedTradeInvestigation(tradeId) {
@@ -1202,6 +1198,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       aiHistory,
       aiSignals,
       autoTrades,
+      performance,
       account,
     ] = await Promise.all([
       getJSON(API.market),
@@ -1212,6 +1209,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
       getJSON(API.aiHistory + "?limit=20"),
       getJSON(API.aiSignals + "?limit=100"),
       getJSON(API.autoTrades),
+      getJSON(API.performance),
       getJSON(API.account)
     ]);
 
@@ -1241,7 +1239,7 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }
     if (autoTrades && autoTrades.ok !== false) {
       renderClosedTradeHistory(autoTrades);
-      updatePerformance(autoTrades);
+      updatePerformance(autoTrades, performance);
     } else {
       text("closedTradeHistorySummary", "HISTORY UNAVAILABLE");
       const tradeBody = $("closedTradeHistory");
