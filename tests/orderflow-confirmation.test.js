@@ -74,3 +74,44 @@ test("main strategy retains V1 and exposes OF1 confirmation for the same symbol"
   assert.equal(typeof decision.signalConfirmation.confirmed, "boolean");
   assert.equal(decision.executionEligible, decision.signal !== "WAIT");
 });
+
+test("OF1 confirms matching main direction with multiple structural checks even when its strict entry signal is WAIT", () => {
+  const { confirmOrderFlowDirection } = require("../server/ai-trader-engine");
+  const result = confirmOrderFlowDirection("BUY", {
+    dataReady: true, direction: "BUY", signal: "WAIT",
+    fib: { inZone: true, invalidated: false },
+    confirmation: { outsideValue: false, liquiditySweep: true, displacement: false, participation: true }
+  });
+  assert.equal(result.status, "CONFIRMED");
+  assert.equal(result.confirmed, true);
+  assert.equal(result.evidenceCount, 3);
+  assert.match(result.reason, /full OF1 entry signal: WAIT/);
+});
+
+test("OF1 does not confirm on direction alone or after retracement invalidation", () => {
+  const { confirmOrderFlowDirection } = require("../server/ai-trader-engine");
+  const directionOnly = confirmOrderFlowDirection("BUY", {
+    dataReady: true, direction: "BUY", signal: "WAIT",
+    fib: { inZone: false, invalidated: false },
+    confirmation: { outsideValue: false, liquiditySweep: false, displacement: false, participation: false }
+  });
+  assert.equal(directionOnly.confirmed, false);
+  const invalidated = confirmOrderFlowDirection("BUY", {
+    dataReady: true, direction: "BUY", signal: "BUY",
+    fib: { inZone: true, invalidated: true },
+    confirmation: { outsideValue: true, liquiditySweep: true, displacement: true, participation: false }
+  });
+  assert.equal(invalidated.confirmed, false);
+  assert.equal(invalidated.status, "OF1_WAIT");
+  assert.match(invalidated.reason, /invalidation/);
+});
+
+test("OF1 cannot confirm a direction that conflicts with the main strategy", () => {
+  const { confirmOrderFlowDirection } = require("../server/ai-trader-engine");
+  const result = confirmOrderFlowDirection("BUY", {
+    dataReady: true, direction: "SELL", signal: "WAIT",
+    confirmation: { liquiditySweep: true, displacement: true }
+  });
+  assert.equal(result.confirmed, false);
+  assert.equal(result.status, "DIRECTION_MISMATCH");
+});
