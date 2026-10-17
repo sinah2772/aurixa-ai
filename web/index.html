@@ -132,6 +132,16 @@
       <p class="notice">This report is diagnostic only. It does not approve entries, change risk settings, arm auto-trading or submit orders. A READY result means only that the data checks passed.</p>
     </section>
 
+    <section class="panel market-quality-panel" aria-labelledby="portfolioRiskTitle">
+      <div class="section-title">PORTFOLIO RISK · OBSERVE ONLY</div>
+      <div class="section-heading" id="portfolioRiskTitle">ACCOUNT-WIDE RISK AUDIT</div>
+      <div id="portfolioRiskSummary" class="notice" role="status" aria-live="polite">Checking broker positions and today's trade count…</div>
+      <div id="portfolioRiskGrid" class="multi-symbol-grid">
+        <div class="empty-state">Waiting for portfolio risk audit…</div>
+      </div>
+      <p class="notice">This panel reports current exposure and configured limits only. It does not enforce limits or place, modify, or close orders. Unknown broker/database data is never displayed as zero.</p>
+    </section>
+
     <div class="dashboard-grid">
     <!-- SIGNAL -->
     <section class="panel signal-panel">
