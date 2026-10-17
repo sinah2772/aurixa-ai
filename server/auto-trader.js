@@ -176,7 +176,7 @@ async function resolveTradeApproval(id, action){
  if(!["approve","reject"].includes(action)) return {ok:false,error:"INVALID_APPROVAL_ACTION"};
  if(typeof dbQuery!=="function") return {ok:false,error:"TRADE_APPROVAL_DATABASE_UNAVAILABLE"};
  const approvalId=String(id||"").trim();
- if(!/^\\d+$/.test(approvalId)||Number(approvalId)<=0) return {ok:false,error:"INVALID_APPROVAL_ID"};
+ if(!/^\d+$/.test(approvalId)||Number(approvalId)<=0) return {ok:false,error:"INVALID_APPROVAL_ID"};
  if(action==="reject"){
    const q=await dbQuery(`UPDATE aurixa.trade_approvals SET status='REJECTED',resolved_at=NOW(),updated_at=NOW()
      WHERE id=$1 AND status='PENDING' AND expires_at>NOW() RETURNING id`,[approvalId]);
@@ -192,8 +192,17 @@ async function resolveTradeApproval(id, action){
    await dbQuery("UPDATE aurixa.trade_approvals SET status='FAILED',updated_at=NOW() WHERE id=$1 AND status='APPROVING'",[approvalId]);
    return {ok:false,error:"APPROVAL_DECISION_UNAVAILABLE"};
  }
- const result=await executeAiDecision(decision,row.decisionId,approvalId);
- return {ok:true,status:result.executed===true?"EXECUTED":(result.reason==="TRADE_APPROVAL_REQUIRED"?"PENDING":"NOT_EXECUTED"),approvalId,result};
+ let result;
+ try {
+   result=await executeAiDecision(decision,row.decisionId,approvalId);
+ } catch(error) {
+   await dbQuery("UPDATE aurixa.trade_approvals SET status='EXECUTION_UNCONFIRMED',approval_reason=$2,updated_at=NOW() WHERE id=$1 AND status IN ('APPROVING','EXECUTING')",[approvalId,error.message]).catch(()=>{});
+   return {ok:false,error:"TRADE_EXECUTION_UNCONFIRMED",approvalId};
+ }
+ if(result.reason==="AI_SIGNAL_ALREADY_IN_FLIGHT") {
+   await dbQuery("UPDATE aurixa.trade_approvals SET status='FAILED',approval_reason=$2,updated_at=NOW() WHERE id=$1 AND status='APPROVING'",[approvalId,result.reason]).catch(()=>{});
+ }
+ return {ok:true,status:result.executed===true?"EXECUTED":"NOT_EXECUTED",approvalId,result};
 }
 
 async function emergencyCloseAfterProtectionFailure(result, symbol, fallbackVolume, cause) {
