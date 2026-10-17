@@ -1190,6 +1190,46 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     el.classList.toggle("is-fresh", healthy);
   }
 
+  function renderMarketQuality(report) {
+    const summary = $("marketQualitySummary");
+    const grid = $("marketQualityGrid");
+    if (!summary || !grid) return;
+    if (!report || report.ok !== true || !Array.isArray(report.markets)) {
+      summary.textContent = "DATA QUALITY REPORT UNAVAILABLE · NO PASS STATUS ASSUMED";
+      summary.classList.add("is-stale");
+      grid.innerHTML = '<div class="empty-state">Market-data diagnostics unavailable. Check the API and cTrader feed.</div>';
+      return;
+    }
+    const ready = report.markets.filter(m => m.ready).length;
+    const blocked = report.markets.length - ready;
+    summary.textContent = "OBSERVE ONLY · " + ready + " READY · " + blocked + " NEED ATTENTION · UPDATED " + new Date(report.generatedAt || Date.now()).toLocaleTimeString();
+    summary.classList.toggle("is-stale", blocked > 0);
+    summary.classList.toggle("is-fresh", blocked === 0 && report.markets.length > 0);
+    grid.innerHTML = report.markets.map(m => {
+      const reasons = Array.isArray(m.reasons) ? m.reasons : [];
+      const symbol = String(m.symbol || "UNKNOWN");
+      const quote = m.quote || {};
+      const candles = m.candles || {};
+      const state = m.ready ? "DATA CHECKS PASS" : "DATA NEEDS ATTENTION";
+      const detail = reasons.length ? reasons.join(" · ") : "No data-integrity issues detected";
+      return '<article class="multi-symbol-card ' + (m.ready ? "is-ready" : "is-blocked") + '">' +
+        '<div class="multi-symbol-card-head"><strong>' + escapeHTML(symbol) + '</strong><span>' + escapeHTML(state) + '</span></div>' +
+        '<div class="multi-symbol-card-meta">BID ' + escapeHTML(priceNumber(m.bid, priceDigits(symbol))) +
+        ' · ASK ' + escapeHTML(priceNumber(m.ask, priceDigits(symbol))) +
+        ' · SPREAD ' + escapeHTML(m.spread == null ? "—" : number(m.spread, priceDigits(symbol))) + '</div>' +
+        '<div class="multi-symbol-card-meta">QUOTE ' + (quote.fresh ? "FRESH" : "STALE / UNKNOWN") +
+        ' · M5 ' + escapeHTML(String(candles.valid ?? 0)) + '/' + escapeHTML(String(candles.required ?? 50)) +
+        ' · GAPS ' + escapeHTML(String(candles.detectedGaps ?? 0)) + '</div>' +
+        '<div class="multi-symbol-card-reason">' + escapeHTML(detail) + '</div>' +
+        '</article>';
+    }).join("") || '<div class="empty-state">No broker-discovered supported markets are available yet.</div>';
+  }
+
+  async function refreshMarketQuality() {
+    const report = await getJSON(API.marketQuality);
+    renderMarketQuality(report);
+  }
+
   async function refresh() {
     if (fullRefreshBusy) return;
     fullRefreshBusy = true;
@@ -1383,10 +1423,12 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
 
     refresh();
     refreshOpenTrades();
+    refreshMarketQuality();
 
     // OPEN TRADES is a dedicated live broker-position feed.
     // Poll every 2 seconds so entry/current/P&L/SL/TP stay synchronized
     // without waiting for the slower full dashboard refresh.
+    setInterval(refreshMarketQuality, 10000);
     setInterval(refreshOpenTrades, 2000);
     setInterval(refreshLiveChart, 2000);
     setInterval(refresh, 5000);
