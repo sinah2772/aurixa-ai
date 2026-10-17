@@ -9,6 +9,7 @@ const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile, SUPPORTED_SYMB
 const brokerVolume = require("./broker-volume");
 const positionRisk = require("./position-risk-response");
 const openPositionIntelligence = require("./open-position-intelligence");
+const { evaluatePortfolioRisk } = require("./portfolio-risk-manager");
 
 let cTrader=null, dbQuery=null, aiEngine=null;
 const inFlightSignalKeys = new Set();
@@ -136,6 +137,8 @@ function config(){
  riskPercent:Math.max(.1,Math.min(1,Number(process.env.AUTO_TRADING_RISK_PERCENT||.5))),
  maxSpread:Math.max(.05,Number(process.env.AUTO_TRADING_MAX_SPREAD||.60)),
  maxTradesPerDay:Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_MAX_TRADES_PER_DAY||2))),
+ maxOpenPositions:Math.max(0,Math.floor(Number(process.env.AUTO_TRADING_MAX_OPEN_POSITIONS||0))),
+ enforceDailyLimit:String(process.env.AUTO_TRADING_ENFORCE_DAILY_LIMIT||"false").toLowerCase()==="true",
  cooldownMinutes:Math.max(5,Number(process.env.AUTO_TRADING_COOLDOWN_MINUTES||30)),
  maxSignalAgeMinutes:Math.max(1,Number(process.env.AUTO_TRADING_MAX_SIGNAL_AGE_MINUTES||7)),
  maxVolume:Math.max(1000,Math.floor(Number(process.env.AUTO_TRADING_MAX_VOLUME||1000))),
@@ -153,7 +156,7 @@ function config(){
 
 function getStatus(){
  const cfg=config(),ct=cTrader?.getCTraderStatus?.()||{};
- return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:"NOT_ENFORCED",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:"NOT_ENFORCED",configuredDailyTradeLimit:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||"")};
+ return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:cfg.maxOpenPositions>0?cfg.maxOpenPositions:"DISABLED_UNLESS_CONFIGURED",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:cfg.enforceDailyLimit?cfg.maxTradesPerDay:"DISABLED_UNLESS_OPTED_IN",dailyTradeLimitEnforced:cfg.enforceDailyLimit,configuredDailyTradeLimit:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||"")};
 }
 
 async function emergencyCloseAfterProtectionFailure(result, symbol, fallbackVolume, cause) {
@@ -358,6 +361,51 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     // blocking a new confirmed BUY/SELL signal.
     // Risk, spread, RR, stale-signal, broker-volume and demo-only gates remain.
   }
+  // Account-wide risk limits are opt-in so the existing demo cadence is unchanged
+  // unless an operator explicitly configures AUTO_TRADING_MAX_OPEN_POSITIONS
+  // or AUTO_TRADING_ENFORCE_DAILY_LIMIT=true.
+  if (cfg.maxOpenPositions > 0 || cfg.enforceDailyLimit) {
+    let openPositionCount = null;
+    let dailyTradeCount = null;
+    try {
+      if (cfg.maxOpenPositions > 0) {
+        if (typeof cTrader.getOpenSymbolPositions !== "function") {
+          return reject("PORTFOLIO_POSITION_SNAPSHOT_UNAVAILABLE");
+        }
+        const brokerPositions = await cTrader.getOpenSymbolPositions(true);
+        if (!Array.isArray(brokerPositions)) {
+          return reject("PORTFOLIO_POSITION_SNAPSHOT_UNAVAILABLE");
+        }
+        openPositionCount = brokerPositions.length;
+      }
+      if (cfg.enforceDailyLimit) {
+        const dailyResult = await dbQuery(`
+          SELECT COUNT(*)::int AS count
+          FROM aurixa.auto_trades
+          WHERE created_at >= date_trunc('day', NOW())
+            AND status IN ('SUBMITTED','OPEN','PARTIAL','CLOSED')
+        `);
+        const rawCount = dailyResult?.rows?.[0]?.count;
+        const parsedCount = rawCount === null || rawCount === undefined || rawCount === "" ? NaN : Number(rawCount);
+        if (!Number.isInteger(parsedCount) || parsedCount < 0) {
+          return reject("DAILY_TRADE_COUNT_UNAVAILABLE");
+        }
+        dailyTradeCount = parsedCount;
+      }
+      const portfolioDecision = evaluatePortfolioRisk({
+        openPositionCount,
+        dailyTradeCount,
+        maxOpenPositions: cfg.maxOpenPositions,
+        maxTradesPerDay: cfg.maxTradesPerDay,
+        enforceDailyLimit: cfg.enforceDailyLimit
+      });
+      if (!portfolioDecision.allowed) return reject(portfolioDecision.reason, portfolioDecision);
+    } catch (error) {
+      console.error("AURIXA_PORTFOLIO_RISK_CHECK_FAILED:", error.message);
+      return reject("PORTFOLIO_RISK_CHECK_FAILED", { error: error.message });
+    }
+  }
+
   // Read the live demo account immediately before sizing the order.
   // Volume is derived from account balance + risk %, then constrained by
   // the broker's actual XAUUSD min/step/max volume.
