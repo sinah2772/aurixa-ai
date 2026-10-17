@@ -15,7 +15,7 @@ test("accepts a planned 2R target short by exactly one BTCUSD tick and flags rou
 
 test("rejects a target that is more than one price tick below 2R", () => {
   const result = evaluatePlannedRewardRisk({
-    signal: "SELL", entry: 80993.14, stop: 81643.94, target: 79691.53, digits: 2
+    signal: "SELL", entry: 80993.14, stop: 81643.94, target: 79691.57, digits: 2
   });
   assert.equal(result.allowed, false);
   assert.equal(result.roundedToTickOnly, false);
