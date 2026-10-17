@@ -446,6 +446,42 @@ app.get("/api/auto-trader/multi-symbol-status", (req, res) => {
   }
 });
 
+// Read-only per-symbol data integrity report. This endpoint never changes trade settings or submits orders.
+app.get("/api/market-data/quality", (req, res) => {
+  try {
+    const ctrader = require("./ctrader");
+    const marketDataQuality = require("./market-data-quality");
+    const requested = req.query.symbol ? normalizeSymbolName(req.query.symbol) : null;
+    if (requested && !isSupportedSymbol(requested)) {
+      return res.status(400).json({ ok: false, error: "UNSUPPORTED_SYMBOL", supportedSymbols: require("./symbol-support").SUPPORTED_SYMBOLS });
+    }
+    const discovered = ctrader.getMultiSymbolMarkets() || [];
+    const selected = requested ? discovered.filter(m => normalizeSymbolName(m.symbol) === requested) : discovered;
+    if (requested && !selected.length) {
+      return res.status(404).json({ ok: false, error: "SYMBOL_NOT_DISCOVERED", symbol: requested });
+    }
+    const now = Date.now();
+    const reports = selected.map(summary => {
+      const snapshot = ctrader.getMultiSymbolMarket(summary.symbol) || summary;
+      return marketDataQuality.auditMarketSnapshot(snapshot, now);
+    });
+    res.set("Cache-Control", "no-store");
+    res.json({
+      ok: true,
+      mode: "observe_only",
+      generatedAt: new Date(now).toISOString(),
+      discovered: reports.length,
+      readyCount: reports.filter(r => r.ready).length,
+      blockedCount: reports.filter(r => !r.ready).length,
+      markets: reports,
+      note: "Read-only diagnostics; this endpoint does not arm auto-trading, change risk settings, or submit orders."
+    });
+  } catch (err) {
+    console.error("Market data quality report failed:", err);
+    res.status(500).json({ ok: false, error: "MARKET_DATA_QUALITY_UNAVAILABLE" });
+  }
+});
+
 // Live scanner decisions: distinguish chart selection, data readiness, strategy approval and broker execution.
 app.get("/api/auto-trader/candidate", (req, res) => {
   try {
