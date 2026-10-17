@@ -17,6 +17,15 @@
   if (multiSymbolCloseButton && multiSymbolDialog) {
     multiSymbolCloseButton.addEventListener("click", () => multiSymbolDialog.close());
   }
+  if (multiSymbolDialog) {
+    // Native dialog backdrop clicks should dismiss the controls without
+    // accidentally closing when the user taps inside the panel.
+    multiSymbolDialog.addEventListener("click", event => {
+      if (event.target === multiSymbolDialog && multiSymbolDialog.open) {
+        multiSymbolDialog.close();
+      }
+    });
+  }
   if (!button || !statusEl || !symbolSelect) return;
 
   let enabled = false;
