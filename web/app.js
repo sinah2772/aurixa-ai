@@ -25,7 +25,9 @@
     aiDecision: "/api/ai/decision",
     aiHistory: "/api/ai/decision/history",
     aiSignals: "/api/ai/signals",
-    marketHistory: "/api/market/history?limit=300"
+    marketHistory: "/api/market/history?limit=300",
+    marketQuality: "/api/market-data/quality",
+    portfolioRisk: "/api/portfolio-risk/audit"
   };
 
   let chart = null;
@@ -1225,6 +1227,51 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     }).join("") || '<div class="empty-state">No broker-discovered supported markets are available yet.</div>';
   }
 
+  function renderPortfolioRisk(report) {
+    const summary = $("portfolioRiskSummary");
+    const grid = $("portfolioRiskGrid");
+    if (!summary || !grid) return;
+    if (!report || !report.mode) {
+      summary.textContent = "PORTFOLIO AUDIT UNAVAILABLE · UNKNOWN VALUES ARE NOT ZERO";
+      summary.classList.add("is-stale");
+      grid.innerHTML = '<div class="empty-state">Portfolio risk data unavailable. Check cTrader authorization and database connectivity.</div>';
+      return;
+    }
+    const open = report.openPositionCount == null ? "UNKNOWN" : String(report.openPositionCount);
+    const daily = report.dailyTradeCount == null ? "UNKNOWN" : String(report.dailyTradeCount);
+    const cap = report.maxOpenPositions == null ? "NOT CONFIGURED" : String(report.maxOpenPositions);
+    const dailyCap = report.maxTradesPerDay == null ? "DISABLED" : String(report.maxTradesPerDay);
+    const findings = Array.isArray(report.findings) ? report.findings : [];
+    const errors = Array.isArray(report.errors) ? report.errors : [];
+    const complete = report.canAssess === true;
+    summary.textContent = (complete ? "OBSERVE ONLY · SNAPSHOT AVAILABLE" : "OBSERVE ONLY · PARTIAL / UNAVAILABLE DATA") +
+      " · OPEN POSITIONS " + open + " · TODAY'S TRADES " + daily +
+      " · UPDATED " + new Date(report.generatedAt || Date.now()).toLocaleTimeString();
+    summary.classList.toggle("is-stale", !complete || findings.length > 0);
+    summary.classList.toggle("is-fresh", complete && findings.length === 0);
+    const rows = [
+      ["OPEN POSITIONS", open, "ACCOUNT-WIDE BROKER SNAPSHOT"],
+      ["OPEN-POSITION CAP", cap, cap === "NOT CONFIGURED" ? "NO CAP CONFIGURED" : "OBSERVE ONLY · NOT ENFORCED"],
+      ["TRADES TODAY", daily, "DATABASE COUNT · RECORDED TRADE ATTEMPTS"],
+      ["DAILY LIMIT", dailyCap, report.dailyLimitEnabled ? "CONFIGURED · AUDIT ONLY" : "DISABLED · AUDIT ONLY"]
+    ];
+    const cards = rows.map(row =>
+      '<article class="multi-symbol-card ' + (complete ? "is-ready" : "is-blocked") + '">' +
+      '<div class="multi-symbol-card-head"><strong>' + escapeHTML(row[0]) + '</strong><span>' + escapeHTML(row[1]) + '</span></div>' +
+      '<div class="multi-symbol-card-reason">' + escapeHTML(row[2]) + '</div></article>'
+    );
+    if (findings.length || errors.length) {
+      const detail = [...new Set([...findings, ...errors])].join(" · ");
+      cards.push('<article class="multi-symbol-card is-blocked"><div class="multi-symbol-card-head"><strong>FINDINGS</strong><span>REVIEW</span></div><div class="multi-symbol-card-reason">' + escapeHTML(detail) + '</div></article>');
+    }
+    grid.innerHTML = cards.join("");
+  }
+
+  async function refreshPortfolioRisk() {
+    const report = await getJSON(API.portfolioRisk);
+    renderPortfolioRisk(report);
+  }
+
   async function refreshMarketQuality() {
     const report = await getJSON(API.marketQuality);
     renderMarketQuality(report);
@@ -1424,11 +1471,13 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
     refresh();
     refreshOpenTrades();
     refreshMarketQuality();
+    refreshPortfolioRisk();
 
     // OPEN TRADES is a dedicated live broker-position feed.
     // Poll every 2 seconds so entry/current/P&L/SL/TP stay synchronized
     // without waiting for the slower full dashboard refresh.
     setInterval(refreshMarketQuality, 10000);
+    setInterval(refreshPortfolioRisk, 10000);
     setInterval(refreshOpenTrades, 2000);
     setInterval(refreshLiveChart, 2000);
     setInterval(refresh, 5000);
