@@ -360,35 +360,46 @@ async function executeAiDecisionInternal(decision, decisionId=null, approvalId=n
   if(decision.signal==="BUY"&&(stop>=entry||target<=entry))return reject("BUY_PROTECTION_INVALID",{entry,stop,target});
   if(decision.signal==="SELL"&&(stop<=entry||target>=entry))return reject("SELL_PROTECTION_INVALID",{entry,stop,target});
 
-  // The strategy's 2R gate must evaluate the signal's own entry/SL/TP levels.
-  // Comparing a fixed signal TP against a later live quote can turn a valid
-  // 2R signal into 1.999R merely because the spread/price moved after the
-  // candle decision. Execution already re-anchors SL/TP to the actual fill,
-  // so validate the signal plan here and then normalize the executable TP to
-  // exactly 2R from the live entry. The risk distance and risk budget remain
-  // based on the live entry-to-stop distance; no risk limit is relaxed.
+  // Keep the 2R minimum strict while accounting for one broker price tick of
+  // target rounding in the strategy's planned prices. A target short by more
+  // than one tick is rejected; a one-tick rounding shortfall is corrected by
+  // placing the executable TP outward to at least 2R from the live entry.
+  // Stop distance, risk amount, volume sizing and all risk limits are unchanged.
   const signalEntry=Number(decision.entry);
   if(!Number.isFinite(signalEntry)||signalEntry<=0)return reject("AI_SIGNAL_ENTRY_MISSING");
   const signalRiskDistance=Math.abs(signalEntry-stop);
   const signalTargetDistance=Math.abs(target-signalEntry);
   const signalRR=signalTargetDistance/Math.max(0.00001,signalRiskDistance);
+  const digits=Number.isInteger(symbolProfile?.digits)?symbolProfile.digits:2;
+  const priceTick=10**(-digits);
+  const requiredSignalReward=signalRiskDistance*2;
+  const signalRewardShortfall=requiredSignalReward-signalTargetDistance;
+  const tickTolerance=priceTick+Math.max(1e-10,priceTick*1e-8);
+  const roundedToTickOnly=signalRewardShortfall>0&&signalRewardShortfall<=tickTolerance;
   const riskDistance=Math.abs(entry-stop);
   const targetDistance=riskDistance*2;
   const rr=targetDistance/Math.max(0.00001,riskDistance);
-  if(!Number.isFinite(signalRR)||signalRR<2){
+  if(!Number.isFinite(signalRR)||(signalRR<2&&!roundedToTickOnly)){
     const rrDiagnostics={
       symbol:decisionSymbol,signal:decision.signal,candleTime:decision.candleTime??null,
       signalEntry,liveEntry:entry,stop,signalTarget:target,
-      signalRiskDistance,signalTargetDistance,signalRR,
+      signalRiskDistance,signalTargetDistance,signalRR,signalRewardShortfall,
+      priceTick,tickTolerance,roundedToTickOnly,
       executionRiskDistance:riskDistance,executionTargetDistance:targetDistance,
       executionRR:Number.isFinite(rr)?rr:null,minRewardRisk:2,
       quoteBid:Number.isFinite(bid)?bid:null,quoteAsk:Number.isFinite(ask)?ask:null,
-      source:"SIGNAL_PLAN_WITH_LIVE_ENTRY_EXECUTION"
+      source:"SIGNAL_PLAN_TICK_TOLERANCE_WITH_LIVE_ENTRY_EXECUTION"
     };
     console.warn("AURIXA_REWARD_RISK_GATE_DIAGNOSTICS:",JSON.stringify({decisionId,...rrDiagnostics}));
     return reject("REWARD_RISK_TOO_LOW",rrDiagnostics);
   }
-  const normalizedTarget=decision.signal==="BUY"?entry+targetDistance:entry-targetDistance;
+  const rawNormalizedTarget=decision.signal==="BUY"?entry+targetDistance:entry-targetDistance;
+  // Round TP away from entry so tick rounding can never reduce the executable
+  // reward below 2R (BUY rounds up; SELL rounds down).
+  const tickUnits=rawNormalizedTarget/priceTick;
+  const normalizedTarget=Number(((decision.signal==="BUY"
+    ?Math.ceil(tickUnits-1e-9)
+    :Math.floor(tickUnits+1e-9))*priceTick).toFixed(digits));
   // No fixed XAUUSD position-count, daily-trade, or global cooldown limit.
   // Confirmed BUY/SELL signals may open additional demo positions.
   // Balance/free-margin, risk sizing, spread, stale-signal, broker-volume,
