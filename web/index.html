@@ -88,6 +88,11 @@
       <section class="panel trade-approval-panel" aria-labelledby="tradeApprovalHeading">
         <div class="section-title">TRADE CONFIRMATION</div>
         <div id="tradeApprovalHeading" class="section-heading">REVIEW EVERY PROPOSED ORDER</div>
+        <div class="trade-approval-auth">
+          <label for="tradeApprovalPin">OPERATOR APPROVAL PIN</label>
+          <input id="tradeApprovalPin" type="password" autocomplete="current-password" inputmode="text" placeholder="Enter your private approval PIN" maxlength="128" aria-describedby="tradeApprovalPinHelp">
+          <small id="tradeApprovalPinHelp">Required to approve or reject a trade. It is sent securely to the server and is not saved in browser storage.</small>
+        </div>
         <div id="tradeApprovalSummary" class="trade-approval-summary" role="status" aria-live="polite">Loading approval queue…</div>
         <div id="tradeApprovalList" class="trade-approval-list">
           <div class="empty-state">Checking for pending trade proposals…</div>
@@ -384,7 +389,7 @@
 
   </main>
 </div>
-<script defer src="/manual-control.js?v=20261018-per-trade-approval-v1"></script>
+<script defer src="/manual-control.js?v=20261018-secure-approval-v2"></script>
 <script defer src="/app.js?v=20261017-open-position-intelligence-v1"></script>
 <script defer src="/auto-trade-candidate.js?v=20261017-open-position-intelligence-v1"></script>
 </body>

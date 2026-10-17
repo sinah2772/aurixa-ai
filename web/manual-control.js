@@ -32,6 +32,7 @@
   // revalidation and cTrader demo-only execution gates.
   const tradeApprovalList = document.getElementById("tradeApprovalList");
   const tradeApprovalSummary = document.getElementById("tradeApprovalSummary");
+  const tradeApprovalPin = document.getElementById("tradeApprovalPin");
   let tradeApprovalRefreshBusy = false;
   const approvalNumber = (value, digits = 5) => {
     const n = value == null || value === "" ? NaN : Number(value);
@@ -98,12 +99,18 @@
         const reject = document.createElement("button");
         reject.type = "button"; reject.className = "trade-approval-reject"; reject.textContent = "REJECT";
         const resolve = async action => {
+          const approvalPin = String(tradeApprovalPin?.value || "").trim();
+          if (!approvalPin) {
+            tradeApprovalSummary.textContent = "ENTER YOUR OPERATOR APPROVAL PIN BEFORE CONFIRMING A TRADE";
+            tradeApprovalPin?.focus();
+            return;
+          }
           approve.disabled = true; reject.disabled = true;
           tradeApprovalSummary.textContent = action === "approve" ? "RECHECKING RISK AND SUBMITTING APPROVED DEMO TRADE…" : "REJECTING TRADE…";
           try {
             const resultResponse = await fetch("/api/auto-trader/approvals/" + encodeURIComponent(String(approval.id)), {
               method: "POST",
-              headers: { "Content-Type": "application/json", "Accept": "application/json" },
+              headers: { "Content-Type": "application/json", "Accept": "application/json", "x-aurixa-approval-pin": approvalPin },
               body: JSON.stringify({ action })
             });
             const result = await resultResponse.json();
@@ -115,7 +122,10 @@
             await refreshTradeApprovals();
             if (typeof readStatus === "function") await readStatus();
           } catch (error) {
-            tradeApprovalSummary.textContent = "APPROVAL NOT COMPLETED · " + (error.message || "RETRY STATUS CHECK");
+            const message = error.message === "TRADE_APPROVAL_UNAUTHORIZED" ? "OPERATOR PIN IS INCORRECT" :
+              error.message === "TRADE_APPROVAL_PIN_NOT_CONFIGURED" ? "SERVER PIN IS NOT CONFIGURED · APPROVALS BLOCKED" :
+              (error.message || "RETRY STATUS CHECK");
+            tradeApprovalSummary.textContent = "APPROVAL NOT COMPLETED · " + message;
             approve.disabled = false; reject.disabled = false;
             await refreshTradeApprovals();
           }

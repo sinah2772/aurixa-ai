@@ -592,10 +592,53 @@ async function executeAiDecisionInternal(decision, decisionId=null, approvalId=n
       return reject("TRADE_APPROVAL_CREATE_FAILED",{error:error.message});
     }
   }
+  // Bind approval to the proposal the operator actually saw. A stale/expired
+  // proposal, materially moved entry/protection, changed size, or changed risk
+  // budget is rejected instead of silently converting consent to a new order.
+  let approvedProposal;
+  try {
+    const proposalResult=await dbQuery(`SELECT symbol,direction,planned_entry_price AS "entry",
+      planned_stop_price AS "stopLoss",planned_take_profit_price AS "takeProfit",
+      volume,risk_percent AS "riskPercent",risk_amount AS "riskAmount"
+      FROM aurixa.trade_approvals
+      WHERE id=$1 AND status='APPROVING' AND approved_at IS NOT NULL AND expires_at>NOW()`,[approvalId]);
+    approvedProposal=proposalResult.rows?.[0];
+  } catch(error) {
+    return reject("APPROVED_PROPOSAL_RECHECK_FAILED",{error:error.message});
+  }
+  if(!approvedProposal) return reject("TRADE_APPROVAL_EXPIRED_OR_INVALID");
+  const approvedEntry=Number(approvedProposal.entry);
+  const approvedStop=Number(approvedProposal.stopLoss);
+  const approvedTarget=Number(approvedProposal.takeProfit);
+  const approvedVolume=Number(approvedProposal.volume);
+  const approvedRiskAmount=Number(approvedProposal.riskAmount);
+  const digitsRaw=Number(st.digits);
+  const priceDigits=Number.isFinite(digitsRaw)&&digitsRaw>=0&&digitsRaw<=10
+    ? digitsRaw : (decisionSymbol==="BTCUSD"||decisionSymbol==="XAUUSD"||decisionSymbol==="XAGUSD"?2:decisionSymbol==="USDJPY"?3:5);
+  const tickSize=10**(-priceDigits);
+  const maxApprovedPriceMove=Math.max(tickSize*2,Math.min(Math.max(spread,tickSize*2),executionRiskDistance*0.02));
+  const pricesStillMatch=[approvedEntry,approvedStop,approvedTarget].every(Number.isFinite) &&
+    Math.abs(entry-approvedEntry)<=maxApprovedPriceMove &&
+    Math.abs(executionStop-approvedStop)<=maxApprovedPriceMove &&
+    Math.abs(executionTarget-approvedTarget)<=maxApprovedPriceMove;
+  const sizeStillMatches=Number.isFinite(approvedVolume)&&approvedVolume===volume;
+  const riskStillMatches=Number.isFinite(approvedRiskAmount)&&
+    Math.abs(riskAmount-approvedRiskAmount)<=Math.max(0.01,Math.abs(approvedRiskAmount)*0.01);
+  if(String(approvedProposal.symbol)!==decisionSymbol ||
+     String(approvedProposal.direction)!==decision.signal ||
+     Number(approvedProposal.riskPercent)!==cfg.riskPercent ||
+     !pricesStillMatch || !sizeStillMatches || !riskStillMatches) {
+    return reject("APPROVED_PROPOSAL_CHANGED",{
+      symbolMatches:String(approvedProposal.symbol)===decisionSymbol,
+      directionMatches:String(approvedProposal.direction)===decision.signal,
+      pricesStillMatch,sizeStillMatches,riskStillMatches,
+      maxApprovedPriceMove,approvedEntry,currentEntry:entry
+    });
+  }
   // Approval is one-use and must still be in the APPROVING state after all
-  // market, account, sizing and risk checks have been repeated.
+  // market, account, sizing, proposal-match and risk checks have been repeated.
   const claim=await dbQuery(`UPDATE aurixa.trade_approvals SET status='EXECUTING',updated_at=NOW()
-    WHERE id=$1 AND status='APPROVING' AND approved_at IS NOT NULL
+    WHERE id=$1 AND status='APPROVING' AND approved_at IS NOT NULL AND expires_at>NOW()
     RETURNING id`,[approvalId]);
   if(!claim.rows?.length) return reject("TRADE_APPROVAL_NOT_VALID");
   // Reserve the signal durably BEFORE sending an order. The unique key also
