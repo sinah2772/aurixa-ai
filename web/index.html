@@ -85,6 +85,15 @@
         </div>
         <button id="multiSymbolCloseButton" type="button" class="market-controls-close">CLOSE ✕</button>
       </div>
+      <section class="panel trade-approval-panel" aria-labelledby="tradeApprovalHeading">
+        <div class="section-title">TRADE CONFIRMATION</div>
+        <div id="tradeApprovalHeading" class="section-heading">REVIEW EVERY PROPOSED ORDER</div>
+        <div id="tradeApprovalSummary" class="trade-approval-summary" role="status" aria-live="polite">Loading approval queue…</div>
+        <div id="tradeApprovalList" class="trade-approval-list">
+          <div class="empty-state">Checking for pending trade proposals…</div>
+        </div>
+        <p class="notice">Every new entry requires an explicit approval here. Approval expires after 2 minutes; the server rechecks quote freshness, demo account, signal age, spread, risk, volume and broker protection before submitting. Existing positions are managed independently.</p>
+      </section>
       <section class="panel multi-symbol-panel">
       <div class="section-title">MULTI-CURRENCY SCANNER</div>
       <div class="section-heading">ALL BROKER-VERIFIED SUPPORTED SYMBOLS · M5</div>
@@ -375,7 +384,7 @@
 
   </main>
 </div>
-<script defer src="/manual-control.js?v=20261018-market-controls-fit-v2"></script>
+<script defer src="/manual-control.js?v=20261018-per-trade-approval-v1"></script>
 <script defer src="/app.js?v=20261017-open-position-intelligence-v1"></script>
 <script defer src="/auto-trade-candidate.js?v=20261017-open-position-intelligence-v1"></script>
 </body>

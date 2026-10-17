@@ -109,7 +109,7 @@ function summarizeRealizedClosingDeals(deals, positionId) {
   };
 }
 
-async function executeAiDecision(decision, decisionId=null) {
+async function executeAiDecision(decision, decisionId=null, approvalId=null) {
   const currentSymbol = cTrader?.getCTraderStatus?.()?.symbolName || cTrader?.getCTraderStatus?.()?.symbol || "XAUUSD";
   const symbol = normalizeSymbolName(decision?.symbol || currentSymbol);
   const key = `AURIXA_AI:${symbol}:${String(decision?.candleTime||"")}:${String(decision?.signal||"")}`;
@@ -118,7 +118,7 @@ async function executeAiDecision(decision, decisionId=null) {
   }
   inFlightSignalKeys.add(key);
   try {
-    return await executeAiDecisionInternal(decision, decisionId);
+    return await executeAiDecisionInternal(decision, decisionId, approvalId);
   } finally {
     inFlightSignalKeys.delete(key);
   }
@@ -156,7 +156,53 @@ function config(){
 
 function getStatus(){
  const cfg=config(),ct=cTrader?.getCTraderStatus?.()||{};
- return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:cfg.maxOpenPositions>0?cfg.maxOpenPositions:"DISABLED_UNLESS_CONFIGURED",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:cfg.enforceDailyLimit?cfg.maxTradesPerDay:"DISABLED_UNLESS_OPTED_IN",dailyTradeLimitEnforced:cfg.enforceDailyLimit,configuredDailyTradeLimit:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||"")};
+ return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:cfg.maxOpenPositions>0?cfg.maxOpenPositions:"DISABLED_UNLESS_CONFIGURED",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:cfg.enforceDailyLimit?cfg.maxTradesPerDay:"DISABLED_UNLESS_OPTED_IN",dailyTradeLimitEnforced:cfg.enforceDailyLimit,configuredDailyTradeLimit:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||""),approvalRequired:true,approvalExpirySeconds:120};
+}
+
+async function getPendingTradeApprovals(){
+ if(typeof dbQuery!=="function") throw new Error("TRADE_APPROVAL_DATABASE_UNAVAILABLE");
+ await dbQuery("UPDATE aurixa.trade_approvals SET status='EXPIRED',updated_at=NOW() WHERE status='PENDING' AND expires_at<=NOW()");
+ const q=await dbQuery(`SELECT id,symbol,direction,created_at AS "createdAt",expires_at AS "expiresAt",
+   planned_entry_price AS "entry",planned_stop_price AS "stopLoss",
+   planned_take_profit_price AS "takeProfit",volume,risk_percent AS "riskPercent",
+   risk_amount AS "riskAmount",reward_risk AS "rewardRisk",confidence,
+   approval_reason AS "reason",strategy_signal_key AS "strategySignalKey"
+   FROM aurixa.trade_approvals WHERE status='PENDING' AND expires_at>NOW()
+   ORDER BY created_at ASC LIMIT 50`);
+ return q.rows||[];
+}
+
+async function resolveTradeApproval(id, action){
+ if(!["approve","reject"].includes(action)) return {ok:false,error:"INVALID_APPROVAL_ACTION"};
+ if(typeof dbQuery!=="function") return {ok:false,error:"TRADE_APPROVAL_DATABASE_UNAVAILABLE"};
+ const approvalId=String(id||"").trim();
+ if(!/^\d+$/.test(approvalId)||Number(approvalId)<=0) return {ok:false,error:"INVALID_APPROVAL_ID"};
+ if(action==="reject"){
+   const q=await dbQuery(`UPDATE aurixa.trade_approvals SET status='REJECTED',resolved_at=NOW(),updated_at=NOW()
+     WHERE id=$1 AND status='PENDING' AND expires_at>NOW() RETURNING id`,[approvalId]);
+   return q.rows?.length?{ok:true,status:"REJECTED",approvalId}:{ok:false,error:"APPROVAL_EXPIRED_OR_ALREADY_RESOLVED"};
+ }
+ const q=await dbQuery(`UPDATE aurixa.trade_approvals SET status='APPROVING',approved_at=NOW(),updated_at=NOW()
+   WHERE id=$1 AND status='PENDING' AND expires_at>NOW()
+   RETURNING id,decision_id AS "decisionId",decision_json AS "decision"`,[approvalId]);
+ const row=q.rows?.[0];
+ if(!row) return {ok:false,error:"APPROVAL_EXPIRED_OR_ALREADY_RESOLVED"};
+ const decision=row.decision;
+ if(!decision||typeof decision!=="object"){
+   await dbQuery("UPDATE aurixa.trade_approvals SET status='FAILED',updated_at=NOW() WHERE id=$1 AND status='APPROVING'",[approvalId]);
+   return {ok:false,error:"APPROVAL_DECISION_UNAVAILABLE"};
+ }
+ let result;
+ try {
+   result=await executeAiDecision(decision,row.decisionId,approvalId);
+ } catch(error) {
+   await dbQuery("UPDATE aurixa.trade_approvals SET status='EXECUTION_UNCONFIRMED',approval_reason=$2,updated_at=NOW() WHERE id=$1 AND status IN ('APPROVING','EXECUTING')",[approvalId,error.message]).catch(()=>{});
+   return {ok:false,error:"TRADE_EXECUTION_UNCONFIRMED",approvalId};
+ }
+ if(result.reason==="AI_SIGNAL_ALREADY_IN_FLIGHT") {
+   await dbQuery("UPDATE aurixa.trade_approvals SET status='FAILED',approval_reason=$2,updated_at=NOW() WHERE id=$1 AND status='APPROVING'",[approvalId,result.reason]).catch(()=>{});
+ }
+ return {ok:true,status:result.executed===true?"EXECUTED":"NOT_EXECUTED",approvalId,result};
 }
 
 async function emergencyCloseAfterProtectionFailure(result, symbol, fallbackVolume, cause) {
@@ -220,7 +266,7 @@ async function emergencyCloseAfterProtectionFailure(result, symbol, fallbackVolu
   }
 }
 
-async function executeAiDecisionInternal(decision, decisionId=null){
+async function executeAiDecisionInternal(decision, decisionId=null, approvalId=null){
   const cfg=config();
   const decisionSymbol=normalizeSymbolName(decision?.symbol||"");
   const statusAtStart=cTrader?.getCTraderStatusForSymbol?.(decisionSymbol)||cTrader?.getCTraderStatus?.()||{};
@@ -245,6 +291,10 @@ async function executeAiDecisionInternal(decision, decisionId=null){
         AND position_id IS NULL`,
       [key,decisionId,reason,extra.error||null]);
     }catch(e){console.error("AI trade audit failed:",e.message);}
+    if(approvalId && typeof dbQuery==="function"){
+      try { await dbQuery("UPDATE aurixa.trade_approvals SET status='BLOCKED',approval_reason=$2,updated_at=NOW() WHERE id=$1 AND status IN ('APPROVING','EXECUTING')",[approvalId,reason]); }
+      catch(error){ console.error("AURIXA_APPROVAL_BLOCK_AUDIT_FAILED:",error.message); }
+    }
     return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision?.signal||null,reason,...extra};
   };
   if(!cfg.enabled)return reject("AUTO_TRADING_DISABLED");
@@ -512,6 +562,42 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     brokerMinVolume:brokerMin,brokerVolumeStep:brokerStep,
     brokerMaxVolume:brokerMax,selectedVolume:volume
   }));
+  if(!approvalId){
+    try {
+      const existing=await dbQuery(`SELECT id,status,expires_at AS "expiresAt" FROM aurixa.trade_approvals
+        WHERE strategy_signal_key=$1 LIMIT 1`,[key]);
+      if(existing.rows.length){
+        const row=existing.rows[0];
+        if(row.status==="PENDING" && Date.parse(row.expiresAt)>Date.now())
+          return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_APPROVAL_REQUIRED",approvalId:String(row.id),expiresAt:row.expiresAt,strategySignalKey:key};
+        return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_APPROVAL_ALREADY_RESOLVED",approvalId:String(row.id),approvalStatus:row.status,strategySignalKey:key};
+      }
+      const pending=await dbQuery(`INSERT INTO aurixa.trade_approvals(
+        decision_id,strategy_signal_key,symbol,direction,planned_entry_price,planned_stop_price,
+        planned_take_profit_price,volume,risk_percent,risk_amount,reward_risk,confidence,
+        approval_reason,decision_json,status,expires_at
+      ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,'PENDING',NOW()+INTERVAL '120 seconds')
+      ON CONFLICT(strategy_signal_key) DO NOTHING RETURNING id,expires_at AS "expiresAt"`,
+      [decisionId,key,decisionSymbol,decision.signal,entry,executionStop,executionTarget,volume,cfg.riskPercent,riskAmount,Number((Math.abs(executionTarget-entry)/Math.max(0.00001,executionRiskDistance)).toFixed(2)),decision.confidence??null,
+       "Waiting for explicit dashboard approval",JSON.stringify(decision)]);
+      if(!pending.rows.length){
+        const prior=await dbQuery("SELECT id,status,expires_at AS \"expiresAt\" FROM aurixa.trade_approvals WHERE strategy_signal_key=$1 LIMIT 1",[key]);
+        const row=prior.rows?.[0];
+        return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_APPROVAL_ALREADY_RESOLVED",approvalId:row?String(row.id):null,approvalStatus:row?.status||"UNKNOWN",strategySignalKey:key};
+      }
+      console.log("AURIXA_TRADE_AWAITING_APPROVAL:",JSON.stringify({approvalId:String(pending.rows[0].id),symbol:decisionSymbol,direction:decision.signal,expiresAt:pending.rows[0].expiresAt}));
+      return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_APPROVAL_REQUIRED",approvalId:String(pending.rows[0].id),expiresAt:pending.rows[0].expiresAt,strategySignalKey:key,plannedEntryPrice:entry,plannedStopPrice:executionStop,plannedTakeProfitPrice:executionTarget,volume,riskAmount};
+    } catch(error) {
+      console.error("AURIXA_TRADE_APPROVAL_CREATE_FAILED:",error.message);
+      return reject("TRADE_APPROVAL_CREATE_FAILED",{error:error.message});
+    }
+  }
+  // Approval is one-use and must still be in the APPROVING state after all
+  // market, account, sizing and risk checks have been repeated.
+  const claim=await dbQuery(`UPDATE aurixa.trade_approvals SET status='EXECUTING',updated_at=NOW()
+    WHERE id=$1 AND status='APPROVING' AND approved_at IS NOT NULL
+    RETURNING id`,[approvalId]);
+  if(!claim.rows?.length) return reject("TRADE_APPROVAL_NOT_VALID");
   // Reserve the signal durably BEFORE sending an order. The unique key also
   // protects against overlapping timer cycles and multiple service instances.
   let reservationId=null;
@@ -538,6 +624,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
     reservationId=reservation.rows[0].id;
   } catch(e) {
     console.error("AURIXA_TRADE_RESERVATION_FAILED:",JSON.stringify({strategySignalKey:key,error:e.message}));
+    if(approvalId) await dbQuery("UPDATE aurixa.trade_approvals SET status='FAILED',updated_at=NOW() WHERE id=$1 AND status='EXECUTING'",[approvalId]).catch(()=>{});
     return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_RESERVATION_FAILED",error:e.message};
   }
 
@@ -558,6 +645,7 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       console.error("AURIXA_ORDER_OUTCOME_RECORD_FAILED:",recordError.message);
     }
     console.error("AURIXA_CTRADER_ORDER_OUTCOME_UNKNOWN:",JSON.stringify({reservationId,strategySignalKey:key,error:e.message}));
+    if(approvalId) await dbQuery("UPDATE aurixa.trade_approvals SET status='EXECUTION_UNCONFIRMED',updated_at=NOW() WHERE id=$1 AND status='EXECUTING'",[approvalId]).catch(()=>{});
     return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"CTRADER_ORDER_OUTCOME_UNKNOWN",error:e.message,strategySignalKey:key};
   }
 
@@ -632,7 +720,13 @@ async function executeAiDecisionInternal(decision, decisionId=null){
       protectionStatus:result.protectionStatus||null
     }));
   }
-  return {executed:["OPEN","PARTIAL"].includes(result.status)&&brokerPositionVerified,
+  const executed=["OPEN","PARTIAL"].includes(result.status)&&brokerPositionVerified;
+  if(approvalId){
+    try { await dbQuery("UPDATE aurixa.trade_approvals SET status=$2,trade_id=$3,updated_at=NOW() WHERE id=$1 AND status='EXECUTING'",
+      [approvalId,executed?"EXECUTED":"EXECUTION_UNCONFIRMED",reservationId]); }
+    catch(error){ console.error("AURIXA_APPROVAL_FINALIZE_FAILED:",error.message); }
+  }
+  return {executed,
     reason:executionReason,strategy:"AURIXA_AI_TRADER_V1",decisionId,strategySignalKey:key,
     gate:"PASSED",direction:decision.signal,volume,riskAmount,
     plannedEntryPrice:entry,plannedStopPrice:executionStop,plannedTakeProfitPrice:executionTarget,
@@ -1327,6 +1421,31 @@ async function init(){
       AND a.strategy_signal_key = b.strategy_signal_key`);
   await dbQuery(`CREATE UNIQUE INDEX IF NOT EXISTS auto_trades_strategy_signal_key_uidx
     ON aurixa.auto_trades(strategy_signal_key)`);
+  await dbQuery(`CREATE TABLE IF NOT EXISTS aurixa.trade_approvals(
+    id BIGSERIAL PRIMARY KEY,
+    decision_id BIGINT NULL,
+    strategy_signal_key TEXT NOT NULL UNIQUE,
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('BUY','SELL')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    approved_at TIMESTAMPTZ,
+    resolved_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    planned_entry_price NUMERIC(18,5),
+    planned_stop_price NUMERIC(18,5),
+    planned_take_profit_price NUMERIC(18,5),
+    volume BIGINT NOT NULL DEFAULT 0,
+    risk_percent NUMERIC(8,4),
+    risk_amount NUMERIC(18,5),
+    reward_risk NUMERIC(8,3),
+    confidence NUMERIC(8,3),
+    approval_reason TEXT,
+    decision_json JSONB NOT NULL,
+    trade_id BIGINT
+  )`);
+  await dbQuery("CREATE INDEX IF NOT EXISTS trade_approvals_pending_idx ON aurixa.trade_approvals(status,expires_at,created_at)");
   return true;
 }
-module.exports={configure,getStatus,executeAiDecision,dryRunAiTrader,syncOpenPositions,init,summarizeRealizedClosingDeals,getPositionIntelligence};
+module.exports={configure,getStatus,executeAiDecision,dryRunAiTrader,syncOpenPositions,init,summarizeRealizedClosingDeals,getPositionIntelligence,getPendingTradeApprovals,resolveTradeApproval};

@@ -468,3 +468,35 @@ button:focus-visible, a:focus-visible, select:focus-visible, [tabindex]:focus-vi
   .multi-symbol-dialog-toolbar { gap: 6px; }
   .market-controls-close { padding: 7px; font-size: 9px; }
 }
+
+
+/* Per-trade approval queue: compact, legible and mobile-safe. */
+.trade-approval-panel { min-width:0; max-width:100%; border-color:rgba(245,196,81,.4); }
+.trade-approval-summary { margin:10px 0; color:var(--yellow); font-size:10px; font-weight:900; line-height:1.6; overflow-wrap:anywhere; }
+.trade-approval-list { display:grid; gap:10px; min-width:0; }
+.trade-approval-card { min-width:0; padding:12px; border:1px solid rgba(245,196,81,.32); border-radius:12px; background:var(--panel2,#0b0f14); }
+.trade-approval-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.trade-approval-card-head strong { font-size:15px; font-weight:950; }
+.trade-approval-card-head .approval-buy { color:var(--green); }
+.trade-approval-card-head .approval-sell { color:var(--red); }
+.trade-approval-expiry { color:var(--yellow); font-size:9px; font-weight:850; }
+.trade-approval-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
+.trade-approval-metrics > div { min-width:0; padding:9px; border:1px solid var(--border); border-radius:8px; }
+.trade-approval-metrics span,.trade-approval-metrics strong { display:block; min-width:0; overflow-wrap:anywhere; }
+.trade-approval-metrics span { color:var(--muted); font-size:8px; font-weight:850; letter-spacing:.04em; }
+.trade-approval-metrics strong { margin-top:5px; font-size:12px; font-variant-numeric:tabular-nums; }
+.trade-approval-reason { margin-top:10px; color:var(--muted); font-size:10px; line-height:1.6; overflow-wrap:anywhere; }
+.trade-approval-actions { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(100px,.7fr); gap:8px; margin-top:12px; }
+.trade-approval-actions button { min-width:0; min-height:42px; padding:10px; border:1px solid var(--border); border-radius:9px; font-size:10px; font-weight:950; cursor:pointer; overflow-wrap:anywhere; }
+.trade-approval-approve { color:var(--green); border-color:rgba(48,214,138,.5)!important; background:rgba(48,214,138,.08); }
+.trade-approval-reject { color:var(--red); border-color:rgba(255,91,101,.45)!important; background:rgba(255,91,101,.06); }
+.trade-approval-actions button:disabled { opacity:.55; cursor:wait; }
+@media(max-width:700px) {
+ .trade-approval-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:380px) {
+ .trade-approval-card { padding:9px; }
+ .trade-approval-metrics { gap:6px; }
+ .trade-approval-metrics > div { padding:8px; }
+ .trade-approval-actions { grid-template-columns:minmax(0,1fr); }
+}

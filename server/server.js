@@ -387,6 +387,40 @@ app.get("/api/auto-trader/status", (req, res) => {
   }
 });
 
+/* Dashboard per-trade approvals. Only a fresh, still-pending proposal can be
+ * approved, and the execution module re-runs every market/risk gate before
+ * submitting the one-use approval to cTrader. */
+app.get("/api/auto-trader/approvals", async (req, res) => {
+  try {
+    const approvals = await autoTrader.getPendingTradeApprovals();
+    res.set("Cache-Control", "no-store");
+    res.json({ ok: true, required: true, count: approvals.length, approvals });
+  } catch (err) {
+    console.error("Trade approval list error:", err.message);
+    res.status(503).json({ ok: false, error: "TRADE_APPROVALS_UNAVAILABLE", approvals: [] });
+  }
+});
+
+app.post("/api/auto-trader/approvals/:id", async (req, res) => {
+  const action = String(req.body?.action || "").trim().toLowerCase();
+  if (!["approve", "reject"].includes(action)) {
+    return res.status(400).json({ ok: false, error: "ACTION_MUST_BE_APPROVE_OR_REJECT" });
+  }
+  try {
+    const result = await autoTrader.resolveTradeApproval(req.params.id, action);
+    if (!result.ok) {
+      const status = result.error === "APPROVAL_EXPIRED_OR_ALREADY_RESOLVED" ? 409 :
+        result.error === "INVALID_APPROVAL_ID" || result.error === "INVALID_APPROVAL_ACTION" ? 400 : 503;
+      return res.status(status).json(result);
+    }
+    res.set("Cache-Control", "no-store");
+    return res.json(result);
+  } catch (err) {
+    console.error("Trade approval resolution error:", err.message);
+    return res.status(500).json({ ok: false, error: "TRADE_APPROVAL_RESOLUTION_FAILED" });
+  }
+});
+
 app.get("/api/auto-trader/multi-symbol-status", (req, res) => {
   try {
     const ctrader = require("./ctrader");
@@ -1277,9 +1311,11 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
           if (decision.executionEligible === true) {
             const result = await autoTrader.executeAiDecision({...decision, decisionId}, decisionId);
             candidate.executionStatus = result.executed === true ? "ORDER ACCEPTED BY BROKER" :
+              result.reason === "TRADE_APPROVAL_REQUIRED" ? "AWAITING DASHBOARD APPROVAL" :
               (result.reason ? "BLOCKED · " + result.reason : "NOT EXECUTED");
             candidate.executionReason = result.reason || null;
             candidate.executionResult = result.executed === true ? "ACCEPTED" :
+              result.reason === "TRADE_APPROVAL_REQUIRED" ? "AWAITING_APPROVAL" :
               (result.reason === "AUTO_TRADING_DISABLED" ? "AUTO_TRADING_OFF" : "BLOCKED");
             candidate.orderId = result.orderId || null;
             candidate.positionId = result.positionId || null;
