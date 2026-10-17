@@ -1311,9 +1311,11 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
           if (decision.executionEligible === true) {
             const result = await autoTrader.executeAiDecision({...decision, decisionId}, decisionId);
             candidate.executionStatus = result.executed === true ? "ORDER ACCEPTED BY BROKER" :
+              result.reason === "TRADE_APPROVAL_REQUIRED" ? "AWAITING DASHBOARD APPROVAL" :
               (result.reason ? "BLOCKED · " + result.reason : "NOT EXECUTED");
             candidate.executionReason = result.reason || null;
             candidate.executionResult = result.executed === true ? "ACCEPTED" :
+              result.reason === "TRADE_APPROVAL_REQUIRED" ? "AWAITING_APPROVAL" :
               (result.reason === "AUTO_TRADING_DISABLED" ? "AUTO_TRADING_OFF" : "BLOCKED");
             candidate.orderId = result.orderId || null;
             candidate.positionId = result.positionId || null;
