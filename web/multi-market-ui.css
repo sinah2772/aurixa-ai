@@ -500,3 +500,11 @@ button:focus-visible, a:focus-visible, select:focus-visible, [tabindex]:focus-vi
  .trade-approval-metrics > div { padding:8px; }
  .trade-approval-actions { grid-template-columns:minmax(0,1fr); }
 }
+
+
+/* Server-validated operator PIN for public dashboard approval controls. */
+.trade-approval-auth { display:grid; gap:6px; margin:12px 0; max-width:460px; }
+.trade-approval-auth label { color:var(--muted); font-size:9px; font-weight:900; letter-spacing:.08em; }
+.trade-approval-auth input { width:100%; min-width:0; box-sizing:border-box; min-height:42px; padding:10px 12px; border:1px solid var(--control-border,var(--border)); border-radius:9px; background:var(--panel2,#080b10); color:var(--text); font:inherit; font-size:13px; }
+.trade-approval-auth input:focus-visible { outline:2px solid var(--yellow); outline-offset:2px; }
+.trade-approval-auth small { color:var(--muted); font-size:9px; line-height:1.55; overflow-wrap:anywhere; }
