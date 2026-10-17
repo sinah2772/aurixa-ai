@@ -357,3 +357,68 @@ button:focus-visible, a:focus-visible, select:focus-visible, [tabindex]:focus-vi
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior:auto !important; animation-duration:.01ms !important; transition-duration:.01ms !important; }
 }
+
+
+/* Market-data quality panel: fit diagnostics to the viewport without changing their data. */
+.market-quality-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+.market-quality-panel #marketQualitySummary {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.market-quality-panel #marketQualityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr));
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+.market-quality-panel #marketQualityGrid > .multi-symbol-card {
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  padding: 12px;
+  gap: 9px;
+  overflow-wrap: anywhere;
+}
+.market-quality-panel #marketQualityGrid .multi-symbol-card-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.market-quality-panel #marketQualityGrid .multi-symbol-card-head strong,
+.market-quality-panel #marketQualityGrid .multi-symbol-card-head span,
+.market-quality-panel #marketQualityGrid .multi-symbol-card-meta,
+.market-quality-panel #marketQualityGrid .multi-symbol-card-reason {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.market-quality-panel #marketQualityGrid .multi-symbol-card-head span {
+  white-space: normal;
+  text-align: right;
+}
+.market-quality-panel #marketQualityGrid .multi-symbol-card-meta {
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+.market-quality-panel #marketQualityGrid .multi-symbol-card-reason {
+  line-height: 1.55;
+}
+@media (max-width: 520px) {
+  .market-quality-panel #marketQualityGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .market-quality-panel #marketQualityGrid > .multi-symbol-card {
+    padding: 11px;
+  }
+  .market-quality-panel #marketQualityGrid .multi-symbol-card-head span {
+    text-align: left;
+  }
+}
