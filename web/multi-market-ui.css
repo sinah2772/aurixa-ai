@@ -422,3 +422,49 @@ button:focus-visible, a:focus-visible, select:focus-visible, [tabindex]:focus-vi
     text-align: left;
   }
 }
+
+
+/* MARKET CONTROLS dialog: fit inside mobile viewport including padding/borders. */
+.multi-symbol-dialog {
+  box-sizing: border-box;
+  margin: auto;
+  min-width: 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.multi-symbol-dialog *,
+.multi-symbol-dialog *::before,
+.multi-symbol-dialog *::after { box-sizing: border-box; }
+.multi-symbol-dialog-toolbar { min-width: 0; }
+.multi-symbol-dialog-toolbar > div { min-width: 0; flex: 1 1 auto; }
+.multi-symbol-dialog .section-heading { overflow-wrap: anywhere; }
+.multi-symbol-dialog .multi-symbol-panel { min-width: 0; max-width: 100%; }
+.multi-symbol-dialog .multi-symbol-grid { width: 100%; min-width: 0; }
+.multi-symbol-dialog .multi-symbol-card { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.multi-symbol-dialog .multi-symbol-card-controls button { min-width: 0; }
+@media (max-width: 520px) {
+  .multi-symbol-dialog {
+    width: calc(100vw - 12px);
+    max-width: calc(100vw - 12px);
+    max-height: calc(100dvh - 12px);
+    padding: 9px;
+  }
+  .multi-symbol-dialog-toolbar {
+    position: sticky;
+    top: -9px;
+    z-index: 10;
+    padding: 6px 0 10px;
+    background: #080b10;
+  }
+  .multi-symbol-dialog-toolbar .section-heading { font-size: 12px; line-height: 1.35; }
+  .multi-symbol-dialog .multi-symbol-panel { padding: 8px; }
+  .multi-symbol-dialog .multi-symbol-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .multi-symbol-dialog .multi-symbol-card { min-height: 0; padding: 10px; }
+  .multi-symbol-dialog .multi-symbol-card-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .multi-symbol-dialog .multi-symbol-enable { grid-column: 1 / -1; }
+}
+@media (max-width: 360px) {
+  .multi-symbol-dialog { width: calc(100vw - 8px); max-width: calc(100vw - 8px); max-height: calc(100dvh - 8px); padding: 7px; }
+  .multi-symbol-dialog-toolbar { gap: 6px; }
+  .market-controls-close { padding: 7px; font-size: 9px; }
+}
