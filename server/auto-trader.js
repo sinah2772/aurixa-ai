@@ -156,7 +156,7 @@ function config(){
 
 function getStatus(){
  const cfg=config(),ct=cTrader?.getCTraderStatus?.()||{};
- return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:cfg.maxOpenPositions>0?cfg.maxOpenPositions:"DISABLED_UNLESS_CONFIGURED",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:cfg.enforceDailyLimit?cfg.maxTradesPerDay:"DISABLED_UNLESS_OPTED_IN",dailyTradeLimitEnforced:cfg.enforceDailyLimit,configuredDailyTradeLimit:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||""),approvalRequired:true,approvalExpirySeconds:120};
+ return {enabled:cfg.enabled,enabledSymbols:cfg.enabledSymbols,symbolScoped:cfg.symbolScoped,strategy:"AURIXA_AI_TRADER_V1",demoOnly:cfg.demoOnly,demoAccount:ct.account?.isLive===false,blocked:cfg.demoOnly&&ct.account?.isLive!==false,positionLimit:cfg.maxOpenPositions>0?cfg.maxOpenPositions:"DISABLED_UNLESS_CONFIGURED",riskPercent:cfg.riskPercent,maxSpread:getSymbolProfile(ct.symbolName||ct.symbol)?.maxSpread??cfg.maxSpread,dailyTradeLimit:cfg.enforceDailyLimit?cfg.maxTradesPerDay:"DISABLED_UNLESS_OPTED_IN",dailyTradeLimitEnforced:cfg.enforceDailyLimit,configuredDailyTradeLimit:cfg.maxTradesPerDay,cooldownMinutes:cfg.cooldownMinutes,volumeMin:cfg.volumeMin,volumeStep:cfg.volumeStep,maxVolume:cfg.maxVolume,connected:Boolean(ct.connected),authorized:Boolean(ct.authorized),symbol:normalizeSymbolName(ct.symbolName||ct.symbol||""),approvalRequired:false,executionMode:"AUTOMATIC_NO_PER_TRADE_APPROVAL"};
 }
 
 async function getPendingTradeApprovals(){
@@ -562,85 +562,8 @@ async function executeAiDecisionInternal(decision, decisionId=null, approvalId=n
     brokerMinVolume:brokerMin,brokerVolumeStep:brokerStep,
     brokerMaxVolume:brokerMax,selectedVolume:volume
   }));
-  if(!approvalId){
-    try {
-      const existing=await dbQuery(`SELECT id,status,expires_at AS "expiresAt" FROM aurixa.trade_approvals
-        WHERE strategy_signal_key=$1 LIMIT 1`,[key]);
-      if(existing.rows.length){
-        const row=existing.rows[0];
-        if(row.status==="PENDING" && Date.parse(row.expiresAt)>Date.now())
-          return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_APPROVAL_REQUIRED",approvalId:String(row.id),expiresAt:row.expiresAt,strategySignalKey:key};
-        return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_APPROVAL_ALREADY_RESOLVED",approvalId:String(row.id),approvalStatus:row.status,strategySignalKey:key};
-      }
-      const pending=await dbQuery(`INSERT INTO aurixa.trade_approvals(
-        decision_id,strategy_signal_key,symbol,direction,planned_entry_price,planned_stop_price,
-        planned_take_profit_price,volume,risk_percent,risk_amount,reward_risk,confidence,
-        approval_reason,decision_json,status,expires_at
-      ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,'PENDING',NOW()+INTERVAL '120 seconds')
-      ON CONFLICT(strategy_signal_key) DO NOTHING RETURNING id,expires_at AS "expiresAt"`,
-      [decisionId,key,decisionSymbol,decision.signal,entry,executionStop,executionTarget,volume,cfg.riskPercent,riskAmount,Number((Math.abs(executionTarget-entry)/Math.max(0.00001,executionRiskDistance)).toFixed(2)),decision.confidence??null,
-       "Waiting for explicit dashboard approval",JSON.stringify(decision)]);
-      if(!pending.rows.length){
-        const prior=await dbQuery("SELECT id,status,expires_at AS \"expiresAt\" FROM aurixa.trade_approvals WHERE strategy_signal_key=$1 LIMIT 1",[key]);
-        const row=prior.rows?.[0];
-        return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_APPROVAL_ALREADY_RESOLVED",approvalId:row?String(row.id):null,approvalStatus:row?.status||"UNKNOWN",strategySignalKey:key};
-      }
-      console.log("AURIXA_TRADE_AWAITING_APPROVAL:",JSON.stringify({approvalId:String(pending.rows[0].id),symbol:decisionSymbol,direction:decision.signal,expiresAt:pending.rows[0].expiresAt}));
-      return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,signal:decision.signal,reason:"TRADE_APPROVAL_REQUIRED",approvalId:String(pending.rows[0].id),expiresAt:pending.rows[0].expiresAt,strategySignalKey:key,plannedEntryPrice:entry,plannedStopPrice:executionStop,plannedTakeProfitPrice:executionTarget,volume,riskAmount};
-    } catch(error) {
-      console.error("AURIXA_TRADE_APPROVAL_CREATE_FAILED:",error.message);
-      return reject("TRADE_APPROVAL_CREATE_FAILED",{error:error.message});
-    }
-  }
-  // Bind approval to the proposal the operator actually saw. A stale/expired
-  // proposal, materially moved entry/protection, changed size, or changed risk
-  // budget is rejected instead of silently converting consent to a new order.
-  let approvedProposal;
-  try {
-    const proposalResult=await dbQuery(`SELECT symbol,direction,planned_entry_price AS "entry",
-      planned_stop_price AS "stopLoss",planned_take_profit_price AS "takeProfit",
-      volume,risk_percent AS "riskPercent",risk_amount AS "riskAmount"
-      FROM aurixa.trade_approvals
-      WHERE id=$1 AND status='APPROVING' AND approved_at IS NOT NULL AND expires_at>NOW()`,[approvalId]);
-    approvedProposal=proposalResult.rows?.[0];
-  } catch(error) {
-    return reject("APPROVED_PROPOSAL_RECHECK_FAILED",{error:error.message});
-  }
-  if(!approvedProposal) return reject("TRADE_APPROVAL_EXPIRED_OR_INVALID");
-  const approvedEntry=Number(approvedProposal.entry);
-  const approvedStop=Number(approvedProposal.stopLoss);
-  const approvedTarget=Number(approvedProposal.takeProfit);
-  const approvedVolume=Number(approvedProposal.volume);
-  const approvedRiskAmount=Number(approvedProposal.riskAmount);
-  const digitsRaw=Number(st.digits);
-  const priceDigits=Number.isFinite(digitsRaw)&&digitsRaw>=0&&digitsRaw<=10
-    ? digitsRaw : (decisionSymbol==="BTCUSD"||decisionSymbol==="XAUUSD"||decisionSymbol==="XAGUSD"?2:decisionSymbol==="USDJPY"?3:5);
-  const tickSize=10**(-priceDigits);
-  const maxApprovedPriceMove=Math.max(tickSize*2,Math.min(Math.max(spread,tickSize*2),executionRiskDistance*0.02));
-  const pricesStillMatch=[approvedEntry,approvedStop,approvedTarget].every(Number.isFinite) &&
-    Math.abs(entry-approvedEntry)<=maxApprovedPriceMove &&
-    Math.abs(executionStop-approvedStop)<=maxApprovedPriceMove &&
-    Math.abs(executionTarget-approvedTarget)<=maxApprovedPriceMove;
-  const sizeStillMatches=Number.isFinite(approvedVolume)&&approvedVolume===volume;
-  const riskStillMatches=Number.isFinite(approvedRiskAmount)&&
-    Math.abs(riskAmount-approvedRiskAmount)<=Math.max(0.01,Math.abs(approvedRiskAmount)*0.01);
-  if(String(approvedProposal.symbol)!==decisionSymbol ||
-     String(approvedProposal.direction)!==decision.signal ||
-     Number(approvedProposal.riskPercent)!==cfg.riskPercent ||
-     !pricesStillMatch || !sizeStillMatches || !riskStillMatches) {
-    return reject("APPROVED_PROPOSAL_CHANGED",{
-      symbolMatches:String(approvedProposal.symbol)===decisionSymbol,
-      directionMatches:String(approvedProposal.direction)===decision.signal,
-      pricesStillMatch,sizeStillMatches,riskStillMatches,
-      maxApprovedPriceMove,approvedEntry,currentEntry:entry
-    });
-  }
-  // Approval is one-use and must still be in the APPROVING state after all
-  // market, account, sizing, proposal-match and risk checks have been repeated.
-  const claim=await dbQuery(`UPDATE aurixa.trade_approvals SET status='EXECUTING',updated_at=NOW()
-    WHERE id=$1 AND status='APPROVING' AND approved_at IS NOT NULL AND expires_at>NOW()
-    RETURNING id`,[approvalId]);
-  if(!claim.rows?.length) return reject("TRADE_APPROVAL_NOT_VALID");
+  // Automatic mode: no per-trade approval/PIN gate. Every execution safety
+  // check above has passed; reserve this unique signal durably before ordering.
   // Reserve the signal durably BEFORE sending an order. The unique key also
   // protects against overlapping timer cycles and multiple service instances.
   let reservationId=null;
