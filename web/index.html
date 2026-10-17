@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261017-open-position-intelligence-v1">
+  <link rel="stylesheet" href="/style.css?v=20261018-market-data-quality-v1">
   <link rel="stylesheet" href="/multi-market-ui.css?v=20261017-open-position-intelligence-v1">
   </head>
 <body>
@@ -120,6 +120,16 @@
       </div>
       <div id="autoCandidateUpdated" class="auto-candidate-updated">Waiting for scanner timestamps…</div>
       <p class="notice">Chart selection is separate from auto-trade candidate selection. DATA READY means market data is available, not that an entry is approved. An order is labelled accepted only when the executor reports broker acceptance. This panel does not enable auto-trading.</p>
+    </section>
+
+    <section class="panel market-quality-panel" aria-labelledby="marketQualityTitle">
+      <div class="section-title">DATA INTEGRITY · OBSERVE ONLY</div>
+      <div class="section-heading" id="marketQualityTitle">BROKER MARKET-DATA QUALITY</div>
+      <div id="marketQualitySummary" class="notice" role="status" aria-live="polite">Checking quote freshness and M5 candle integrity…</div>
+      <div id="marketQualityGrid" class="multi-symbol-grid">
+        <div class="empty-state">Waiting for market-data quality report…</div>
+      </div>
+      <p class="notice">This report is diagnostic only. It does not approve entries, change risk settings, arm auto-trading or submit orders. A READY result means only that the data checks passed.</p>
     </section>
 
     <div class="dashboard-grid">
