@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const crypto = require("crypto");
 require("dotenv").config();
 
 // Manual operator authorization is required after every server restart/deploy.
@@ -405,6 +406,19 @@ app.post("/api/auto-trader/approvals/:id", async (req, res) => {
   const action = String(req.body?.action || "").trim().toLowerCase();
   if (!["approve", "reject"].includes(action)) {
     return res.status(400).json({ ok: false, error: "ACTION_MUST_BE_APPROVE_OR_REJECT" });
+  }
+  // The dashboard is publicly hosted, so trade decisions require a server-side
+  // operator PIN. Fail closed if it has not been configured in Render.
+  const expectedPin = String(process.env.AURIXA_TRADE_APPROVAL_PIN || "");
+  const suppliedPin = String(req.get("x-aurixa-approval-pin") || "");
+  if (!expectedPin) {
+    return res.status(503).json({ ok: false, error: "TRADE_APPROVAL_PIN_NOT_CONFIGURED" });
+  }
+  const expectedBytes = Buffer.from(expectedPin);
+  const suppliedBytes = Buffer.from(suppliedPin);
+  if (expectedBytes.length !== suppliedBytes.length ||
+      !crypto.timingSafeEqual(expectedBytes, suppliedBytes)) {
+    return res.status(401).json({ ok: false, error: "TRADE_APPROVAL_UNAUTHORIZED" });
   }
   try {
     const result = await autoTrader.resolveTradeApproval(req.params.id, action);
