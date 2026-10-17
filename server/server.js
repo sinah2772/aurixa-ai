@@ -446,6 +446,57 @@ app.get("/api/auto-trader/multi-symbol-status", (req, res) => {
   }
 });
 
+// Read-only portfolio risk audit. This endpoint never changes settings or places orders.
+app.get("/api/portfolio-risk/audit", async (req, res) => {
+  const ctrader = require("./ctrader");
+  const { buildPortfolioRiskAudit } = require("./portfolio-risk-audit");
+  const configuredOpenLimitRaw = Number(process.env.AUTO_TRADING_MAX_OPEN_POSITIONS || 0);
+  const maxOpenPositions = Number.isFinite(configuredOpenLimitRaw) && configuredOpenLimitRaw > 0
+    ? Math.floor(configuredOpenLimitRaw) : 0;
+  const configuredDailyLimitRaw = Number(process.env.AUTO_TRADING_MAX_TRADES_PER_DAY || 2);
+  const maxTradesPerDay = Number.isFinite(configuredDailyLimitRaw) && configuredDailyLimitRaw > 0
+    ? Math.floor(configuredDailyLimitRaw) : 2;
+  const dailyLimitEnabled = String(process.env.AUTO_TRADING_ENFORCE_DAILY_LIMIT || "false").toLowerCase() === "true";
+  let positions = null;
+  let dailyTradeCount = null;
+  const errors = [];
+  try {
+    if (typeof ctrader.getOpenSymbolPositions !== "function") {
+      throw new Error("Broker open-position snapshot is not supported");
+    }
+    positions = await ctrader.getOpenSymbolPositions(true);
+    if (!Array.isArray(positions)) throw new Error("Broker returned an invalid open-position snapshot");
+  } catch (err) {
+    errors.push("BROKER_POSITION_SNAPSHOT_UNAVAILABLE");
+    console.warn("AURIXA_PORTFOLIO_AUDIT_POSITIONS_UNAVAILABLE:", err.message);
+  }
+  try {
+    const daily = await queryDatabase(`
+      SELECT COUNT(*)::int AS count
+      FROM aurixa.auto_trades
+      WHERE created_at >= date_trunc('day', NOW())
+        AND status IN ('SUBMITTED','OPEN','PARTIAL','CLOSED')
+    `);
+    const count = Number(daily.rows?.[0]?.count);
+    if (!Number.isInteger(count) || count < 0) throw new Error("Daily trade count was invalid");
+    dailyTradeCount = count;
+  } catch (err) {
+    errors.push("DAILY_TRADE_COUNT_UNAVAILABLE");
+    console.warn("AURIXA_PORTFOLIO_AUDIT_DAILY_COUNT_UNAVAILABLE:", err.message);
+  }
+  const report = buildPortfolioRiskAudit({
+    positions, dailyTradeCount, maxOpenPositions, maxTradesPerDay, dailyLimitEnabled
+  });
+  res.set("Cache-Control", "no-store");
+  res.status(report.canAssess ? 200 : 503).json({
+    ok: report.canAssess,
+    ...report,
+    errors,
+    generatedAt: new Date().toISOString(),
+    note: "Observe-only audit. No orders were submitted, amended, or closed. Limits are reported, not enforced by this endpoint."
+  });
+});
+
 // Read-only per-symbol data integrity report. This endpoint never changes trade settings or submits orders.
 app.get("/api/market-data/quality", (req, res) => {
   try {
