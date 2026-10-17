@@ -3,7 +3,7 @@
 // Read-only portfolio risk audit. This module never submits, modifies, or closes orders.
 function buildPortfolioRiskAudit({ positions, dailyTradeCount, maxOpenPositions = 0, maxTradesPerDay = 0, dailyLimitEnabled = false }) {
   const validPositions = Array.isArray(positions);
-  const daily = Number(dailyTradeCount);
+  const daily = dailyTradeCount === null || dailyTradeCount === undefined || dailyTradeCount === "" ? NaN : Number(dailyTradeCount);
   const maxOpen = Number(maxOpenPositions);
   const maxDaily = Number(maxTradesPerDay);
   const reasons = [];
