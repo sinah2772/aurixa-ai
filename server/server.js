@@ -403,9 +403,13 @@ app.get("/api/auto-trader/multi-symbol-status", (req, res) => {
       const candidate = latestAutoTradeCandidates.get(normalizeSymbolName(market.symbol)) || {};
       const candidateTime = Date.parse(candidate.checkedAt || "");
       const candidateFresh = Number.isFinite(candidateTime) && Date.now() - candidateTime <= 45000;
-      return { ...market, quoteFresh, ready,
+      const quoteAgeMs = Number.isFinite(quoteTime) ? Math.max(0, Date.now() - quoteTime) : null;
+      const bidAgeMs = market.bidUpdatedAt ? Math.max(0, Date.now() - Date.parse(market.bidUpdatedAt)) : null;
+      const askAgeMs = market.askUpdatedAt ? Math.max(0, Date.now() - Date.parse(market.askUpdatedAt)) : null;
+      const chartSelected = normalizeSymbolName(getCTraderStatus()?.symbolName || getCTraderStatus()?.symbol || "") === normalizeSymbolName(market.symbol);
+      return { ...market, quoteFresh, ready, quoteAgeMs, bidAgeMs, askAgeMs, chartSelected,
         reason: ready ? "READY" : market.candleCount < 50 ? "WAITING_FOR_M5_HISTORY" :
-          !quoteFresh ? "WAITING_FOR_FRESH_QUOTE" : "MARKET_DATA_UNAVAILABLE",
+          !quoteFresh ? "WAITING_FOR_FRESH_QUOTE_MARKET_MAY_BE_CLOSED" : "MARKET_DATA_UNAVAILABLE",
         study: {
           fresh: candidateFresh,
           signal: candidateFresh ? (candidate.signal || "WAIT") : "WAIT",
@@ -1226,8 +1230,12 @@ const server = app.listen(PORT,"0.0.0.0",async()=>{
               reason, blockedBy: [reason], candleCount: market?.candles?.length || 0,
               quoteFresh, qualityCheckV2, checkedAt
             });
+            const quoteAgeMs = Number.isFinite(quoteTime) ? Math.max(0, Date.now() - quoteTime) : null;
             console.log("AURIXA_MULTI_SYMBOL_WAIT:", JSON.stringify({
-              symbol, candleCount: market?.candles?.length || 0, quoteFresh, reason
+              symbol, candleCount: market?.candles?.length || 0, quoteFresh, reason,
+              quoteAgeMs, bid: market?.bid ?? null, ask: market?.ask ?? null,
+              bidUpdatedAt: market?.bidUpdatedAt ?? null, askUpdatedAt: market?.askUpdatedAt ?? null,
+              chartSelected: normalizeSymbolName(ctrader.getCTraderStatus()?.symbolName || "") === symbol
             }));
             continue;
           }
