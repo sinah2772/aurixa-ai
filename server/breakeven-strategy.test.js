@@ -11,7 +11,7 @@ test("BUY triggers at 1R and offsets stop by observed spread", () => {
   });
   assert.equal(result.triggered, true);
   assert.equal(result.shouldMove, true);
-  assert.equal(result.targetStopLoss, 100.2);
+  assert.ok(Math.abs(result.targetStopLoss - 100.2) < 1e-8);
   assert.equal(result.spreadAllowance, 0.2);
 });
 
@@ -22,7 +22,7 @@ test("SELL triggers at 1R and offsets stop below entry by observed spread", () =
   });
   assert.equal(result.triggered, true);
   assert.equal(result.shouldMove, true);
-  assert.equal(result.targetStopLoss, 99.8);
+  assert.ok(Math.abs(result.targetStopLoss - 99.8) < 1e-8);
 });
 
 test("does not trigger before the configured R threshold", () => {
