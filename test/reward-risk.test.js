@@ -42,3 +42,39 @@ test("rounds normalized take-profit away from entry to preserve at least 2R", ()
   assert.ok(buyTarget >= buyEntry + Math.abs(buyEntry - buyStop) * 2 - 1e-9);
   assert.equal(Number.isFinite(buyTarget), true);
 });
+
+const { decide } = require("../server/ai-trader-engine");
+
+test("AI strategy rounds directional take-profit outward to preserve minimum 2R", () => {
+  const candles = [];
+  for (let i = 0; i < 100; i++) {
+    const open = 2000 + i * 0.18 + Math.sin((i - 1) * 0.7) * 0.2;
+    const close = 2000 + i * 0.18 + Math.sin(i * 0.7) * 0.2;
+    candles.push({
+      time: new Date(Date.now() - (99 - i) * 5 * 60_000).toISOString(),
+      open,
+      high: Math.max(open, close) + 0.3,
+      low: Math.min(open, close) - 0.3,
+      close,
+      volume: 100 + (i % 9) * 10
+    });
+  }
+
+  const last = candles.at(-1).close;
+  const decision = decide(candles, {
+    symbolName: "XAUUSD",
+    symbolDigits: 2,
+    bid: last - 0.1,
+    ask: last + 0.1,
+    lastUpdate: new Date().toISOString(),
+    connected: true,
+    authorized: true,
+    account: { isLive: false }
+  });
+
+  assert.ok(["BUY", "SELL"].includes(decision.signal), "test market should produce a directional bias");
+  const risk = Math.abs(decision.entry - decision.stopLoss);
+  const reward = Math.abs(decision.takeProfit - decision.entry);
+  assert.ok(risk > 0, "stop distance must be positive");
+  assert.ok(reward + 1e-9 >= risk * 2, `expected at least 2R, got reward=${reward}, risk=${risk}`);
+});
