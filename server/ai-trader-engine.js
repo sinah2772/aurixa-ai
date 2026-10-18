@@ -15,6 +15,11 @@ const MIN_RR = Math.max(1.5, Number(process.env.AI_MIN_RR || 2));
 
 function n(v){const x=Number(v);return Number.isFinite(x)?x:null;}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+function isEntryQualityValid(checks={}) {
+  return ["trend","momentum","rsiAlignment","emaAlignment","candleQuality","volatility"]
+    .every(key => checks[key] === true);
+}
 function ema(values,p){
   if(values.length<p)return null;
   const k=2/(p+1); let e=values.slice(0,p).reduce((a,b)=>a+b,0)/p;
@@ -186,7 +191,10 @@ function decide(candles,quote={}){
   const closes=clean.map(c=>n(c.close)),e9=ema(closes,9),e21=ema(closes,21),e50=ema(closes,50),r=rsi(closes,14),a=atr(clean,14),last=closes.at(-1),prev=closes.at(-2);
   if([e9,e21,e50,r,a,last,prev].some(v=>v===null))return wait("Indicators unavailable",{candleCount:clean.length},symbol);
   const recent=clean.slice(-(symbol==="BTCUSD"||symbol==="XAUUSD"?24:20)),range=Math.max(...recent.map(c=>n(c.high)))-Math.min(...recent.map(c=>n(c.low)));
-  const body=Math.abs(last-prev),avgBody=recent.slice(0,-1).reduce((s,c)=>s+Math.abs(n(c.close)-n(c.open)),0)/Math.max(1,recent.length-1);
+  // Candle strength must use the latest candle's open-to-close body, not close-to-close movement.
+  const latestCandle=clean.at(-1);
+  const body=Math.abs(n(latestCandle.close)-n(latestCandle.open));
+  const avgBody=recent.slice(0,-1).reduce((s,c)=>s+Math.abs(n(c.close)-n(c.open)),0)/Math.max(1,recent.length-1);
   const bodyQuality=avgBody>0?body/avgBody:0,atrRatio=a>0?range/(a*20):0;
   const volatilityAllowed=a>=minAtr&&a<=maxAtr;
   const candleQualityAllowed=bodyQuality>=Number(process.env.AI_MIN_BODY_RATIO||0.25);
@@ -224,7 +232,9 @@ function decide(candles,quote={}){
     : null;
   const rawRR=side==="WAIT"?null:Math.abs(target-entry)/Math.max(0.00001,Math.abs(entry-stop));
   const rr=rawRR===null?null:Number(rawRR.toFixed(2));
-  const qualityTrade=side!=="WAIT"&&passedLogic>=5&&(trendUp||trendDown);
+  // Do not execute a directional signal when RSI or momentum confirmation is missing.
+  // All six core V1 quality checks must pass; OF1 remains a separate conflict guard.
+  const qualityTrade=side!=="WAIT"&&isEntryQualityValid(logicChecks);
   const lastUpdate=quote.lastUpdate?Date.parse(quote.lastUpdate):NaN,quoteFresh=Number.isFinite(lastUpdate)&&Date.now()-lastUpdate<=30000;
   const falseBreakout=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectFalseBreakout(clean,side,a,24):{detected:false,reason:"NOT_APPLICABLE",lookback:null,sweptLevel:null};
   const breakoutRetest=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectBreakoutRetest(clean,side,a,24,3):{required:false,confirmed:false,blocked:false,reason:"NOT_APPLICABLE",level:null};
@@ -272,4 +282,4 @@ function decide(candles,quote={}){
         ? {type:"RESISTANCE",low:Number((swingHigh-slBuffer).toFixed(2)),high:Number(swingHigh.toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
         : null,stopPlan:side==="WAIT"?null:{method:"ATR_PLUS_SWING_STRUCTURE",atr:a,atrMultiplier:stopAtrMultiplier,swingLookback:recent.length,structureStop,buffer:slBuffer,riskDistance:risk},rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,falseBreakout,breakoutRetest,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,...(falseBreakout.detected?[`False breakout rejected: ${falseBreakout.reason}`]:[]),...(breakoutRetest.blocked?[`Breakout retest gate: ${breakoutRetest.reason}`]:[]),`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
-module.exports={decide,detectFalseBreakout,detectBreakoutRetest,confirmOrderFlowDirection,shouldBlockOnOF1,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
+module.exports={decide,detectFalseBreakout,detectBreakoutRetest,confirmOrderFlowDirection,shouldBlockOnOF1,isEntryQualityValid,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
