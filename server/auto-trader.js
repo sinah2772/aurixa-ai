@@ -12,6 +12,7 @@ const rewardRisk = require("./reward-risk");
 const openPositionIntelligence = require("./open-position-intelligence");
 const breakevenStrategy = require("./breakeven-strategy");
 const { evaluatePortfolioRisk } = require("./portfolio-risk-manager");
+const entryClusterGuard = require("./entry-cluster-guard");
 
 let cTrader=null, dbQuery=null, aiEngine=null;
 const inFlightSignalKeys = new Set();
@@ -344,6 +345,27 @@ async function executeAiDecisionInternal(decision, decisionId=null, approvalId=n
         }));
         return reject("OPEN_POSITION_MISSING_SL_OR_TP",{unprotectedPositionIds:unprotected.map(position=>position.positionId).filter(Boolean)});
       }
+      // Prevent repeated same-direction entries inside an existing position's
+      // price zone. This uses a fresh broker snapshot and never alters positions.
+      const candidateEntry=Number(decision.signal==="BUY"?st.ask:st.bid);
+      const cluster=entryClusterGuard.evaluateEntryCluster({
+        symbol:decisionSymbol,
+        direction:decision.signal,
+        entry:candidateEntry,
+        atr:decision.atr,
+        positions:brokerPositions,
+        zonePercent:process.env.AUTO_TRADING_ENTRY_ZONE_PERCENT,
+        atrMultiplier:process.env.AUTO_TRADING_ENTRY_ZONE_ATR_MULTIPLIER
+      });
+      if(!cluster.allowed){
+        console.warn("AURIXA_ENTRY_CLUSTER_BLOCKED:",JSON.stringify({
+          symbol:decisionSymbol,signal:decision.signal,entry:candidateEntry,
+          matchedPositionId:cluster.positionId,matchedEntry:cluster.positionEntry,
+          distance:cluster.distance,zone:cluster.zone,zonePercent:cluster.zonePercent,
+          reason:cluster.reason
+        }));
+        return reject("SAME_DIRECTION_ENTRY_PRICE_ZONE_OCCUPIED",cluster);
+      }
     } catch(e) {
       console.error("AURIXA_OPEN_POSITION_PROTECTION_CHECK_FAILED:",e.message);
       return reject("OPEN_POSITION_PROTECTION_CHECK_FAILED",{error:e.message});
@@ -404,10 +426,25 @@ async function executeAiDecisionInternal(decision, decisionId=null, approvalId=n
     // Rejected attempts must not permanently consume a confirmed candle.
     // Only an actual/submitted trade attempt gates the same candle+direction.
     if(dup.rows.length)return {executed:false,strategy:"AURIXA_AI_TRADER_V1",decisionId,reason:"AI_SIGNAL_ALREADY_GATED",strategySignalKey:key};
-    // No global cooldown gate: each confirmed candle+direction is independently
-    // deduplicated by strategy_signal_key. This prevents an older trade from
-    // blocking a new confirmed BUY/SELL signal.
-    // Risk, spread, RR, stale-signal, broker-volume and demo-only gates remain.
+    // Protect against repeated scanner cycles and broker-sync lag. Only active
+    // same-symbol/same-direction submissions in the existing cooldown window
+    // block a new entry; opposite directions and other symbols are unaffected.
+    const recentSameDirection=await dbQuery(`SELECT id,position_id AS "positionId",created_at AS "createdAt"
+      FROM aurixa.auto_trades
+      WHERE symbol=$1 AND direction=$2
+        AND status IN ('SUBMITTED','OPEN','PARTIAL')
+        AND created_at >= NOW() - ($3 * INTERVAL '1 minute')
+      ORDER BY created_at DESC LIMIT 1`,[decisionSymbol,decision.signal,cfg.cooldownMinutes]);
+    if(recentSameDirection.rows.length){
+      return reject("SAME_DIRECTION_ENTRY_COOLDOWN",{
+        symbol:decisionSymbol,direction:decision.signal,
+        cooldownMinutes:cfg.cooldownMinutes,
+        existingTradeId:recentSameDirection.rows[0].id??null,
+        existingPositionId:recentSameDirection.rows[0].positionId??null,
+        existingTradeCreatedAt:recentSameDirection.rows[0].createdAt??null
+      });
+    }
+    // Existing risk, spread, RR, stale-signal, broker-volume and demo-only gates remain.
   }
   // Account-wide risk limits are opt-in so the existing demo cadence is unchanged
   // unless an operator explicitly configures AUTO_TRADING_MAX_OPEN_POSITIONS
