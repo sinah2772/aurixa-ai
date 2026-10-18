@@ -2284,11 +2284,19 @@ async function getXAUUSDVolumeConstraints(symbolName = state.symbolName) {
   const minVolume = Number(symbol.minVolume);
   const maxVolume = Number(symbol.maxVolume);
   const stepVolume = Number(symbol.stepVolume);
-  const minDistancePips = symbol.minDistance == null ? NaN : Number(symbol.minDistance);
-  const pipPosition = symbol.pipPosition == null ? NaN : Number(symbol.pipPosition);
-  const minStopDistance = Number.isFinite(minDistancePips) && minDistancePips >= 0 &&
-    Number.isInteger(pipPosition) && pipPosition >= 0 && pipPosition <= 10
-      ? minDistancePips * Math.pow(10, -pipPosition) : null;
+  // cTrader ProtoOASymbol exposes slDistance/tpDistance and distanceSetIn.
+  // It does NOT expose a reliable `minDistance` field; reading that legacy
+  // name made this gate reject every trade with unavailable stop metadata.
+  // Resolve the broker's real SL/TP constraints and convert them to price units.
+  const distanceRules = require("./broker-stop-distance").getMinimumStopDistance({
+    symbol,
+    digits: brokerDigits,
+    referencePrice: (() => {
+      const quote = multiSymbolMarket.getSnapshot(normalizeSymbolName(symbol.symbolName || target?.symbolName || symbolName));
+      return Number.isFinite(Number(quote?.mid)) && Number(quote.mid) > 0 ? Number(quote.mid) : null;
+    })()
+  });
+  const minStopDistance = distanceRules.minStopDistance;
   if (!Number.isFinite(minVolume) || minVolume <= 0 || !Number.isFinite(stepVolume) || stepVolume <= 0) {
     throw new Error("cTrader volume constraints are unavailable for " + (target?.symbolName || symbolName));
   }
@@ -2297,8 +2305,7 @@ async function getXAUUSDVolumeConstraints(symbolName = state.symbolName) {
     stepVolume,
     maxVolume: Number.isFinite(maxVolume) && maxVolume > 0 ? maxVolume : null,
     minStopDistance,
-    minDistancePips: Number.isFinite(minDistancePips) && minDistancePips >= 0 ? minDistancePips : null,
-    pipPosition: Number.isInteger(pipPosition) ? pipPosition : null,
+    stopDistanceMetadata: distanceRules,
     digits: Number.isInteger(brokerDigits) ? brokerDigits : null
   };
 }
