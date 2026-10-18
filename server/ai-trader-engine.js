@@ -226,7 +226,8 @@ function decide(candles,quote={}){
   const rr=rawRR===null?null:Number(rawRR.toFixed(2));
   const qualityTrade=side!=="WAIT"&&passedLogic>=5&&(trendUp||trendDown);
   const lastUpdate=quote.lastUpdate?Date.parse(quote.lastUpdate):NaN,quoteFresh=Number.isFinite(lastUpdate)&&Date.now()-lastUpdate<=30000;
-  const falseBreakout=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectFalseBreakout(clean,side,a,24):{detected:false,reason:"NOT_APPLICABLE",lookback:null,sweptLevel:null};\n  const breakoutRetest=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectBreakoutRetest(clean,side,a,24,3):{required:false,confirmed:false,blocked:false,reason:"NOT_APPLICABLE",level:null};
+  const falseBreakout=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectFalseBreakout(clean,side,a,24):{detected:false,reason:"NOT_APPLICABLE",lookback:null,sweptLevel:null};
+  const breakoutRetest=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectBreakoutRetest(clean,side,a,24,3):{required:false,confirmed:false,blocked:false,reason:"NOT_APPLICABLE",level:null};
   const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=maxSpread,volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,falseBreakoutAllowed:!falseBreakout.detected&&!breakoutRetest.blocked,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
   const blockedBy=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k);
   // Keep the existing AURIXA V1 calculation as the primary strategy.
