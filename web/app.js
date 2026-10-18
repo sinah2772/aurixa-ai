@@ -413,9 +413,56 @@
     text("aiScore", Number.isFinite(buy) && Number.isFinite(sell) ? "BUY " + buy + " / SELL " + sell : "—");
 
     const logic = data.logic || {};
+    const checks = logic.checks && typeof logic.checks === "object" ? logic.checks : {};
     text("aiLogicChecks", logic.passed != null && logic.passed !== "" && Number.isFinite(Number(logic.passed))
       ? String(logic.passed) + "/" + String(first(logic.total,6)) + " PASSED"
       : "—");
+
+    const bodyQuality = data.bodyQuality == null || data.bodyQuality === "" ? NaN : Number(data.bodyQuality);
+    const volatilityRatio = data.volatilityRatio == null || data.volatilityRatio === "" ? NaN : Number(data.volatilityRatio);
+    text("aiCandleQuality", Number.isFinite(bodyQuality) ? number(bodyQuality,2) + "× AVG BODY" : "—");
+    text("aiVolatility", Number.isFinite(volatilityRatio) ? number(volatilityRatio,2) + "× RANGE / ATR" : "—");
+
+    const checkDefinitions = [
+      ["trend", "TREND ALIGNMENT"],
+      ["momentum", "MOMENTUM"],
+      ["rsiAlignment", "RSI ALIGNMENT"],
+      ["emaAlignment", "EMA 9 / 21 / 50"],
+      ["candleQuality", "CANDLE STRENGTH"],
+      ["volatility", "ATR VOLATILITY"]
+    ];
+    const entryChecks = $("aiEntryChecks");
+    if (entryChecks) {
+      entryChecks.replaceChildren();
+      for (const [key, label] of checkDefinitions) {
+        const value = checks[key];
+        const state = value === true ? "pass" : value === false ? "fail" : "unknown";
+        const card = document.createElement("div");
+        card.className = "entry-check " + state;
+        const title = document.createElement("span");
+        title.textContent = label;
+        const result = document.createElement("strong");
+        result.textContent = value === true ? "PASS" : value === false ? "FAIL" : "NO DATA";
+        card.append(title, result);
+        entryChecks.append(card);
+      }
+    }
+
+    const of1 = data.signalConfirmation || {};
+    const of1Status = String(first(of1.status, "UNKNOWN")).toUpperCase().replaceAll("_", " ");
+    const of1Direction = String(first(of1.confirmationSignal, of1.fullOF1Signal, "WAIT")).toUpperCase();
+    const of1StatusNode = $("aiOf1Status");
+    if (of1StatusNode) {
+      of1StatusNode.classList.remove("pass", "fail", "unknown");
+      const explicitConflict = /CONFLICT|OPPOS|INVALID|BLOCK/i.test(of1Status);
+      const confirmed = of1.confirmed === true;
+      of1StatusNode.classList.add(explicitConflict ? "fail" : confirmed ? "pass" : "unknown");
+      of1StatusNode.textContent = explicitConflict
+        ? "BLOCKED · OF1 CONFLICT"
+        : confirmed ? "CONFIRMED · " + of1Direction
+        : "NO VETO · " + of1Status;
+    }
+    text("aiOf1Reason", String(first(of1.reason, "OF1 evidence unavailable; the frontend is displaying the backend decision without inferring confirmation.")));
 
     const failed = blocked.map(k => labels[k] || String(k).replaceAll("_", " ").toUpperCase());
     const logicFailed = Array.isArray(logic.failed) ? logic.failed.join(" · ").toUpperCase() : "";
