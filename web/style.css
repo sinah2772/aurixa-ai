@@ -1751,3 +1751,5 @@ body.signal-investigation-open{overflow:hidden}
   .entry-confirmation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .entry-check { padding: 9px; }
 }
+
+

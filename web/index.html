@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#050608">
+  <meta name="theme-color" content="#07111c">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
   <link rel="stylesheet" href="/style.css?v=20261019-entry-confirmation-ui-v1">
-  <link rel="stylesheet" href="/multi-market-ui.css?v=20261018-market-controls-fit-v2">
+  <link rel="stylesheet" href="/multi-market-ui.css?v=20261018-market-controls-fit-v2">\n  <link rel="stylesheet" href="/dashboard-redesign.css?v=20261019-dashboard-refresh-v1">
   </head>
 <body>
 <div class="app">
@@ -26,10 +26,21 @@
     </div>
   </header>
 
+  <nav class="dashboard-nav" aria-label="Dashboard sections">
+    <a href="#marketOverview">Markets</a>
+    <a href="#autoTradeCandidatePanel">Best setup</a>
+    <a href="#signalEnginePanel">AI signal</a>
+    <a href="#openPositionsPanel">Open trades</a>
+    <a href="#signalHistoryPanel">Signals</a>
+    <a href="#closedHistoryPanel">Trade history</a>
+    <a href="#accountSummaryPanel">Account</a>
+    <a href="#marketQualityPanel">Diagnostics</a>
+  </nav>
+
   <main>
 
     <!-- MARKET -->
-    <section class="panel hero">
+    <section id="marketOverview" class="panel hero">
       <div class="market-top">
         <div>
           <div class="eyebrow">MARKET</div>
@@ -58,7 +69,7 @@
 
     </section>
 
-    <section class="panel manual-control-panel" aria-labelledby="manualControlTitle">
+    <section id="manualControlsPanel" class="panel manual-control-panel" aria-labelledby="manualControlTitle">
       <div class="section-title">MANUAL CONTROL</div>
       <div class="section-heading" id="manualControlTitle">AUTO-TRADING AUTHORIZATION</div>
       <div class="manual-control-row">
@@ -123,7 +134,7 @@
       <p class="notice">Chart selection is separate from auto-trade candidate selection. DATA READY means market data is available, not that an entry is approved. An order is labelled accepted only when the executor reports broker acceptance. This panel does not enable auto-trading.</p>
     </section>
 
-    <section class="panel market-quality-panel" aria-labelledby="marketQualityTitle">
+    <section id="marketQualityPanel" class="panel market-quality-panel" aria-labelledby="marketQualityTitle">
       <div class="section-title">DATA INTEGRITY · OBSERVE ONLY</div>
       <div class="section-heading" id="marketQualityTitle">BROKER MARKET-DATA QUALITY</div>
       <div id="marketQualitySummary" class="notice" role="status" aria-live="polite">Checking quote freshness and M5 candle integrity…</div>
@@ -133,7 +144,7 @@
       <p class="notice">This report is diagnostic only. It does not approve entries, change risk settings, arm auto-trading or submit orders. A READY result means only that the data checks passed.</p>
     </section>
 
-    <section class="panel market-quality-panel" aria-labelledby="portfolioRiskTitle">
+    <section id="portfolioRiskPanel" class="panel market-quality-panel" aria-labelledby="portfolioRiskTitle">
       <div class="section-title">PORTFOLIO RISK · OBSERVE ONLY</div>
       <div class="section-heading" id="portfolioRiskTitle">ACCOUNT-WIDE RISK AUDIT</div>
       <div id="portfolioRiskSummary" class="notice" role="status" aria-live="polite">Checking broker positions and today's trade count…</div>
@@ -145,7 +156,7 @@
 
     <div class="dashboard-grid">
     <!-- SIGNAL -->
-    <section class="panel signal-panel">
+    <section id="signalEnginePanel" class="panel signal-panel">
       <div class="section-title">AI TRADER ENGINE</div>
       <div class="section-heading">AI TRADER V1</div>
 
@@ -192,7 +203,7 @@
     </section>
 
     <!-- CHART -->
-    <section class="panel chart-panel">
+    <section id="marketChartPanel" class="panel chart-panel">
       <div class="section-title">MARKET ENGINE</div>
       <div class="section-heading"><span id="chartTitle">cTRADER LIVE · XAUUSD M5</span></div>
 
@@ -214,7 +225,7 @@
     </div>
 
     <!-- AI ACTIVITY -->
-    <section class="panel ai-activity-panel">
+    <section id="activityPanel" class="panel ai-activity-panel">
       <div class="section-title">AI TRADER ACTIVITY</div>
       <div class="section-heading">LIVE DECISION &amp; EXECUTION ACTIVITY</div>
       <div class="activity-summary">
@@ -227,7 +238,7 @@
     </section>
 
     <!-- FINAL TRADE GATE -->
-    <section class="panel final-gate-panel">
+    <section id="finalGatePanel" class="panel final-gate-panel">
       <div class="section-title">FINAL TRADE GATE</div>
       <div class="section-heading">AI TRADER V1 AUTO-TRADING</div>
       <div class="gate-head"><div><div id="gateDecision" class="gate-decision wait">WAIT</div><div id="gateReason" class="gate-reason">Waiting for AI TRADER to meet the execution gate.</div></div><div class="gate-badge">DEMO ONLY</div></div>
@@ -238,7 +249,7 @@
 
 
     <!-- CONFIRMED SIGNAL HISTORY -->
-    <section class="panel confirmed-history-panel">
+    <section id="signalHistoryPanel" class="panel confirmed-history-panel">
       <div class="history-board-title">
         <div>
           <div class="section-title">SIGNAL HISTORY</div>
@@ -269,7 +280,7 @@
     </div>
 
     <!-- ACCOUNT BALANCE -->
-    <section class="panel account-summary-panel">
+    <section id="accountSummaryPanel" class="panel account-summary-panel">
       <div class="section-title">ACCOUNT BALANCE &amp; MARGIN</div>
       <div class="section-heading">cTRADER DEMO ACCOUNT — READ ONLY</div>
       <div class="account-grid account-money-grid">
@@ -291,7 +302,7 @@
     </section>
 
     <!-- PERFORMANCE -->
-    <section class="panel performance-panel">
+    <section id="performancePanel" class="panel performance-panel">
       <div class="section-title">AI TRADER PERFORMANCE</div>
       <div class="section-heading">CLOSED TRADE RESULTS</div>
       <div class="account-grid">
@@ -305,7 +316,7 @@
     </section>
 
     <!-- ACCOUNT & EXECUTION -->
-    <section class="panel account-panel">
+    <section id="executionPanel" class="panel account-panel">
       <div class="section-title">ACCOUNT &amp; EXECUTION</div>
       <div class="section-heading">cTRADER DEMO ACCOUNT</div>
       <div class="account-grid">
@@ -332,7 +343,7 @@
 
 
     <!-- OPEN TRADES -->
-    <section class="panel open-trades-panel">
+    <section id="openPositionsPanel" class="panel open-trades-panel">
       <div class="history-board-title">
         <div>
           <div class="section-title">OPEN TRADES</div>
@@ -347,7 +358,7 @@
     </section>
 
     <!-- CLOSED TRADE HISTORY -->
-    <section class="panel closed-history-panel">
+    <section id="closedHistoryPanel" class="panel closed-history-panel">
       <div class="history-board-title">
         <div>
           <div class="section-title">AI TRADER TRADE HISTORY</div>
@@ -364,7 +375,7 @@
     
 
     <!-- MODE -->
-    <section class="panel compact-panel">
+    <section id="safetyPanel" class="panel compact-panel">
       <div class="section-title">SAFETY</div>
 
       <div class="mode-row">
