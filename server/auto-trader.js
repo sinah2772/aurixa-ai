@@ -10,6 +10,7 @@ const brokerVolume = require("./broker-volume");
 const positionRisk = require("./position-risk-response");
 const rewardRisk = require("./reward-risk");
 const openPositionIntelligence = require("./open-position-intelligence");
+const breakevenStrategy = require("./breakeven-strategy");
 const { evaluatePortfolioRisk } = require("./portfolio-risk-manager");
 
 let cTrader=null, dbQuery=null, aiEngine=null;
@@ -1174,15 +1175,83 @@ async function syncOpenPositions(symbolName=null){
       const entry=Number(pos.price??td.openPrice??td.price??t.execution_entry_price);
       const current=Number((t.direction==="BUY"?liveStatus.bid:liveStatus.ask)??pos.currentPrice??td.currentPrice??td.price);
       const pnl=Number(pos.unrealizedNetProfit??td.unrealizedNetProfit??pos.netProfit);
-      const risk=Math.abs(Number(t.planned_entry_price)-Number(t.planned_stop_price)),move=t.direction==="BUY"?current-entry:entry-current,rVal=risk>0?move/risk:0;
       const rawSL=pos.stopLoss??td.stopLoss;
       const currentSL=rawSL==null||rawSL===""?NaN:Number(rawSL);
-      const stopAlreadyAtOrBeyondBreakeven=Number.isFinite(currentSL)&&(t.direction==="BUY"?currentSL>=entry:currentSL<=entry);
-      if(t.breakeven_applied!==true&&rVal>=cfg.breakevenR&&cTrader.modifyPositionProtection)try{
-        // Never move a profit-protecting trailing stop backward to entry.
-        if(!stopAlreadyAtOrBeyondBreakeven) await cTrader.modifyPositionProtection(t.position_id,entry,Number(t.planned_take_profit_price),targetSymbol);
-        await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);protectedCount++;
-      }catch(e){console.warn("AI breakeven:",e.message);}
+      const plannedEntry=Number(t.planned_entry_price);
+      const plannedStop=Number(t.planned_stop_price);
+      const storedRisk=Number(t.stop_loss_distance);
+      const initialRisk=Number.isFinite(storedRisk)&&storedRisk>0
+        ? storedRisk
+        : Number.isFinite(plannedEntry)&&Number.isFinite(plannedStop)&&plannedEntry>0&&plannedStop>0
+          ? Math.abs(plannedEntry-plannedStop) : NaN;
+      const beStatus=liveStatus;
+      const beEvaluation=breakevenStrategy.evaluateBreakeven({
+        direction:t.direction,
+        entryPrice:entry,
+        currentPrice:current,
+        initialRisk,
+        triggerR:cfg.breakevenR,
+        bid:Number(beStatus.bid),
+        ask:Number(beStatus.ask),
+        existingStopLoss:currentSL
+      });
+      if(beEvaluation.triggered&&cTrader.modifyPositionProtection){
+        try{
+          if(beEvaluation.alreadyProtected){
+            // Existing positions may have been marked breakeven by the older
+            // entry-only rule. Reconcile the broker stop against the new
+            // spread-aware target before deciding the strategy is complete.
+            if(t.breakeven_applied!==true){
+              await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);
+              console.log("AURIXA_BREAKEVEN_ALREADY_PROTECTED:",JSON.stringify({
+                tradeId:t.id,positionId:t.position_id,symbol:targetSymbol,direction:t.direction,
+                entry,targetStopLoss:beEvaluation.targetStopLoss,brokerStopLoss:currentSL,
+                triggerR:cfg.breakevenR,spreadAllowance:beEvaluation.spreadAllowance,brokerVerified:true
+              }));
+              protectedCount++;
+            }
+          }else if(beEvaluation.shouldMove){
+            // Passing null for TP preserves the broker's current TP. The
+            // cTrader adapter verifies the amended SL against a fresh broker snapshot.
+            const amendment=await cTrader.modifyPositionProtection(
+              t.position_id,beEvaluation.targetStopLoss,null,targetSymbol
+            );
+            const confirmedSL=Number(amendment?.stopLoss);
+            const confirmedAtOrBeyondTarget=amendment?.verified===true&&
+              Number.isFinite(confirmedSL)&&confirmedSL>0&&
+              (t.direction==="BUY"
+                ? confirmedSL>=beEvaluation.targetStopLoss-1e-8
+                : confirmedSL<=beEvaluation.targetStopLoss+1e-8);
+            if(!confirmedAtOrBeyondTarget) throw new Error("Broker did not verify the cost-aware breakeven stop");
+            await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);
+            console.log("AURIXA_BREAKEVEN_VERIFIED:",JSON.stringify({
+              tradeId:t.id,positionId:t.position_id,symbol:targetSymbol,direction:t.direction,
+              entry,current,targetStopLoss:beEvaluation.targetStopLoss,brokerStopLoss:confirmedSL,
+              triggerR:cfg.breakevenR,spreadAllowance:beEvaluation.spreadAllowance,
+              brokerVerified:true,takeProfitPreserved:true
+            }));
+            protectedCount++;
+          }else{
+            logPositionManagementAudit("breakeven:"+String(t.position_id),"AURIXA_BREAKEVEN_WAITING",{
+              tradeId:t.id,positionId:t.position_id,symbol:targetSymbol,direction:t.direction,
+              entry,current,initialRisk,triggerR:cfg.breakevenR,
+              existingStopLoss:Number.isFinite(currentSL)?currentSL:null,
+              targetStopLoss:beEvaluation.targetStopLoss,reason:beEvaluation.reason
+            });
+          }
+        }catch(e){
+          console.warn("AURIXA_BREAKEVEN_FAILED:",JSON.stringify({
+            tradeId:t.id,positionId:t.position_id,symbol:targetSymbol,
+            targetStopLoss:beEvaluation.targetStopLoss,error:e.message,
+            retryOnNextManagementCycle:true
+          }));
+        }
+      }else if(!beEvaluation.triggered){
+        logPositionManagementAudit("breakeven:"+String(t.position_id),"AURIXA_BREAKEVEN_WAITING",{
+          tradeId:t.id,positionId:t.position_id,symbol:targetSymbol,direction:t.direction,
+          entry,current,initialRisk,triggerR:cfg.breakevenR,reason:beEvaluation.reason
+        });
+      }
       await dbQuery("UPDATE aurixa.auto_trades SET execution_entry_price=COALESCE(execution_entry_price,$2),status='OPEN',profit=$3,updated_at=NOW() WHERE id=$1",[t.id,Number.isFinite(entry)?entry:null,Number.isFinite(pnl)?pnl:null]);updated++;
     }else{
       // BROKER is the source of truth for closure. If a position disappears
