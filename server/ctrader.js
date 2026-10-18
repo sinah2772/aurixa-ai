@@ -2305,8 +2305,7 @@ async function getXAUUSDVolumeConstraints(symbolName = state.symbolName) {
     stepVolume,
     maxVolume: Number.isFinite(maxVolume) && maxVolume > 0 ? maxVolume : null,
     minStopDistance,
-    minDistancePips: Number.isFinite(minDistancePips) && minDistancePips >= 0 ? minDistancePips : null,
-    pipPosition: Number.isInteger(pipPosition) ? pipPosition : null,
+    stopDistanceMetadata: distanceRules,
     digits: Number.isInteger(brokerDigits) ? brokerDigits : null
   };
 }
