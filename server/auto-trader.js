@@ -1195,18 +1195,21 @@ async function syncOpenPositions(symbolName=null){
         ask:Number(beStatus.ask),
         existingStopLoss:currentSL
       });
-      if(t.breakeven_applied!==true&&beEvaluation.triggered&&cTrader.modifyPositionProtection){
+      if(beEvaluation.triggered&&cTrader.modifyPositionProtection){
         try{
           if(beEvaluation.alreadyProtected){
-            // A fresh broker position snapshot already reports a stop at or
-            // beyond the cost-aware breakeven target; no amendment is needed.
-            await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);
-            console.log("AURIXA_BREAKEVEN_ALREADY_PROTECTED:",JSON.stringify({
-              tradeId:t.id,positionId:t.position_id,symbol:targetSymbol,direction:t.direction,
-              entry,targetStopLoss:beEvaluation.targetStopLoss,brokerStopLoss:currentSL,
-              triggerR:cfg.breakevenR,spreadAllowance:beEvaluation.spreadAllowance,brokerVerified:true
-            }));
-            protectedCount++;
+            // Existing positions may have been marked breakeven by the older
+            // entry-only rule. Reconcile the broker stop against the new
+            // spread-aware target before deciding the strategy is complete.
+            if(t.breakeven_applied!==true){
+              await dbQuery("UPDATE aurixa.auto_trades SET breakeven_applied=true,updated_at=NOW() WHERE id=$1",[t.id]);
+              console.log("AURIXA_BREAKEVEN_ALREADY_PROTECTED:",JSON.stringify({
+                tradeId:t.id,positionId:t.position_id,symbol:targetSymbol,direction:t.direction,
+                entry,targetStopLoss:beEvaluation.targetStopLoss,brokerStopLoss:currentSL,
+                triggerR:cfg.breakevenR,spreadAllowance:beEvaluation.spreadAllowance,brokerVerified:true
+              }));
+              protectedCount++;
+            }
           }else if(beEvaluation.shouldMove){
             // Passing null for TP preserves the broker's current TP. The
             // cTrader adapter verifies the amended SL against a fresh broker snapshot.
@@ -1243,7 +1246,7 @@ async function syncOpenPositions(symbolName=null){
             retryOnNextManagementCycle:true
           }));
         }
-      }else if(t.breakeven_applied!==true&&!beEvaluation.triggered){
+      }else if(!beEvaluation.triggered){
         logPositionManagementAudit("breakeven:"+String(t.position_id),"AURIXA_BREAKEVEN_WAITING",{
           tradeId:t.id,positionId:t.position_id,symbol:targetSymbol,direction:t.direction,
           entry,current,initialRisk,triggerR:cfg.breakevenR,reason:beEvaluation.reason
