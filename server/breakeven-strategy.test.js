@@ -12,7 +12,7 @@ test("BUY triggers at 1R and offsets stop by observed spread", () => {
   assert.equal(result.triggered, true);
   assert.equal(result.shouldMove, true);
   assert.ok(Math.abs(result.targetStopLoss - 100.2) < 1e-8);
-  assert.equal(result.spreadAllowance, 0.2);
+  assert.ok(Math.abs(result.spreadAllowance - 0.2) < 1e-8);
 });
 
 test("SELL triggers at 1R and offsets stop below entry by observed spread", () => {
@@ -49,7 +49,7 @@ test("moves an entry stop forward by spread when trigger is reached", () => {
     triggerR: 1, bid: 111.9, ask: 112.1, existingStopLoss: 100
   });
   assert.equal(result.shouldMove, true);
-  assert.equal(result.targetStopLoss, 100.2);
+  assert.ok(Math.abs(result.targetStopLoss - 100.2) < 1e-8);
 });
 
 test("fails closed for invalid direction or missing initial risk", () => {
