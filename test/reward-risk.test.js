@@ -72,7 +72,7 @@ test("AI strategy rounds directional take-profit outward to preserve minimum 2R"
     account: { isLive: false }
   });
 
-  assert.ok(["BUY", "SELL"].includes(decision.signal), "test market should produce a directional bias");
+  assert.ok(["BUY", "SELL"].includes(decision.signalConfirmation?.mainSignal), "test market should produce a directional main-strategy bias");
   const risk = Math.abs(decision.entry - decision.stopLoss);
   const reward = Math.abs(decision.takeProfit - decision.entry);
   assert.ok(risk > 0, "stop distance must be positive");
