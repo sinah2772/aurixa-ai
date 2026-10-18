@@ -132,6 +132,45 @@ function detectFalseBreakout(candles, side, atrValue, lookback=24) {
   };
 }
 
+function detectBreakoutRetest(candles, side, atrValue, lookback=24, confirmationBars=3) {
+  if ((side !== "BUY" && side !== "SELL") || !Array.isArray(candles) || candles.length < lookback + confirmationBars + 2) {
+    return { required: false, confirmed: false, blocked: false, reason: "INSUFFICIENT_RETEST_CONTEXT", level: null };
+  }
+  const buffer = Math.max(Number(atrValue) > 0 ? Number(atrValue) * 0.05 : 0, 0);
+  const retestBuffer = Math.max(Number(atrValue) > 0 ? Number(atrValue) * 0.15 : 0, 0);
+  const start = Math.max(lookback, candles.length - confirmationBars - 1);
+  let breakout = null;
+  for (let i = start; i < candles.length; i++) {
+    const bar = candles[i];
+    const prior = candles.slice(Math.max(0, i - lookback), i);
+    if (prior.length < lookback || !bar || ![bar.open, bar.high, bar.low, bar.close].every(v => n(v) !== null)) continue;
+    const high = Math.max(...prior.map(c => Number(c.high)));
+    const low = Math.min(...prior.map(c => Number(c.low)));
+    if (Number(bar.close) > high + buffer) breakout = { index: i, side: "BUY", level: high };
+    else if (Number(bar.close) < low - buffer) breakout = { index: i, side: "SELL", level: low };
+  }
+  if (!breakout || breakout.side !== side) {
+    return { required: false, confirmed: false, blocked: false, reason: "NO_RECENT_SAME_DIRECTION_BREAKOUT", level: null };
+  }
+  const after = candles.slice(breakout.index + 1);
+  const heldRetest = after.some(bar => {
+    if (!bar || ![bar.low, bar.high, bar.close].every(v => n(v) !== null)) return false;
+    if (side === "BUY") return Number(bar.low) <= breakout.level + retestBuffer && Number(bar.close) > breakout.level;
+    return Number(bar.high) >= breakout.level - retestBuffer && Number(bar.close) < breakout.level;
+  });
+  const failedRetest = after.some(bar => side === "BUY" ? Number(bar.close) < breakout.level - retestBuffer : Number(bar.close) > breakout.level + retestBuffer);
+  const blocked = !heldRetest;
+  return {
+    required: true,
+    confirmed: heldRetest,
+    blocked,
+    reason: heldRetest ? "BREAKOUT_RETEST_HELD" : failedRetest ? "BREAKOUT_RETEST_FAILED" : "WAITING_FOR_BREAKOUT_RETEST",
+    level: breakout.level,
+    breakoutIndex: breakout.index,
+    retestBuffer
+  };
+}
+
 function decide(candles,quote={}){
   const symbol=normalizeSymbolName(quote.symbolName||quote.symbol||"XAUUSD");
   const profile=getSymbolProfile(symbol);
@@ -188,7 +227,8 @@ function decide(candles,quote={}){
   const qualityTrade=side!=="WAIT"&&passedLogic>=5&&(trendUp||trendDown);
   const lastUpdate=quote.lastUpdate?Date.parse(quote.lastUpdate):NaN,quoteFresh=Number.isFinite(lastUpdate)&&Date.now()-lastUpdate<=30000;
   const falseBreakout=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectFalseBreakout(clean,side,a,24):{detected:false,reason:"NOT_APPLICABLE",lookback:null,sweptLevel:null};
-  const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=maxSpread,volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,falseBreakoutAllowed:!falseBreakout.detected,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
+  const breakoutRetest=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectBreakoutRetest(clean,side,a,24,3):{required:false,confirmed:false,blocked:false,reason:"NOT_APPLICABLE",level:null};
+  const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=maxSpread,volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,falseBreakoutAllowed:!falseBreakout.detected&&!breakoutRetest.blocked,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
   const blockedBy=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k);
   // Keep the existing AURIXA V1 calculation as the primary strategy.
   // OF1 is a confirmation layer: it never creates or reverses the V1 signal.
@@ -230,6 +270,6 @@ function decide(candles,quote={}){
       ? {type:"SUPPORT",low:Number(swingLow.toFixed(2)),high:Number((swingLow+slBuffer).toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
       : side==="SELL"
         ? {type:"RESISTANCE",low:Number((swingHigh-slBuffer).toFixed(2)),high:Number(swingHigh.toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
-        : null,stopPlan:side==="WAIT"?null:{method:"ATR_PLUS_SWING_STRUCTURE",atr:a,atrMultiplier:stopAtrMultiplier,swingLookback:recent.length,structureStop,buffer:slBuffer,riskDistance:risk},rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,falseBreakout,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,...(falseBreakout.detected?[`False breakout rejected: ${falseBreakout.reason}`]:[]),`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
+        : null,stopPlan:side==="WAIT"?null:{method:"ATR_PLUS_SWING_STRUCTURE",atr:a,atrMultiplier:stopAtrMultiplier,swingLookback:recent.length,structureStop,buffer:slBuffer,riskDistance:risk},rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,falseBreakout,breakoutRetest,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,...(falseBreakout.detected?[`False breakout rejected: ${falseBreakout.reason}`]:[]),...(breakoutRetest.blocked?[`Breakout retest gate: ${breakoutRetest.reason}`]:[]),`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
-module.exports={decide,detectFalseBreakout,confirmOrderFlowDirection,shouldBlockOnOF1,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
+module.exports={decide,detectFalseBreakout,detectBreakoutRetest,confirmOrderFlowDirection,shouldBlockOnOF1,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
