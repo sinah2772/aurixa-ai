@@ -1695,3 +1695,59 @@ body.signal-investigation-open{overflow:hidden}
  .signal-investigation-section{padding:11px}
  .confirmed-signal-click>span:last-child{font-size:8px}
 }
+
+
+/* V1 six-point entry confirmation and OF1 visibility (2026-10-19). */
+.entry-confirmation-heading {
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+.entry-confirmation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.entry-check {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel2);
+}
+.entry-check span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.3;
+  letter-spacing: .055em;
+  overflow-wrap: anywhere;
+}
+.entry-check strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+.entry-check.pass strong, .of1-status.pass { color: var(--green); }
+.entry-check.fail strong, .of1-status.fail { color: var(--red); }
+.entry-check.unknown strong, .of1-status.unknown { color: var(--yellow); }
+.of1-status {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: var(--panel2);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .035em;
+}
+.of1-reason {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  margin-top: 7px;
+}
+@media (max-width: 640px) {
+  .entry-confirmation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .entry-check { padding: 9px; }
+}

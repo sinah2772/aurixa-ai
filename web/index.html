@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#050608">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261018-market-data-quality-v1">
+  <link rel="stylesheet" href="/style.css?v=20261019-entry-confirmation-ui-v1">
   <link rel="stylesheet" href="/multi-market-ui.css?v=20261018-market-controls-fit-v2">
   </head>
 <body>
@@ -166,8 +166,24 @@
           <div><span>RSI</span><strong id="aiRsi">—</strong></div>
           <div><span>MOMENTUM</span><strong id="aiMomentum">—</strong></div>
           <div><span>BUY / SELL SCORE</span><strong id="aiScore">—</strong></div>
-          <div><span>LOGIC CHECKS</span><strong id="aiLogicChecks">—</strong></div>
+          <div><span>CORE CHECKS</span><strong id="aiLogicChecks">—</strong></div>
+          <div><span>CANDLE BODY</span><strong id="aiCandleQuality">—</strong></div>
+          <div><span>ATR / VOLATILITY</span><strong id="aiVolatility">—</strong></div>
         </div>
+
+        <div class="eyebrow entry-confirmation-heading">V1 ENTRY CONFIRMATION · ALL SIX REQUIRED</div>
+        <div id="aiEntryChecks" class="entry-confirmation-grid" aria-live="polite">
+          <div class="entry-check unknown"><span>TREND ALIGNMENT</span><strong>CHECKING</strong></div>
+          <div class="entry-check unknown"><span>MOMENTUM</span><strong>CHECKING</strong></div>
+          <div class="entry-check unknown"><span>RSI ALIGNMENT</span><strong>CHECKING</strong></div>
+          <div class="entry-check unknown"><span>EMA 9 / 21 / 50</span><strong>CHECKING</strong></div>
+          <div class="entry-check unknown"><span>CANDLE STRENGTH</span><strong>CHECKING</strong></div>
+          <div class="entry-check unknown"><span>ATR VOLATILITY</span><strong>CHECKING</strong></div>
+        </div>
+
+        <div class="entry-confirmation-heading eyebrow">ORDERFLOW OF1 · CONFIRMATION FILTER</div>
+        <div id="aiOf1Status" class="of1-status unknown" role="status" aria-live="polite">WAITING FOR OF1 EVIDENCE</div>
+        <div id="aiOf1Reason" class="of1-reason">OF1 confirms or blocks conflicting V1 entries; it does not replace the main strategy.</div>
 
         <div class="eyebrow">AI TRADER STATUS</div>
         <div id="reason" class="reason">Waiting for live XAUUSD confirmation...</div>
@@ -377,7 +393,7 @@
   </main>
 </div>
 <script defer src="/manual-control.js?v=20261018-auto-demo-v1"></script>
-<script defer src="/app.js?v=20261017-open-position-intelligence-v1"></script>
+<script defer src="/app.js?v=20261019-entry-confirmation-ui-v1"></script>
 <script defer src="/auto-trade-candidate.js?v=20261017-open-position-intelligence-v1"></script>
 </body>
 </html>
