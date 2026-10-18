@@ -22,23 +22,13 @@ test("uses the available distance when only one cTrader constraint is present", 
   assert.equal(result.minStopDistance, 0.015);
 });
 
-test("converts percentage distances against a current reference price", () => {
+test("fails closed for percentage mode until broker scaling is verified", () => {
   const result = getMinimumStopDistance({
     symbol: { slDistance: 100, tpDistance: 50, distanceSetIn: 2 },
-    digits: 2,
-    referencePrice: 50000
-  });
-  assert.equal(result.minStopDistance, 500);
-  assert.equal(result.slDistancePrice, 500);
-});
-
-test("fails closed when percentage mode has no current reference price", () => {
-  const result = getMinimumStopDistance({
-    symbol: { slDistance: 100, tpDistance: 100, distanceSetIn: 2 },
     digits: 2
   });
   assert.equal(result.minStopDistance, null);
-  assert.equal(result.reason, "REFERENCE_PRICE_REQUIRED_FOR_PERCENT_DISTANCE");
+  assert.equal(result.reason, "PERCENT_DISTANCE_UNIT_UNVERIFIED");
 });
 
 test("fails closed when broker SL/TP distance metadata is missing", () => {
