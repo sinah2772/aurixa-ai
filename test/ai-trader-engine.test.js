@@ -27,3 +27,21 @@ test("AI decision fails closed for an unsupported symbol", () => {
   assert.equal(decision.executionEligible, false);
   assert.ok(decision.blockedBy.includes("Unsupported trading symbol"));
 });
+
+
+test("entry quality requires every core confirmation", () => {
+  const passing = {
+    trend: true, momentum: true, rsiAlignment: true,
+    emaAlignment: true, candleQuality: true, volatility: true
+  };
+  assert.equal(ai.isEntryQualityValid(passing), true);
+  for (const key of Object.keys(passing)) {
+    assert.equal(ai.isEntryQualityValid({ ...passing, [key]: false }), false, key);
+    assert.equal(ai.isEntryQualityValid({ ...passing, [key]: undefined }), false, key);
+  }
+});
+
+test("entry quality fails closed for missing confirmation data", () => {
+  assert.equal(ai.isEntryQualityValid(), false);
+  assert.equal(ai.isEntryQualityValid(null), false);
+});
