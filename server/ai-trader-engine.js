@@ -17,6 +17,7 @@ function n(v){const x=Number(v);return Number.isFinite(x)?x:null;}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 
 function isEntryQualityValid(checks={}) {
+  if (!checks || typeof checks !== "object") return false;
   return ["trend","momentum","rsiAlignment","emaAlignment","candleQuality","volatility"]
     .every(key => checks[key] === true);
 }
