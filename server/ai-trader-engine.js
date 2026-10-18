@@ -7,6 +7,7 @@
 
 const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile } = require("./symbol-support");
 const orderFlowOF1 = require("./chris-creamer-orderflow");
+const rewardRisk = require("./reward-risk");
 
 const MIN_BARS = 50;
 const MIN_CONFIDENCE = Math.max(55, Math.min(90, Number(process.env.AI_MIN_CONFIDENCE || 65)));
@@ -144,7 +145,10 @@ function decide(candles,quote={}){
   const structureRisk=side==="BUY"?Math.max(0,entry-structureStop):side==="SELL"?Math.max(0,structureStop-entry):minimumRisk;
   const risk=Math.max(minimumRisk,structureRisk);
   const stop=roundPrice(side==="BUY"?entry-risk:side==="SELL"?entry+risk:null);
-  const target=roundPrice(side==="BUY"?entry+risk*MIN_RR:side==="SELL"?entry-risk*MIN_RR:null);
+  // Round TP outward, never to nearest: nearest-tick rounding can turn a displayed 2.00R plan into a sub-2R executable plan.
+  const target=side==="BUY"||side==="SELL"
+    ? rewardRisk.normalizeTargetPrice({signal:side,entry,stop,digits,minRewardRisk:MIN_RR})
+    : null;
   const rawRR=side==="WAIT"?null:Math.abs(target-entry)/Math.max(0.00001,Math.abs(entry-stop));
   const rr=rawRR===null?null:Number(rawRR.toFixed(2));
   const qualityTrade=side!=="WAIT"&&passedLogic>=5&&(trendUp||trendDown);
