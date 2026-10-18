@@ -115,7 +115,7 @@ function decide(candles,quote={}){
   if(clean.length<MIN_BARS)return wait("Waiting for "+MIN_BARS+" real "+symbol+" candles",{bars:clean.length,candleCount:clean.length},symbol);
   const closes=clean.map(c=>n(c.close)),e9=ema(closes,9),e21=ema(closes,21),e50=ema(closes,50),r=rsi(closes,14),a=atr(clean,14),last=closes.at(-1),prev=closes.at(-2);
   if([e9,e21,e50,r,a,last,prev].some(v=>v===null))return wait("Indicators unavailable",{candleCount:clean.length},symbol);
-  const recent=clean.slice(-20),range=Math.max(...recent.map(c=>n(c.high)))-Math.min(...recent.map(c=>n(c.low)));
+  const recent=clean.slice(-(symbol==="BTCUSD"||symbol==="XAUUSD"?24:20)),range=Math.max(...recent.map(c=>n(c.high)))-Math.min(...recent.map(c=>n(c.low)));
   const body=Math.abs(last-prev),avgBody=recent.slice(0,-1).reduce((s,c)=>s+Math.abs(n(c.close)-n(c.open)),0)/Math.max(1,recent.length-1);
   const bodyQuality=avgBody>0?body/avgBody:0,atrRatio=a>0?range/(a*20):0;
   const volatilityAllowed=a>=minAtr&&a<=maxAtr;
@@ -139,9 +139,12 @@ function decide(candles,quote={}){
   const swingHigh=Math.max(...recent.map(c=>n(c.high))),swingLow=Math.min(...recent.map(c=>n(c.low)));
   // Structure-based SL area: recent swing structure plus a small volatility buffer.
   // The final risk distance also has a 1.2 ATR floor for XAUUSD.
-  const slBuffer=Math.max(a*0.15,profile.stopBuffer);
+  const configuredStopAtr=Number(process.env["AI_STOP_ATR_MULTIPLIER_"+symbol]);
+  const stopAtrMultiplier=Number.isFinite(configuredStopAtr)&&configuredStopAtr>=1.2&&configuredStopAtr<=4
+    ? configuredStopAtr : Number(profile.minStopAtr||1.2);
+  const slBuffer=Math.max(a*((symbol==="BTCUSD"||symbol==="XAUUSD")?0.30:0.15),profile.stopBuffer);
   const structureStop=side==="BUY"?swingLow-slBuffer:side==="SELL"?swingHigh+slBuffer:null;
-  const minimumRisk=a*profile.minStopAtr;
+  const minimumRisk=a*stopAtrMultiplier;
   const structureRisk=side==="BUY"?Math.max(0,entry-structureStop):side==="SELL"?Math.max(0,structureStop-entry):minimumRisk;
   const risk=Math.max(minimumRisk,structureRisk);
   const stop=roundPrice(side==="BUY"?entry-risk:side==="SELL"?entry+risk:null);
@@ -195,6 +198,6 @@ function decide(candles,quote={}){
       ? {type:"SUPPORT",low:Number(swingLow.toFixed(2)),high:Number((swingLow+slBuffer).toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
       : side==="SELL"
         ? {type:"RESISTANCE",low:Number((swingHigh-slBuffer).toFixed(2)),high:Number(swingHigh.toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
-        : null,rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
+        : null,stopPlan:side==="WAIT"?null:{method:"ATR_PLUS_SWING_STRUCTURE",atr:a,atrMultiplier:stopAtrMultiplier,swingLookback:recent.length,structureStop,buffer:slBuffer,riskDistance:risk},rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
 module.exports={decide,confirmOrderFlowDirection,shouldBlockOnOF1,MIN_BARS,MIN_CONFIDENCE,MIN_RR};

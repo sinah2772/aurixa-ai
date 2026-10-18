@@ -2284,13 +2284,22 @@ async function getXAUUSDVolumeConstraints(symbolName = state.symbolName) {
   const minVolume = Number(symbol.minVolume);
   const maxVolume = Number(symbol.maxVolume);
   const stepVolume = Number(symbol.stepVolume);
+  const minDistancePips = symbol.minDistance == null ? NaN : Number(symbol.minDistance);
+  const pipPosition = symbol.pipPosition == null ? NaN : Number(symbol.pipPosition);
+  const minStopDistance = Number.isFinite(minDistancePips) && minDistancePips >= 0 &&
+    Number.isInteger(pipPosition) && pipPosition >= 0 && pipPosition <= 10
+      ? minDistancePips * Math.pow(10, -pipPosition) : null;
   if (!Number.isFinite(minVolume) || minVolume <= 0 || !Number.isFinite(stepVolume) || stepVolume <= 0) {
     throw new Error("cTrader volume constraints are unavailable for " + (target?.symbolName || symbolName));
   }
   return {
     minVolume,
     stepVolume,
-    maxVolume: Number.isFinite(maxVolume) && maxVolume > 0 ? maxVolume : null
+    maxVolume: Number.isFinite(maxVolume) && maxVolume > 0 ? maxVolume : null,
+    minStopDistance,
+    minDistancePips: Number.isFinite(minDistancePips) && minDistancePips >= 0 ? minDistancePips : null,
+    pipPosition: Number.isInteger(pipPosition) ? pipPosition : null,
+    digits: Number.isInteger(brokerDigits) ? brokerDigits : null
   };
 }
 

@@ -8,7 +8,7 @@ const SUPPORTED_SYMBOLS = Object.freeze([
 ]);
 
 const PROFILES = Object.freeze({
-  XAUUSD: { minAtr: 0.8, maxAtr: 15, maxSpread: 0.60, stopBuffer: 0.25, minStopAtr: 1.2, digits: 2 },
+  XAUUSD: { minAtr: 0.8, maxAtr: 15, maxSpread: 0.60, stopBuffer: 0.25, minStopAtr: 1.8, digits: 2 },
   EURUSD: { minAtr: 0.00015, maxAtr: 0.02, maxSpread: 0.001, stopBuffer: 0.00005, minStopAtr: 1.2, digits: 5 },
   NZDUSD: { minAtr: 0.00015, maxAtr: 0.02, maxSpread: 0.0015, stopBuffer: 0.00005, minStopAtr: 1.2, digits: 5 },
   USDCHF: { minAtr: 0.00015, maxAtr: 0.02, maxSpread: 0.0015, stopBuffer: 0.00005, minStopAtr: 1.2, digits: 5 },
@@ -17,7 +17,7 @@ const PROFILES = Object.freeze({
   USDJPY: { minAtr: 0.015, maxAtr: 2.5, maxSpread: 0.05, stopBuffer: 0.005, minStopAtr: 1.2, digits: 3 },
   GBPUSD: { minAtr: 0.0002, maxAtr: 0.025, maxSpread: 0.002, stopBuffer: 0.00005, minStopAtr: 1.2, digits: 5 },
   XAGUSD: { minAtr: 0.02, maxAtr: 1.5, maxSpread: 0.08, stopBuffer: 0.01, minStopAtr: 1.2, digits: 3 },
-  BTCUSD: { minAtr: 5, maxAtr: 5000, maxSpread: 100, stopBuffer: 1, minStopAtr: 1.2, digits: 2 }
+  BTCUSD: { minAtr: 5, maxAtr: 5000, maxSpread: 100, stopBuffer: 1, minStopAtr: 2.0, digits: 2 }
 });
 
 function normalizeSymbolName(value) {

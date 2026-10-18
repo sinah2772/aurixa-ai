@@ -465,8 +465,19 @@ async function executeAiDecisionInternal(decision, decisionId=null, approvalId=n
   const brokerMin=Number(volumeRules?.minVolume);
   const brokerStep=Number(volumeRules?.stepVolume);
   const brokerMax=Number(volumeRules?.maxVolume);
+  const brokerMinStopDistance=volumeRules?.minStopDistance==null?NaN:Number(volumeRules.minStopDistance);
   if(!Number.isFinite(brokerMin)||brokerMin<=0||!Number.isFinite(brokerStep)||brokerStep<=0){
     return reject("BROKER_VOLUME_RULES_UNAVAILABLE",{balance,equity,freeMargin});
+  }
+  if(!Number.isFinite(brokerMinStopDistance)||brokerMinStopDistance<0){
+    return reject("BROKER_MIN_STOP_DISTANCE_UNAVAILABLE",{symbol:decisionSymbol,brokerMinStopDistance:null});
+  }
+  const brokerStopReference=decision.signal==="BUY"?bid:ask;
+  const stopDistanceFromExecutableSide=decision.signal==="BUY"?brokerStopReference-stop:stop-brokerStopReference;
+  const targetDistanceFromExecutableSide=decision.signal==="BUY"?target-ask:bid-target;
+  if(!Number.isFinite(stopDistanceFromExecutableSide)||stopDistanceFromExecutableSide<brokerMinStopDistance||
+     !Number.isFinite(targetDistanceFromExecutableSide)||targetDistanceFromExecutableSide<brokerMinStopDistance){
+    return reject("BROKER_MIN_STOP_DISTANCE_VIOLATION",{symbol:decisionSymbol,brokerMinStopDistance,stopDistanceFromExecutableSide,targetDistanceFromExecutableSide,stop,target,bid,ask});
   }
   const configuredMax=Number.isFinite(brokerMax)&&brokerMax>0?Math.min(cfg.maxVolume,brokerMax):cfg.maxVolume;
   const riskAmount=balance*cfg.riskPercent/100;
@@ -494,31 +505,14 @@ async function executeAiDecisionInternal(decision, decisionId=null, approvalId=n
   const rawVolume=(riskAmount*volumeUnitScale)/(executionRiskDistance*quoteToUsdRate);
   let volume=brokerVolume.normalizeVolume(rawVolume, volumeRules, configuredMax);
 
-  // If the structure-based stop is slightly wider than the risk budget,
-  // do not throw away a confirmed signal. Use the broker minimum volume
-  // and pull the execution stop back to the largest distance that still
-  // fits the configured risk budget. This remains risk-first: it never
-  // increases the allowed loss above riskPercent. The AI engine's
-  // structure SL remains the planning reference, while this is the
-  // broker-executable protection distance.
-  if(volume<brokerMin){
-    const minVolumeRiskPerPrice=(brokerMin/volumeUnitScale);
-    const maxRiskDistance=(riskAmount*0.995)/(minVolumeRiskPerPrice*quoteToUsdRate);
-    const minimumExecutableRisk=Number.isFinite(Number(decision.atr))
-      ? Number(decision.atr)*Number(symbolProfile.minStopAtr||1.2)
-      : 0;
-    if(Number.isFinite(maxRiskDistance) && maxRiskDistance>0 && maxRiskDistance>=minimumExecutableRisk){
-      executionRiskDistance=maxRiskDistance;
-      executionStop=decision.signal==="BUY"?entry-executionRiskDistance:entry+executionRiskDistance;
-      executionTarget=decision.signal==="BUY"
-        ? entry+executionRiskDistance*2
-        : entry-executionRiskDistance*2;
-      const adjustedRaw=(riskAmount*volumeUnitScale)/(executionRiskDistance*quoteToUsdRate);
-      volume=brokerVolume.normalizeVolume(adjustedRaw, volumeRules, configuredMax);
-      if(volume>=brokerMin) riskAdjustedForBrokerMinimum=true;
-    }
+  // Never tighten a structure-based stop to force the broker's minimum lot size.
+  // If the actual-distance risk calculation cannot support broker minimum volume,
+  // reject the trade and preserve both the planned stop and configured risk ceiling.
+  const executionStopDistanceFromBrokerSide=decision.signal==="BUY"?bid-executionStop:executionStop-ask;
+  const executionTargetDistanceFromBrokerSide=decision.signal==="BUY"?executionTarget-ask:bid-executionTarget;
+  if(executionStopDistanceFromBrokerSide<brokerMinStopDistance||executionTargetDistanceFromBrokerSide<brokerMinStopDistance){
+    return reject("BROKER_MIN_STOP_DISTANCE_VIOLATION",{symbol:decisionSymbol,brokerMinStopDistance,executionStopDistanceFromBrokerSide,executionTargetDistanceFromBrokerSide,executionStop,executionTarget,bid,ask});
   }
-
   const requiredRiskAtMinVolume=(brokerMin/volumeUnitScale)*executionRiskDistance*quoteToUsdRate;
   if(volume<brokerMin){
     const diagnostics={
