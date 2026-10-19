@@ -1113,9 +1113,11 @@ async function syncOpenPositions(symbolName=null){
 
       if(!cfg.trailingEnabled) continue;
 
-      // Prefer cTrader's native trailing-stop flag. The broker then advances
-      // the already verified stop-loss server-side, even if AURIXA's web page
-      // is closed. Do not run a second app-managed trailing algorithm.
+      // Prefer cTrader native trailing when it is broker-confirmed. If enabling
+      // native trailing fails, only fall back to AURIXA-managed trailing after
+      // a fresh broker snapshot explicitly confirms native trailing is OFF.
+      // This avoids silently skipping giveback protection, while also avoiding
+      // two trailing controllers fighting each other or assuming success.
       if(typeof cTrader.modifyPositionProtection!=="function"){
         console.error("AURIXA_NATIVE_TRAILING_STOP_UNAVAILABLE:",JSON.stringify({positionId,symbol:targetSymbol,reason:"BROKER_AMENDMENT_UNAVAILABLE"}));
         continue;
@@ -1125,18 +1127,44 @@ async function syncOpenPositions(symbolName=null){
         logPositionManagementAudit(`native-trailing:${String(positionId)}`,"AURIXA_NATIVE_TRAILING_STOP_VERIFIED",{positionId,symbol:targetSymbol,enabled:true,source:"CTRADER_OPEN_POSITION_LIST"});
         continue;
       }
+      let nativeTrailingConfirmed=false;
+      let appTrailingFallbackAllowed=false;
       try{
         const nativeResult=await cTrader.modifyPositionProtection(positionId,null,null,targetSymbol,{trailingStopLoss:true});
         if(nativeResult?.verified!==true || nativeResult?.trailingStopLoss!==true){
           throw new Error("cTrader did not confirm native trailingStopLoss=true");
         }
+        nativeTrailingConfirmed=true;
         console.log("AURIXA_NATIVE_TRAILING_STOP_ENABLED:",JSON.stringify({positionId,symbol:targetSymbol,enabled:true,brokerVerified:true,stopLoss:nativeResult.stopLoss??brokerSLRaw??null,takeProfit:nativeResult.takeProfit??brokerTPRaw??null}));
       }catch(nativeError){
         console.error("AURIXA_NATIVE_TRAILING_STOP_FAILED:",JSON.stringify({positionId,symbol:targetSymbol,error:nativeError.message}));
+        // A failed API response is ambiguous: the broker may have applied the
+        // request before the response was lost. Re-read broker state and only
+        // enable the app-managed fallback when trailingStopLoss is explicitly
+        // false. Unknown state fails closed.
+        try{
+          const freshPositions=await cTrader.getOpenXAUUSDPositions(true,targetSymbol);
+          const freshPosition=freshPositions.find(p=>String(p?.positionId)===String(positionId));
+          const freshTd=freshPosition?.tradeData||{};
+          const freshTrailing=freshPosition?.trailingStopLoss ?? freshTd?.trailingStopLoss;
+          if(freshTrailing===true){
+            logPositionManagementAudit(`native-trailing:${String(positionId)}`,"AURIXA_NATIVE_TRAILING_STOP_RECONFIRMED",{positionId,symbol:targetSymbol,enabled:true,source:"FRESH_BROKER_SNAPSHOT"});
+            nativeTrailingConfirmed=true;
+          }else if(freshTrailing===false){
+            appTrailingFallbackAllowed=true;
+            console.warn("AURIXA_APP_TRAILING_FALLBACK_ENABLED:",JSON.stringify({positionId,symbol:targetSymbol,reason:"NATIVE_TRAILING_CONFIRMED_OFF",brokerVerified:true}));
+          }else{
+            console.error("AURIXA_TRAILING_STOP_FAIL_CLOSED:",JSON.stringify({positionId,symbol:targetSymbol,reason:"BROKER_TRAILING_STATE_UNKNOWN",brokerTrailingStopLoss:freshTrailing??null}));
+          }
+        }catch(verifyError){
+          console.error("AURIXA_TRAILING_STOP_FAIL_CLOSED:",JSON.stringify({positionId,symbol:targetSymbol,reason:"BROKER_TRAILING_STATE_UNVERIFIED",error:verifyError.message}));
+        }
       }
-      // Native cTrader trailing is the sole trailing mechanism; never also
-      // calculate and send app-managed trailing SL amendments.
-      continue;
+      if(nativeTrailingConfirmed) continue;
+      if(!appTrailingFallbackAllowed) continue;
+      // Only reach the app-managed trailing/giveback algorithm when the broker
+      // explicitly confirms its native trailing flag is OFF. Every SL amendment
+      // below still must be verified, and existing stops are never loosened.
 
       if(!Number.isFinite(entry)||!Number.isFinite(current)){
         console.warn("AURIXA_TRAILING_STOP_SKIPPED:",JSON.stringify({
