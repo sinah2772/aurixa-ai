@@ -144,7 +144,11 @@ function config(){
  enforceDailyLimit:String(process.env.AUTO_TRADING_ENFORCE_DAILY_LIMIT||"false").toLowerCase()==="true",
  cooldownMinutes:Math.max(5,Number(process.env.AUTO_TRADING_COOLDOWN_MINUTES||30)),
  maxSignalAgeMinutes:Math.max(1,Number(process.env.AUTO_TRADING_MAX_SIGNAL_AGE_MINUTES||7)),
- // If no explicit cap is configured, let broker metadata provide the ceiling.\n // Position size is still derived from the risk budget and then capped at broker max.\n maxVolume:process.env.AUTO_TRADING_MAX_VOLUME == null || String(process.env.AUTO_TRADING_MAX_VOLUME).trim() === ""\n   ? Number.MAX_SAFE_INTEGER\n   : Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_MAX_VOLUME))),
+ // If no explicit cap is configured, let broker metadata provide the ceiling.
+ // Position size is still derived from the risk budget and then capped at broker max.
+ maxVolume:process.env.AUTO_TRADING_MAX_VOLUME == null || String(process.env.AUTO_TRADING_MAX_VOLUME).trim() === ""
+   ? Number.MAX_SAFE_INTEGER
+   : Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_MAX_VOLUME))),
  volumeMin:Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_VOLUME_MIN||1000))),
  volumeStep:Math.max(1,Math.floor(Number(process.env.AUTO_TRADING_VOLUME_STEP||1000))),
  breakevenR:Math.max(.75,Number(process.env.AUTO_TRADING_BREAKEVEN_R||1)),
