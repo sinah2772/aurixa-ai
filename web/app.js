@@ -125,6 +125,17 @@
     const connected =
       status.connected === true &&
       status.authorized === true;
+    const connectButton = $("connectCtrader");
+    if (connectButton && !connectButton.dataset.busy) {
+      connectButton.textContent = connected
+        ? "cTRADER CONNECTED"
+        : (status.configured === false ? "cTRADER NOT CONFIGURED" : "RECONNECT cTRADER");
+      connectButton.disabled = status.configured === false;
+      connectButton.classList.toggle("is-connected", connected);
+      connectButton.title = connected
+        ? "cTrader account and WebSocket are connected"
+        : (status.error || "Reconnect the cTrader demo account");
+    }
 
     text(
       "ctraderConnection",
@@ -1505,13 +1516,46 @@ function updateActivity(ai, ctrader, autoStatus, positions) {
         }
       });
     }
-    const connectButton =
-      $("loginBtn") ||
-      $("connectCtrader");
+    const connectButton = $("connectCtrader") || $("loginBtn");
 
     if (connectButton) {
-      connectButton.addEventListener("click", () => {
-        window.location.href = "/auth/login";
+      connectButton.addEventListener("click", async () => {
+        if (connectButton.dataset.busy === "true") return;
+        connectButton.dataset.busy = "true";
+        connectButton.disabled = true;
+        connectButton.textContent = "RECONNECTING…";
+        connectButton.title = "Checking saved cTrader authorization and reconnecting the WebSocket";
+        try {
+          const response = await fetch("/api/ctrader/reconnect", {
+            method: "POST",
+            cache: "no-store",
+            headers: { Accept: "application/json" }
+          });
+          const result = await response.json().catch(() => ({}));
+          if (result.authorizationRequired === true || response.status === 401) {
+            window.location.href = "/auth/login";
+            return;
+          }
+          if (response.ok && result.ok === true && result.connected === true && result.authorized === true) {
+            connectButton.textContent = "cTRADER CONNECTED";
+            connectButton.classList.add("is-connected");
+            connectButton.title = "cTrader account and WebSocket connection verified";
+            await refresh();
+          } else {
+            connectButton.textContent = "RETRY cTRADER";
+            connectButton.title = result.error || "Reconnect failed. Check cTrader authorization and try again.";
+            text("ctraderConnection", "RECONNECT FAILED · " + (result.error || "Connection not verified"));
+          }
+        } catch (error) {
+          connectButton.textContent = "RETRY cTRADER";
+          connectButton.title = "Network error while reconnecting. Try again.";
+          text("ctraderConnection", "RECONNECT FAILED · NETWORK ERROR");
+        } finally {
+          delete connectButton.dataset.busy;
+          connectButton.disabled = false;
+          const current = await getJSON(API.ctrader);
+          if (current) updateConnection(current);
+        }
       });
     }
 
