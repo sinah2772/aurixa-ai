@@ -1753,3 +1753,52 @@ body.signal-investigation-open{overflow:hidden}
 }
 
 
+
+
+/* cTrader connection recovery control */
+.ctrader-connect-button {
+  appearance: none;
+  border: 1px solid #6a5723;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #181507;
+  color: var(--yellow);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ctrader-connect-button:hover:not(:disabled) {
+  border-color: var(--yellow);
+  background: #211c0b;
+}
+.ctrader-connect-button:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+.ctrader-connect-button.is-connected {
+  color: var(--green);
+  border-color: #244c3c;
+  background: #0b1712;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .topbar {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .topbar-actions {
+    max-width: 55%;
+  }
+  .ctrader-connect-button {
+    padding: 8px 10px;
+    font-size: 9px;
+  }
+}
