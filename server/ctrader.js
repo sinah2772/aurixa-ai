@@ -855,12 +855,16 @@ function connectOpenApi() {
 
     ws.addEventListener("close", () => {
       stopHeartbeat();
-      state.connected = false;
-      state.authorized = false;
-      state.ws = null;
+      const wasCurrentSocket = state.ws === ws;
+      if (wasCurrentSocket) {
+        state.connected = false;
+        state.authorized = false;
+        state.ws = null;
+      }
 
+      // A stale socket's delayed close event must not clobber a newer connection.
       // Do not reconnect over an already scheduled recovery attempt.
-      if (!state.reconnectTimer) {
+      if (wasCurrentSocket && !state.reconnectTimer) {
         console.log(
           "cTrader WebSocket closed; reconnecting in 5 seconds..."
         );
@@ -1614,16 +1618,18 @@ async function restoreCTraderSession() {
   await initTokenStorage();
   await loadTokens();
 
-  if (!state.accessToken) {
+  if (!state.accessToken && !state.refreshToken) {
+    state.error = "cTrader authorization required";
     console.log("cTrader: no saved OAuth token; authorization required");
-    return;
+    return { ok: false, authorizationRequired: true, error: state.error };
   }
 
   try {
-    if (!state.expiresAt || Date.now() >= state.expiresAt - 60000) {
+    if (!state.accessToken || !state.expiresAt || Date.now() >= state.expiresAt - 60000) {
       if (!state.refreshToken) {
+        state.error = "Saved cTrader access token expired; reconnect authorization required";
         console.log("cTrader: saved access token expired and no refresh token");
-        return;
+        return { ok: false, authorizationRequired: true, error: state.error };
       }
       console.log("cTrader: refreshing saved OAuth token...");
       await refreshAccessToken();
@@ -1631,9 +1637,19 @@ async function restoreCTraderSession() {
 
     console.log("cTrader: restoring saved session...");
     await connectOpenApi();
+    const connected = state.connected === true && state.authorized === true &&
+      state.ws && state.ws.readyState === 1;
+    return {
+      ok: connected,
+      authorizationRequired: false,
+      connected: state.connected,
+      authorized: state.authorized,
+      error: state.error || null
+    };
   } catch (err) {
-    state.error = err.message;
-    console.error("cTrader session restore failed:", err.message);
+    state.error = safeError(err);
+    console.error("cTrader session restore failed:", state.error);
+    return { ok: false, authorizationRequired: false, error: state.error };
   }
 }
 
@@ -1713,6 +1729,59 @@ function registerCTrader(app) {
     url.searchParams.set("product", "web");
 
     res.redirect(url.toString());
+  });
+
+  app.post("/api/ctrader/reconnect", async (req, res) => {
+    if (!CLIENT_ID || !CLIENT_SECRET) {
+      return res.status(503).json({
+        ok: false,
+        authorizationRequired: false,
+        error: "cTrader application credentials are not configured"
+      });
+    }
+
+    if (state.connected && state.authorized && state.ws && state.ws.readyState === 1) {
+      return res.json({ ok: true, connected: true, authorized: true, alreadyConnected: true });
+    }
+
+    if (state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
+
+    try {
+      const result = await restoreCTraderSession();
+      const connected = state.connected === true && state.authorized === true &&
+        state.ws && state.ws.readyState === 1;
+      if (connected) {
+        return res.json({
+          ok: true,
+          connected: true,
+          authorized: true,
+          accountId: state.accountId,
+          lastUpdate: state.lastUpdate
+        });
+      }
+
+      const authorizationRequired = result?.authorizationRequired === true ||
+        (!state.accessToken && !state.refreshToken);
+      return res.status(authorizationRequired ? 401 : 503).json({
+        ok: false,
+        connected: state.connected,
+        authorized: state.authorized,
+        authorizationRequired,
+        error: state.error || result?.error || "cTrader connection could not be verified"
+      });
+    } catch (err) {
+      state.error = safeError(err);
+      return res.status(503).json({
+        ok: false,
+        connected: state.connected,
+        authorized: state.authorized,
+        authorizationRequired: false,
+        error: state.error
+      });
+    }
   });
 
   app.get("/auth/callback", async (req, res) => {
