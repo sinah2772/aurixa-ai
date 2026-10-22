@@ -1802,3 +1802,83 @@ body.signal-investigation-open{overflow:hidden}
     font-size: 9px;
   }
 }
+
+
+/* Liquidity Intelligence panel — backend diagnostics, display-only. */
+.liquidity-panel {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel2);
+  min-width: 0;
+}
+.liquidity-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.liquidity-panel-heading h3 {
+  margin: 5px 0 0;
+  font-size: 15px;
+  letter-spacing: .045em;
+}
+.liquidity-status {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 9px;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+.liquidity-status.pass { color: var(--green); border-color: #285b45; }
+.liquidity-status.fail { color: var(--red); border-color: #65323a; }
+.liquidity-status.unknown { color: var(--yellow); }
+.liquidity-disclaimer {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 10px 0 12px;
+}
+.liquidity-level-grid, .liquidity-sweep-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.liquidity-level, .liquidity-sweep-row > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.liquidity-level span, .liquidity-sweep-row span {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.3;
+  letter-spacing: .04em;
+}
+.liquidity-level strong, .liquidity-sweep-row strong {
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.liquidity-sweep-row { margin-top: 7px; }
+.liquidity-reasons {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .liquidity-level-grid, .liquidity-sweep-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .liquidity-panel { padding: 10px; }
+}

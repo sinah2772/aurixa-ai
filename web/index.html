@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#07111c">
   <title>AURIXA AI — AI TRADER Market Intelligence</title>
-  <link rel="stylesheet" href="/style.css?v=20261019-entry-confirmation-ui-v1">
+  <link rel="stylesheet" href="/style.css?v=20261023-liquidity-panel-v1">
   <link rel="stylesheet" href="/multi-market-ui.css?v=20261018-market-controls-fit-v2">\n  <link rel="stylesheet" href="/dashboard-redesign.css?v=20261019-dashboard-refresh-v1">
   </head>
 <body>
@@ -31,6 +31,7 @@
     <a href="#marketOverview">Markets</a>
     <a href="#autoTradeCandidatePanel">Best setup</a>
     <a href="#signalEnginePanel">AI signal</a>
+    <a href="#liquidityPanel">Liquidity</a>
     <a href="#openPositionsPanel">Open trades</a>
     <a href="#signalHistoryPanel">Signals</a>
     <a href="#closedHistoryPanel">Trade history</a>
@@ -196,6 +197,30 @@
         <div class="entry-confirmation-heading eyebrow">ORDERFLOW OF1 · CONFIRMATION FILTER</div>
         <div id="aiOf1Status" class="of1-status unknown" role="status" aria-live="polite">WAITING FOR OF1 EVIDENCE</div>
         <div id="aiOf1Reason" class="of1-reason">OF1 confirms or blocks conflicting V1 entries; it does not replace the main strategy.</div>
+
+        <section id="liquidityPanel" class="liquidity-panel" aria-labelledby="liquidityPanelTitle">
+          <div class="liquidity-panel-heading">
+            <div>
+              <div class="eyebrow">MARKET STRUCTURE · M5</div>
+              <h3 id="liquidityPanelTitle">LIQUIDITY INTELLIGENCE</h3>
+            </div>
+            <span id="liquidityStatus" class="liquidity-status unknown">WAITING FOR DATA</span>
+          </div>
+          <p class="liquidity-disclaimer">Candle-derived estimates, not live order-book liquidity. Liquidity analysis is a confirmation filter, not a standalone signal.</p>
+          <div class="liquidity-level-grid">
+            <div class="liquidity-level"><span>INTERNAL HIGH</span><strong id="liquidityInternalHigh">—</strong></div>
+            <div class="liquidity-level"><span>INTERNAL LOW</span><strong id="liquidityInternalLow">—</strong></div>
+            <div class="liquidity-level"><span>EXTERNAL HIGH</span><strong id="liquidityExternalHigh">—</strong></div>
+            <div class="liquidity-level"><span>EXTERNAL LOW</span><strong id="liquidityExternalLow">—</strong></div>
+          </div>
+          <div class="liquidity-sweep-row">
+            <div><span>SWEEP DETECTION</span><strong id="liquiditySweep">—</strong></div>
+            <div><span>CONFIRMED DIRECTION</span><strong id="liquidityDirection">—</strong></div>
+            <div><span>V1 FILTER</span><strong id="liquidityFilter">—</strong></div>
+            <div><span>EQUAL HIGHS / LOWS</span><strong id="liquidityEqualLevels">—</strong></div>
+          </div>
+          <div id="liquidityReasons" class="liquidity-reasons" role="status" aria-live="polite">Waiting for the backend liquidity analysis.</div>
+        </section>
 
         <div class="eyebrow">AI TRADER STATUS</div>
         <div id="reason" class="reason">Waiting for live XAUUSD confirmation...</div>
@@ -405,7 +430,7 @@
   </main>
 </div>
 <script defer src="/manual-control.js?v=20261018-auto-demo-v1"></script>
-<script defer src="/app.js?v=20261019-entry-confirmation-ui-v1"></script>
+<script defer src="/app.js?v=20261023-liquidity-panel-v1"></script>
 <script defer src="/auto-trade-candidate.js?v=20261017-open-position-intelligence-v1"></script>
 </body>
 </html>
