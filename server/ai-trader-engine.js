@@ -8,6 +8,7 @@
 const { normalizeSymbolName, isSupportedSymbol, getSymbolProfile } = require("./symbol-support");
 const orderFlowOF1 = require("./chris-creamer-orderflow");
 const rewardRisk = require("./reward-risk");
+const liquidityHierarchy = require("./liquidity-hierarchy");
 
 const MIN_BARS = 50;
 const MIN_CONFIDENCE = Math.max(55, Math.min(90, Number(process.env.AI_MIN_CONFIDENCE || 65)));
@@ -239,7 +240,10 @@ function decide(candles,quote={}){
   const lastUpdate=quote.lastUpdate?Date.parse(quote.lastUpdate):NaN,quoteFresh=Number.isFinite(lastUpdate)&&Date.now()-lastUpdate<=30000;
   const falseBreakout=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectFalseBreakout(clean,side,a,24):{detected:false,reason:"NOT_APPLICABLE",lookback:null,sweptLevel:null};
   const breakoutRetest=(symbol==="BTCUSD"||symbol==="XAUUSD")?detectBreakoutRetest(clean,side,a,24,3):{required:false,confirmed:false,blocked:false,reason:"NOT_APPLICABLE",level:null};
-  const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=maxSpread,volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,falseBreakoutAllowed:!falseBreakout.detected&&!breakoutRetest.blocked,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
+  // Liquidity is an additional confirmation/risk filter; it never creates a trade.
+  const liquidity = liquidityHierarchy.analyzeLiquidity(clean,{lookback:24,timeframe:"M5"});
+  const liquidityConflict = liquidityHierarchy.conflictsWithSignal(liquidity,side);
+  const gates={dataReady:true,quoteReady:bid!==null&&ask!==null&&ask>bid,quoteFresh,spreadAllowed:spread!==null&&spread<=maxSpread,volatilityAllowed,candleQualityAllowed,trendConfirmed:trendUp||trendDown,logicQualityAllowed:qualityTrade,confidenceAllowed:confidence>=MIN_CONFIDENCE,rewardRiskAllowed:rr!==null&&rr>=MIN_RR,falseBreakoutAllowed:!falseBreakout.detected&&!breakoutRetest.blocked,liquidityAligned:!liquidityConflict,cTraderReady:Boolean(quote.connected&&quote.authorized),demoAccount:quote.account?.isLive===false};
   const blockedBy=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k);
   // Keep the existing AURIXA V1 calculation as the primary strategy.
   // OF1 is a confirmation layer: it never creates or reverses the V1 signal.
@@ -256,6 +260,10 @@ function decide(candles,quote={}){
   const orderFlowBlocks = shouldBlockOnOF1(of1Decision.status);
   gates.orderFlowOF1Confirmed=mainSignal==="WAIT"?null:!orderFlowBlocks;
   let signal=mainSignal!=="WAIT"&&mainGatesPassed?mainSignal:"WAIT";
+  if(signal!=="WAIT"&&liquidityConflict){
+    blockedBy.push("liquidityAligned");
+    signal="WAIT";
+  }
   if(signal!=="WAIT"&&orderFlowBlocks){
     blockedBy.push("orderFlowOF1Confirmed");
     signal="WAIT";
@@ -281,6 +289,6 @@ function decide(candles,quote={}){
       ? {type:"SUPPORT",low:Number(swingLow.toFixed(2)),high:Number((swingLow+slBuffer).toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
       : side==="SELL"
         ? {type:"RESISTANCE",low:Number((swingHigh-slBuffer).toFixed(2)),high:Number(swingHigh.toFixed(2)),buffer:Number(slBuffer.toFixed(2))}
-        : null,stopPlan:side==="WAIT"?null:{method:"ATR_PLUS_SWING_STRUCTURE",atr:a,atrMultiplier:stopAtrMultiplier,swingLookback:recent.length,structureStop,buffer:slBuffer,riskDistance:risk},rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,falseBreakout,breakoutRetest,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,...(falseBreakout.detected?[`False breakout rejected: ${falseBreakout.reason}`]:[]),...(breakoutRetest.blocked?[`Breakout retest gate: ${breakoutRetest.reason}`]:[]),`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
+        : null,stopPlan:side==="WAIT"?null:{method:"ATR_PLUS_SWING_STRUCTURE",atr:a,atrMultiplier:stopAtrMultiplier,swingLookback:recent.length,structureStop,buffer:slBuffer,riskDistance:risk},rewardRisk:rr,spread,ema9:e9,ema21:e21,ema50:e50,rsi:r,atr:a,momentum,score:{buy,sell,gap:scoreGap},agreement:Number(agreement.toFixed(3)),logic:{checks:logicChecks,passed:passedLogic,total:6,failed:failedLogic},liquidity,trend:trendUp?"BULLISH":trendDown?"BEARISH":"MIXED",regime,trendStrength:Number(trendStrength.toFixed(3)),bodyQuality:Number(bodyQuality.toFixed(3)),volatilityRatio:Number(atrRatio.toFixed(3)),candleCount:clean.length,orderFlowConfirmation,signalConfirmation,falseBreakout,breakoutRetest,gates,blockedBy,executionEligible:signal!=="WAIT",reasons:[...reasons,...(falseBreakout.detected?[`False breakout rejected: ${falseBreakout.reason}`]:[]),...(breakoutRetest.blocked?[`Breakout retest gate: ${breakoutRetest.reason}`]:[]),`Logic ${passedLogic}/6 checks passed`,`BUY score ${buy} · SELL score ${sell}`,`Momentum ${momentum.toFixed(2)} ATR`,`RSI ${r.toFixed(1)}`,`R:R ${rr===null?"N/A":rr.toFixed(2)} · minimum ${MIN_RR.toFixed(2)}`],candleTime:clean.at(-1).time||Date.now(),generatedAt:new Date().toISOString()};
 }
 module.exports={decide,detectFalseBreakout,detectBreakoutRetest,confirmOrderFlowDirection,shouldBlockOnOF1,isEntryQualityValid,MIN_BARS,MIN_CONFIDENCE,MIN_RR};
