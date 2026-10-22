@@ -474,6 +474,8 @@
         : "NO VETO · " + of1Status;
     }
     text("aiOf1Reason", String(first(of1.reason, "OF1 evidence unavailable; the frontend is displaying the backend decision without inferring confirmation.")));
+    renderLiquidity(data.liquidity, gates, blocked);
+
 
     const failed = blocked.map(k => labels[k] || String(k).replaceAll("_", " ").toUpperCase());
     const logicFailed = Array.isArray(logic.failed) ? logic.failed.join(" · ").toUpperCase() : "";
@@ -489,6 +491,41 @@
     }
     text("reason", reason);
     text("aiGate", failed.length ? "BLOCKED · " + failed.join(" · ") : data.executionEligible === true ? "ALL GATES PASSED" : "WAITING FOR GATES");
+  }
+
+  function renderLiquidity(liquidity, gates = {}, blocked = []) {
+    const value = liquidity && typeof liquidity === "object" ? liquidity : {};
+    const internal = value.internal || {};
+    const external = value.external || {};
+    const sweep = value.sweep || {};
+    const ready = value.dataReady === true;
+    const confirmed = sweep.confirmed === true && (sweep.direction === "BUY" || sweep.direction === "SELL");
+    const status = $("liquidityStatus");
+    if (status) {
+      status.classList.remove("pass", "fail", "unknown");
+      status.classList.add(!ready ? "unknown" : confirmed ? "pass" : sweep.detected ? "fail" : "unknown");
+      status.textContent = !ready ? String(first(value.status, "DATA UNAVAILABLE")).replaceAll("_", " ")
+        : confirmed ? "SWEEP CONFIRMED" : sweep.detected ? "SWEEP · UNCONFIRMED" : "NO LATEST SWEEP";
+    }
+    const price = (v) => v == null || v === "" || !Number.isFinite(Number(v)) ? "—" : number(Number(v), priceDigits(first(value.symbol, $("instrument")?.textContent, "XAUUSD")));
+    text("liquidityInternalHigh", price(internal.high));
+    text("liquidityInternalLow", price(internal.low));
+    text("liquidityExternalHigh", price(external.high));
+    text("liquidityExternalLow", price(external.low));
+    text("liquiditySweep", !ready ? "DATA UNAVAILABLE" : sweep.detected ? String(first(sweep.type, "SWEEP")).replaceAll("_", " ") : "NONE ON LATEST CANDLE");
+    text("liquidityDirection", confirmed ? sweep.direction : "UNCONFIRMED");
+    const conflicts = blocked.includes("liquidityAligned") || gates.liquidityAligned === false;
+    text("liquidityFilter", conflicts ? "BLOCKS CURRENT SIGNAL" : gates.liquidityAligned === true ? "NO LIQUIDITY CONFLICT" : "NOT CONFIRMED");
+    text("liquidityEqualLevels", ready
+      ? (internal.equalHighs ? "EQH" : "—") + " / " + (internal.equalLows ? "EQL" : "—")
+      : "—");
+    const reasons = Array.isArray(value.reasons) ? value.reasons : [];
+    const note = $("liquidityReasons");
+    if (note) {
+      note.textContent = !ready
+        ? "Liquidity analysis is unavailable: " + String(first(value.status, "waiting for sufficient candle history")).replaceAll("_", " ").toLowerCase() + ". No liquidity conclusion is inferred by the frontend."
+        : reasons.length ? reasons.join(" · ") : "No additional liquidity evidence was supplied by the backend.";
+    }
   }
 
   function updateAutoTradeCandidate(ai, ctrader, autoStatus, positions) {
